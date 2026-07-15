@@ -18,8 +18,10 @@ import FilterConfig from "./components/FilterConfig";
 import DestinationConfig from "./components/DestinationConfig";
 import CurationFeed from "./components/CurationFeed";
 import DatabaseConfig from "./components/DatabaseConfig";
+import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
-import { SourceChannel, FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings } from "./types";
+import { SourceChannel, FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
+import { safeResponseJson } from "./utils/api";
 
 export default function App() {
   const [settings, setSettings] = useState<CuratorSettings>({
@@ -38,11 +40,13 @@ export default function App() {
     posts: []
   });
 
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"feed" | "channels" | "filters" | "destination" | "database">("feed");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"feed" | "channels" | "filters" | "destination" | "database" | "ai">("feed");
   const [isLoading, setIsLoading] = useState(true);
   const [isScraping, setIsScraping] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successToast, setSuccessToast] = useState("");
+  const [geminiActive, setGeminiActive] = useState(false);
+  const [openrouterActive, setOpenrouterActive] = useState(false);
 
   // Authentication State
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem("curator_token"));
@@ -58,7 +62,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: tokenToCheck })
       });
-      const data = await res.json();
+      const data = await safeResponseJson(res);
       setPasswordSet(data.passwordSet);
       if (data.authenticated && tokenToCheck) {
         setIsAuthenticated(true);
@@ -97,9 +101,11 @@ export default function App() {
       if (!response.ok) {
         throw new Error("Failed to load settings from server");
       }
-      const data = await response.json();
+      const data = await safeResponseJson(response);
       setSettings(data);
       setPasswordSet(data.passwordSet);
+      setGeminiActive(!!data.geminiActive);
+      setOpenrouterActive(!!data.openrouterActive);
       if (data.passwordSet && activeToken) {
         setIsAuthenticated(true);
       }
@@ -133,7 +139,7 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: null })
         })
-        .then(r => r.json())
+        .then(r => safeResponseJson(r))
         .then(data => {
           setPasswordSet(data.passwordSet);
           if (!data.passwordSet) {
@@ -175,9 +181,11 @@ export default function App() {
       if (!response.ok) {
         throw new Error("Failed to save settings on server");
       }
-      const data = await response.json();
+      const data = await safeResponseJson(response);
       setSettings(data);
       setPasswordSet(data.passwordSet);
+      setGeminiActive(!!data.geminiActive);
+      setOpenrouterActive(!!data.openrouterActive);
     } catch (err: any) {
       console.error("Error saving configuration:", err);
       showToast("Config saved locally, but server failed to persist.", "error");
@@ -258,6 +266,12 @@ export default function App() {
     return true;
   };
 
+  const handleUpdateAI = async (updatedAI: IAIConfig) => {
+    const updated = { ...settings, aiConfig: updatedAI };
+    await saveSettingsToServer(updated);
+    showToast("AI configuration updated successfully.");
+  };
+
   // 4. Manual Post Tweaks or status changes
   const handleUpdatePost = async (postId: string, updatedFields: Partial<CuratedPost>) => {
     const updatedPosts = settings.posts.map(post => {
@@ -285,7 +299,7 @@ export default function App() {
         throw new Error("Server failed to scrape channel.");
       }
 
-      const data = await response.json();
+      const data = await safeResponseJson(response);
       setSettings(prev => ({
         ...prev,
         channels: data.channels,
@@ -322,7 +336,7 @@ export default function App() {
         throw new Error("Server failed to scrape channels.");
       }
 
-      const data = await response.json();
+      const data = await safeResponseJson(response);
       setSettings(prev => ({
         ...prev,
         channels: data.channels,
@@ -358,7 +372,7 @@ export default function App() {
         })
       });
 
-      const data = await res.json();
+      const data = await safeResponseJson(res);
       if (res.ok && data.success) {
         // Replace in state
         setSettings(prev => ({
@@ -516,6 +530,18 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setActiveWorkspaceTab("ai")}
+            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeWorkspaceTab === "ai"
+                ? "bg-slate-900 text-white shadow-2xs"
+                : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            AI Engine
+          </button>
+
+          <button
             onClick={() => setActiveWorkspaceTab("database")}
             className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeWorkspaceTab === "database"
@@ -564,6 +590,15 @@ export default function App() {
             <DestinationConfig
               destination={settings.destination}
               onSave={handleSaveDestination}
+            />
+          )}
+
+          {activeWorkspaceTab === "ai" && (
+            <AIConfigView
+              aiConfig={settings.aiConfig}
+              onUpdateAI={handleUpdateAI}
+              geminiActive={geminiActive}
+              openrouterActive={openrouterActive}
             />
           )}
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Database, CheckCircle2, AlertTriangle, Copy, RefreshCw, PlayCircle, Terminal, ArrowRight, Check } from "lucide-react";
+import { safeResponseJson } from "../utils/api";
 
 interface DatabaseStatus {
   configured: boolean;
@@ -26,7 +27,7 @@ export default function DatabaseConfig() {
         }
       });
       if (response.ok) {
-        const data = await response.json();
+        const data = await safeResponseJson(response);
         setStatus(data);
       } else {
         console.error("Failed to fetch database status");
@@ -52,7 +53,7 @@ export default function DatabaseConfig() {
           Authorization: `Bearer ${localStorage.getItem("curator_token") || ""}`
         }
       });
-      const data = await response.json();
+      const data = await safeResponseJson(response);
       if (data.success) {
         setActionMessage({ success: true, text: data.message });
         await fetchStatus();

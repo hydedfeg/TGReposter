@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Bot, Check, AlertCircle, HelpCircle, Trash2, Plus, RefreshCw, Eye, EyeOff, Radio, Settings } from "lucide-react";
 import { DestinationConfig as IDestinationConfig, DestinationTarget } from "../types";
+import { safeResponseJson } from "../utils/api";
 
 interface DestinationConfigProps {
   destination: IDestinationConfig;
@@ -94,7 +95,7 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
         })
       });
 
-      const data = await res.json();
+      const data = await safeResponseJson(res);
       const isSuccess = res.ok && data.success;
       
       // Update local status

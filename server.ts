@@ -57,10 +57,16 @@ interface DestinationConfig {
   connected: boolean;
 }
 
+interface AIConfig {
+  provider: "gemini" | "openrouter";
+  model: string;
+}
+
 interface CuratorSettings {
   channels: SourceChannel[];
   filters: FilterConfig;
   destination: DestinationConfig;
+  aiConfig?: AIConfig;
   posts: CuratedPost[];
   passwordHash?: string;
 }
@@ -93,6 +99,10 @@ async function readDb(): Promise<CuratorSettings> {
       targets: [],
       connected: false
     },
+    aiConfig: {
+      provider: "gemini",
+      model: "gemini-3.5-flash"
+    },
     posts: []
   };
 
@@ -117,6 +127,7 @@ async function readDb(): Promise<CuratorSettings> {
           channels: sbData.channels || defaultSettings.channels,
           filters: sbData.filters || defaultSettings.filters,
           destination: destination,
+          aiConfig: sbData.aiConfig || defaultSettings.aiConfig,
           posts: sbData.posts || defaultSettings.posts,
           passwordHash: sbData.passwordHash
         };
@@ -158,6 +169,7 @@ function readDbLocal(defaultSettings: CuratorSettings): CuratorSettings {
         channels: parsed.channels || defaultSettings.channels,
         filters: parsed.filters || defaultSettings.filters,
         destination: destination,
+        aiConfig: parsed.aiConfig || defaultSettings.aiConfig,
         posts: parsed.posts || defaultSettings.posts,
         passwordHash: parsed.passwordHash
       };
@@ -301,7 +313,9 @@ app.get("/api/settings", authMiddleware, async (req, res) => {
   res.json({
     ...safeDb,
     passwordSet: !!passwordHash,
-    supabaseActive: isSupabaseConfigured
+    supabaseActive: isSupabaseConfigured,
+    geminiActive: !!process.env.GEMINI_API_KEY,
+    openrouterActive: !!process.env.OPENROUTER_API_KEY
   });
 });
 
@@ -313,6 +327,7 @@ app.post("/api/settings", authMiddleware, async (req, res) => {
   if (incoming.channels) db.channels = incoming.channels;
   if (incoming.filters) db.filters = incoming.filters;
   if (incoming.destination) db.destination = incoming.destination;
+  if (incoming.aiConfig) db.aiConfig = incoming.aiConfig;
   if (incoming.posts) db.posts = incoming.posts;
 
   await writeDb(db);
@@ -320,7 +335,9 @@ app.post("/api/settings", authMiddleware, async (req, res) => {
   res.json({
     ...safeDb,
     passwordSet: !!passwordHash,
-    supabaseActive: isSupabaseConfigured
+    supabaseActive: isSupabaseConfigured,
+    geminiActive: !!process.env.GEMINI_API_KEY,
+    openrouterActive: !!process.env.OPENROUTER_API_KEY
   });
 });
 
@@ -522,13 +539,11 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
   });
 });
 
-// Trigger Gemini Content Curation
+// Trigger AI Content Curation (Gemini or OpenRouter)
 app.post("/api/ai/curate", authMiddleware, async (req, res) => {
-  if (!process.env.GEMINI_API_KEY || !ai) {
-    return res.status(500).json({
-      error: "Gemini API Key is missing. Please add it via Settings > Secrets."
-    });
-  }
+  const db = await readDb();
+  const aiProvider = db.aiConfig?.provider || "gemini";
+  const aiModel = db.aiConfig?.model || "gemini-3.5-flash";
 
   const { action, text, context } = req.body;
   if (!text) {
@@ -550,17 +565,75 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "Invalid curation action" });
   }
 
-  try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-    });
+  if (aiProvider === "gemini") {
+    if (!process.env.GEMINI_API_KEY || !ai) {
+      return res.status(400).json({
+        error: "Gemini API Key is missing. Please add GEMINI_API_KEY in the Secrets panel."
+      });
+    }
 
-    const resultText = response.text?.trim() || "";
-    res.json({ result: resultText });
-  } catch (err: any) {
-    console.error("Gemini curation error:", err);
-    res.status(500).json({ error: err.message || "Gemini API call failed" });
+    try {
+      const response = await ai.models.generateContent({
+        model: aiModel,
+        contents: prompt,
+      });
+
+      const resultText = response.text?.trim() || "";
+      res.json({ result: resultText });
+    } catch (err: any) {
+      console.error("Gemini curation error:", err);
+      res.status(500).json({ error: err.message || "Gemini API call failed" });
+    }
+  } else if (aiProvider === "openrouter") {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(400).json({
+        error: "OpenRouter API Key is missing. Please add OPENROUTER_API_KEY in the Secrets panel."
+      });
+    }
+
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://ai.studio/build",
+          "X-Title": "Telegram Curator"
+        },
+        body: JSON.stringify({
+          model: aiModel,
+          messages: [
+            {
+              role: "user",
+              content: prompt
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("OpenRouter API returned error:", response.status, errorText);
+        let errorMsg = "OpenRouter API call failed";
+        try {
+          const parsedError = JSON.parse(errorText);
+          if (parsedError.error?.message) {
+            errorMsg = parsedError.error.message;
+          }
+        } catch (_) {}
+        return res.status(500).json({ error: `${errorMsg} (${response.status})` });
+      }
+
+      const data = (await response.json()) as any;
+      const resultText = data.choices?.[0]?.message?.content?.trim() || "";
+      res.json({ result: resultText });
+    } catch (err: any) {
+      console.error("OpenRouter curation error:", err);
+      res.status(500).json({ error: err.message || "OpenRouter connection failed" });
+    }
+  } else {
+    res.status(400).json({ error: `Unsupported AI Provider: ${aiProvider}` });
   }
 });
 

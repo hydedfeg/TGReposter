@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Lock, Key, ShieldAlert, Sparkles, RefreshCw, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { safeResponseJson } from "../utils/api";
 
 interface LoginProps {
   passwordSet: boolean;
@@ -44,7 +45,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
         body: JSON.stringify({ password: password.trim() })
       });
 
-      const data = await res.json();
+      const data = await safeResponseJson(res);
 
       if (res.ok && data.token) {
         if (!passwordSet) {

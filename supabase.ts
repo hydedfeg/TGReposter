@@ -3,8 +3,17 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+let rawSupabaseUrl = process.env.SUPABASE_URL;
+if (rawSupabaseUrl && !rawSupabaseUrl.startsWith("http://") && !rawSupabaseUrl.startsWith("https://")) {
+  if (!rawSupabaseUrl.includes(".")) {
+    rawSupabaseUrl = `https://${rawSupabaseUrl}.supabase.co`;
+  } else {
+    rawSupabaseUrl = `https://${rawSupabaseUrl}`;
+  }
+}
+
+export const supabaseUrl = rawSupabaseUrl;
+export const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 

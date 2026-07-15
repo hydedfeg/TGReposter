@@ -22,6 +22,7 @@ import {
   Radio
 } from "lucide-react";
 import { CuratedPost, DestinationTarget } from "../types";
+import { safeResponseJson } from "../utils/api";
 
 interface CurationFeedProps {
   posts: CuratedPost[];
@@ -96,7 +97,7 @@ export default function CurationFeed({
         })
       });
 
-      const data = await res.json();
+      const data = await safeResponseJson(res);
       if (res.ok && data.result) {
         if (editingPostId === postId) {
           // If editing, merge/replace in text input

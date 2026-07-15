@@ -42,10 +42,16 @@ export interface DestinationConfig {
   connected: boolean;
 }
 
+export interface AIConfig {
+  provider: "gemini" | "openrouter";
+  model: string;
+}
+
 export interface CuratorSettings {
   channels: SourceChannel[];
   filters: FilterConfig;
   destination: DestinationConfig;
+  aiConfig?: AIConfig;
   posts: CuratedPost[];
   passwordSet?: boolean;
   supabaseActive?: boolean;
