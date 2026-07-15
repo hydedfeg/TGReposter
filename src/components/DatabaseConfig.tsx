@@ -14,12 +14,14 @@ interface DatabaseStatus {
 export default function DatabaseConfig() {
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ success: boolean; text: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
   const fetchStatus = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch("/api/supabase/status", {
         headers: {
@@ -30,9 +32,12 @@ export default function DatabaseConfig() {
         const data = await safeResponseJson(response);
         setStatus(data);
       } else {
+        const errText = await response.text();
+        setError(errText || "Failed to fetch database status");
         console.error("Failed to fetch database status");
       }
-    } catch (err) {
+    } catch (err: any) {
+      setError(err.message || "Error fetching database status");
       console.error("Error fetching database status:", err);
     } finally {
       setLoading(false);
@@ -84,6 +89,25 @@ export default function DatabaseConfig() {
       <div className="bg-white border border-slate-200 rounded-2xl p-8 flex flex-col justify-center items-center">
         <RefreshCw className="w-8 h-8 text-sky-500 animate-spin mb-3" />
         <p className="text-slate-500 text-sm">Querying database status...</p>
+      </div>
+    );
+  }
+
+  if (error && !status) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-2xl p-8 flex flex-col justify-center items-center text-center space-y-4">
+        <AlertTriangle className="w-10 h-10 text-amber-500" />
+        <div>
+          <h3 className="font-display font-bold text-slate-800 text-base">Connection Status Unavailable</h3>
+          <p className="text-slate-500 text-xs max-w-md mt-1">{error}</p>
+        </div>
+        <button
+          onClick={fetchStatus}
+          className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-semibold text-xs px-4 py-2 rounded-lg transition"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          <span>Retry Connection Check</span>
+        </button>
       </div>
     );
   }
