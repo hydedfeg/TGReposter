@@ -10,7 +10,8 @@ import {
   Sparkles,
   Info,
   LogOut,
-  Database
+  Database,
+  Users
 } from "lucide-react";
 import Header from "./components/Header";
 import SourceChannelsConfig from "./components/SourceChannelsConfig";
@@ -20,6 +21,7 @@ import CurationFeed from "./components/CurationFeed";
 import DatabaseConfig from "./components/DatabaseConfig";
 import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
+import UserManagement from "./components/UserManagement";
 import { SourceChannel, FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 
@@ -37,10 +39,11 @@ export default function App() {
       channelId: "",
       connected: false
     },
-    posts: []
+    posts: [],
+    users: []
   });
 
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"feed" | "channels" | "filters" | "destination" | "database" | "ai">("feed");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"feed" | "channels" | "filters" | "destination" | "database" | "ai" | "team">("feed");
   const [isLoading, setIsLoading] = useState(true);
   const [isScraping, setIsScraping] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -53,6 +56,12 @@ export default function App() {
   const [passwordSet, setPasswordSet] = useState<boolean | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [currentUserRole, setCurrentUserRole] = useState<'super-admin' | 'admin' | null>(
+    (localStorage.getItem("curator_role") as 'super-admin' | 'admin') || null
+  );
+  const [currentUsername, setCurrentUsername] = useState<string | null>(
+    localStorage.getItem("curator_username") || null
+  );
 
   // Authentication validation helper
   const checkAuth = async (tokenToCheck: string | null) => {
@@ -67,10 +76,18 @@ export default function App() {
       if (data.authenticated && tokenToCheck) {
         setIsAuthenticated(true);
         setAuthToken(tokenToCheck);
+        setCurrentUserRole(data.role);
+        setCurrentUsername(data.username);
+        localStorage.setItem("curator_role", data.role || "");
+        localStorage.setItem("curator_username", data.username || "");
         return true;
       } else {
         setIsAuthenticated(false);
         setAuthToken(null);
+        setCurrentUserRole(null);
+        setCurrentUsername(null);
+        localStorage.removeItem("curator_role");
+        localStorage.removeItem("curator_username");
         if (data.passwordSet) {
           localStorage.removeItem("curator_token");
         }
@@ -192,12 +209,16 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = (token: string, isNewSetup: boolean) => {
+  const handleLoginSuccess = (token: string, isNewSetup: boolean, role: 'super-admin' | 'admin', username: string) => {
     localStorage.setItem("curator_token", token);
+    localStorage.setItem("curator_role", role);
+    localStorage.setItem("curator_username", username);
     setAuthToken(token);
+    setCurrentUserRole(role);
+    setCurrentUsername(username);
     setIsAuthenticated(true);
     setPasswordSet(true);
-    showToast(isNewSetup ? "Master password set! Workspace unlocked." : "Workspace unlocked successfully.");
+    showToast(isNewSetup ? "Super-admin account set! Workspace unlocked." : `Welcome, ${username}! Workspace unlocked.`);
     loadSettings(token);
   };
 
@@ -212,9 +233,53 @@ export default function App() {
       console.error("Logout notification failed:", e);
     }
     localStorage.removeItem("curator_token");
+    localStorage.removeItem("curator_role");
+    localStorage.removeItem("curator_username");
     setAuthToken(null);
+    setCurrentUserRole(null);
+    setCurrentUsername(null);
     setIsAuthenticated(false);
     showToast("Workspace locked.");
+  };
+
+  const handleAddUser = async (username: string, password: string, role: "super-admin" | "admin"): Promise<boolean> => {
+    try {
+      const response = await fetchWithAuth("/api/users/add", {
+        method: "POST",
+        body: JSON.stringify({ username, password, role })
+      });
+      if (!response.ok) {
+        const data = await safeResponseJson(response);
+        throw new Error(data.error || "Failed to add user");
+      }
+      const data = await safeResponseJson(response);
+      setSettings(prev => ({ ...prev, users: data.users }));
+      showToast(`User "${username}" successfully registered.`);
+      return true;
+    } catch (err: any) {
+      showToast(err.message || "Unable to add user", "error");
+      return false;
+    }
+  };
+
+  const handleDeleteUser = async (username: string): Promise<boolean> => {
+    try {
+      const response = await fetchWithAuth("/api/users/delete", {
+        method: "POST",
+        body: JSON.stringify({ username })
+      });
+      if (!response.ok) {
+        const data = await safeResponseJson(response);
+        throw new Error(data.error || "Failed to revoke user access");
+      }
+      const data = await safeResponseJson(response);
+      setSettings(prev => ({ ...prev, users: data.users }));
+      showToast(`User "${username}" access revoked.`);
+      return true;
+    } catch (err: any) {
+      showToast(err.message || "Unable to revoke user access", "error");
+      return false;
+    }
   };
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
@@ -412,7 +477,7 @@ export default function App() {
   if (passwordSet === false || !isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-        <Header connected={settings.destination.connected} channelId={settings.destination.channelId} targets={settings.destination.targets} supabaseActive={settings.supabaseActive} />
+        <Header connected={settings.destination.connected} channelId={settings.destination.channelId} targets={settings.destination.targets} supabaseActive={settings.supabaseActive} currentUsername={currentUsername} currentUserRole={currentUserRole} />
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Login passwordSet={!!passwordSet} onSuccess={handleLoginSuccess} />
         </main>
@@ -444,7 +509,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header connected={settings.destination.connected} channelId={settings.destination.channelId} targets={settings.destination.targets} onLogout={handleLogout} supabaseActive={settings.supabaseActive} />
+      <Header connected={settings.destination.connected} channelId={settings.destination.channelId} targets={settings.destination.targets} onLogout={handleLogout} supabaseActive={settings.supabaseActive} currentUsername={currentUsername} currentUserRole={currentUserRole} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
         
@@ -541,21 +606,49 @@ export default function App() {
             AI Engine
           </button>
 
-          <button
-            onClick={() => setActiveWorkspaceTab("database")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "database"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Database className="w-4 h-4" />
-            Supabase Sync
-          </button>
+          {currentUserRole === "super-admin" && (
+            <button
+              onClick={() => setActiveWorkspaceTab("database")}
+              className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeWorkspaceTab === "database"
+                  ? "bg-slate-900 text-white shadow-2xs"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              Supabase Sync
+            </button>
+          )}
+
+          {currentUserRole === "super-admin" && (
+            <button
+              onClick={() => setActiveWorkspaceTab("team")}
+              className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeWorkspaceTab === "team"
+                  ? "bg-slate-900 text-white shadow-2xs"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              Team Admins
+            </button>
+          )}
         </div>
 
         {/* Workspace Panels */}
         <div className="transition-all duration-300">
+          {currentUserRole !== "super-admin" && activeWorkspaceTab !== "feed" && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-xs flex gap-2.5 items-start mb-4 animate-fadeIn">
+              <span className="font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded-sm uppercase text-[9px] shrink-0 mt-0.5">Read-Only</span>
+              <div>
+                <p className="font-bold">System Configuration Locked</p>
+                <p className="text-amber-700 mt-0.5 leading-normal">
+                  You are viewing this screen in read-only mode. Adding, deleting, or editing scrapers, keywords, and bot connections is reserved exclusively for the <b>Super-Admin</b> (System Owner).
+                </p>
+              </div>
+            </div>
+          )}
+
           {activeWorkspaceTab === "feed" && (
             <CurationFeed
               posts={settings.posts}
@@ -576,6 +669,7 @@ export default function App() {
               onFetchChannel={handleFetchChannel}
               onFetchAll={handleFetchAll}
               isGlobalFetching={isScraping}
+              readOnly={currentUserRole !== "super-admin"}
             />
           )}
 
@@ -583,6 +677,7 @@ export default function App() {
             <FilterConfig
               filters={settings.filters}
               onUpdateFilters={handleUpdateFilters}
+              readOnly={currentUserRole !== "super-admin"}
             />
           )}
 
@@ -590,6 +685,7 @@ export default function App() {
             <DestinationConfig
               destination={settings.destination}
               onSave={handleSaveDestination}
+              readOnly={currentUserRole !== "super-admin"}
             />
           )}
 
@@ -599,11 +695,21 @@ export default function App() {
               onUpdateAI={handleUpdateAI}
               geminiActive={geminiActive}
               openrouterActive={openrouterActive}
+              readOnly={currentUserRole !== "super-admin"}
             />
           )}
 
-          {activeWorkspaceTab === "database" && (
+          {activeWorkspaceTab === "database" && currentUserRole === "super-admin" && (
             <DatabaseConfig />
+          )}
+
+          {activeWorkspaceTab === "team" && currentUserRole === "super-admin" && (
+            <UserManagement
+              users={settings.users || []}
+              onAddUser={handleAddUser}
+              onDeleteUser={handleDeleteUser}
+              currentUsername={currentUsername}
+            />
           )}
         </div>
       </main>

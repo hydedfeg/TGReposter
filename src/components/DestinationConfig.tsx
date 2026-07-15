@@ -6,9 +6,10 @@ import { safeResponseJson } from "../utils/api";
 interface DestinationConfigProps {
   destination: IDestinationConfig;
   onSave: (token: string, targets: DestinationTarget[]) => Promise<boolean>;
+  readOnly?: boolean;
 }
 
-export default function DestinationConfig({ destination, onSave }: DestinationConfigProps) {
+export default function DestinationConfig({ destination, onSave, readOnly = false }: DestinationConfigProps) {
   const [botToken, setBotToken] = useState(destination.botToken || "");
   const [showToken, setShowToken] = useState(false);
   
@@ -165,8 +166,9 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
                     type={showToken ? "text" : "password"}
                     placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
                     value={botToken}
+                    disabled={readOnly}
                     onChange={(e) => setBotToken(e.target.value)}
-                    className="w-full pl-3.5 pr-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800"
+                    className="w-full pl-3.5 pr-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800 disabled:opacity-85 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
@@ -176,14 +178,16 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
                     {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleSaveBotTokenOnly}
-                  disabled={isSaving}
-                  className="px-4 py-2.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  Save Token
-                </button>
+                {!readOnly && (
+                  <button
+                    type="button"
+                    onClick={handleSaveBotTokenOnly}
+                    disabled={isSaving}
+                    className="px-4 py-2.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Save Token
+                  </button>
+                )}
               </div>
               <p className="text-[10px] text-slate-400 mt-1.5">
                 Acquire this token by sending <code>/newbot</code> to <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline inline-flex items-center gap-0.5">@BotFather</a>.
@@ -203,40 +207,42 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
           </p>
 
           {/* Target Addition Form */}
-          <form onSubmit={handleAddTarget} className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-            <div className="sm:col-span-5">
-              <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Friendly Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Tech Announcements"
-                value={newTargetName}
-                onChange={(e) => setNewTargetName(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs outline-hidden"
-              />
-            </div>
-            <div className="sm:col-span-5">
-              <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Channel ID or Username
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., @my_channel or -100123456"
-                value={newTargetChannelId}
-                onChange={(e) => setNewTargetChannelId(e.target.value)}
-                className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs font-mono outline-hidden"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <button
-                type="submit"
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-            </div>
-          </form>
+          {!readOnly && (
+            <form onSubmit={handleAddTarget} className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+              <div className="sm:col-span-5">
+                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Friendly Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., Tech Announcements"
+                  value={newTargetName}
+                  onChange={(e) => setNewTargetName(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs outline-hidden"
+                />
+              </div>
+              <div className="sm:col-span-5">
+                <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Channel ID or Username
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g., @my_channel or -100123456"
+                  value={newTargetChannelId}
+                  onChange={(e) => setNewTargetChannelId(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs font-mono outline-hidden"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <button
+                  type="submit"
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </div>
+            </form>
+          )}
 
           {/* Targets List */}
           {targets.length === 0 ? (
@@ -265,8 +271,9 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
                         <input
                           type="checkbox"
                           checked={target.enabled}
+                          disabled={readOnly}
                           onChange={() => handleToggleTarget(target.id)}
-                          className="mt-1 h-4 w-4 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          className="mt-1 h-4 w-4 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Toggle active state"
                         />
                         <div>
@@ -302,21 +309,23 @@ export default function DestinationConfig({ destination, onSave }: DestinationCo
                         <button
                           type="button"
                           onClick={() => handleTestTarget(target)}
-                          disabled={isTesting || !target.enabled}
+                          disabled={isTesting || !target.enabled || readOnly}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                         >
                           {isTesting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-sky-500" />}
                           Test Connection
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTarget(target.id)}
-                          className="p-1.5 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer"
-                          title="Remove destination"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTarget(target.id)}
+                            className="p-1.5 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer"
+                            title="Remove destination"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
 

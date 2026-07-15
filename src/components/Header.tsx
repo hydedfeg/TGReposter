@@ -7,9 +7,11 @@ interface HeaderProps {
   targets?: DestinationTarget[];
   onLogout?: () => void;
   supabaseActive?: boolean;
+  currentUsername?: string | null;
+  currentUserRole?: 'super-admin' | 'admin' | null;
 }
 
-export default function Header({ connected, channelId, targets, onLogout, supabaseActive }: HeaderProps) {
+export default function Header({ connected, channelId, targets, onLogout, supabaseActive, currentUsername, currentUserRole }: HeaderProps) {
   const activeTargetsCount = targets ? targets.filter(t => t.enabled).length : 0;
   
   let statusDetail = "Configure in Destination tab";
@@ -79,6 +81,17 @@ export default function Header({ connected, channelId, targets, onLogout, supaba
                 <p className="font-semibold leading-none">Local JSON</p>
                 <p className="text-[10px] text-slate-500 font-mono mt-0.5">Server File</p>
               </div>
+            </div>
+          )}
+
+          {currentUsername && (
+            <div className="hidden md:flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg text-slate-700 text-xs font-sans">
+              <span className="font-semibold text-slate-800 text-[11px]">{currentUsername}</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ${
+                currentUserRole === "super-admin" ? "bg-slate-900 text-white" : "bg-sky-100 text-sky-800"
+              }`}>
+                {currentUserRole === "super-admin" ? "Owner" : "Admin"}
+              </span>
             </div>
           )}
 

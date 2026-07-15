@@ -9,6 +9,7 @@ interface SourceChannelsConfigProps {
   onFetchChannel: (username: string) => void;
   onFetchAll: () => void;
   isGlobalFetching: boolean;
+  readOnly?: boolean;
 }
 
 export default function SourceChannelsConfig({
@@ -17,7 +18,8 @@ export default function SourceChannelsConfig({
   onRemoveChannel,
   onFetchChannel,
   onFetchAll,
-  isGlobalFetching
+  isGlobalFetching,
+  readOnly = false
 }: SourceChannelsConfigProps) {
   const [newUsername, setNewUsername] = useState("");
   const [inputError, setInputError] = useState("");
@@ -64,33 +66,35 @@ export default function SourceChannelsConfig({
       </div>
 
       {/* Add New Channel Form */}
-      <form onSubmit={handleSubmit} className="mb-6">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-medium">@</span>
-            <input
-              type="text"
-              placeholder="durov or techcrunch"
-              value={newUsername}
-              onChange={(e) => {
-                setNewUsername(e.target.value);
-                setInputError("");
-              }}
-              className="w-full pl-7 pr-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50 focus:bg-white placeholder-slate-400 transition-all font-sans outline-hidden"
-            />
+      {!readOnly && (
+        <form onSubmit={handleSubmit} className="mb-6">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-medium">@</span>
+              <input
+                type="text"
+                placeholder="durov or techcrunch"
+                value={newUsername}
+                onChange={(e) => {
+                  setNewUsername(e.target.value);
+                  setInputError("");
+                }}
+                className="w-full pl-7 pr-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50 focus:bg-white placeholder-slate-400 transition-all font-sans outline-hidden"
+              />
+            </div>
+            <button
+              type="submit"
+              className="inline-flex items-center justify-center gap-1 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Add Channel
+            </button>
           </div>
-          <button
-            type="submit"
-            className="inline-flex items-center justify-center gap-1 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Add Channel
-          </button>
-        </div>
-        {inputError && (
-          <p className="text-rose-500 text-xs font-medium mt-1.5 ml-1">{inputError}</p>
-        )}
-      </form>
+          {inputError && (
+            <p className="text-rose-500 text-xs font-medium mt-1.5 ml-1">{inputError}</p>
+          )}
+        </form>
+      )}
 
       {/* Channel list */}
       {channels.length === 0 ? (
@@ -175,14 +179,16 @@ export default function SourceChannelsConfig({
                   >
                     <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
                   </button>
-                  <button
-                    onClick={() => onRemoveChannel(channel.username)}
-                    disabled={isFetching || isGlobalFetching}
-                    title="Remove channel"
-                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 disabled:bg-transparent disabled:text-slate-300 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      onClick={() => onRemoveChannel(channel.username)}
+                      disabled={isFetching || isGlobalFetching}
+                      title="Remove channel"
+                      className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 disabled:bg-transparent disabled:text-slate-300 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             );

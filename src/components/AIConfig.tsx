@@ -8,13 +8,15 @@ interface AIConfigProps {
   onUpdateAI: (updated: IAIConfig) => void;
   geminiActive: boolean;
   openrouterActive: boolean;
+  readOnly?: boolean;
 }
 
 export default function AIConfig({
   aiConfig = { provider: "gemini", model: "gemini-3.5-flash" },
   onUpdateAI,
   geminiActive,
-  openrouterActive
+  openrouterActive,
+  readOnly = false
 }: AIConfigProps) {
   const [customModel, setCustomModel] = useState("");
   const [testText, setTestText] = useState("Scraping Telegram channels is a great way to curate industry newsletter posts.");
@@ -144,7 +146,8 @@ export default function AIConfig({
                   <button
                     key={p.id}
                     onClick={() => handleProviderSelect(p.id)}
-                    className={`text-left p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between ${
+                    disabled={readOnly}
+                    className={`text-left p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between disabled:opacity-80 disabled:cursor-not-allowed ${
                       isSelected
                         ? "border-indigo-600 bg-indigo-50/20 shadow-2xs"
                         : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
@@ -197,7 +200,8 @@ export default function AIConfig({
                     <button
                       key={m}
                       onClick={() => handleModelSelect(m)}
-                      className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                      disabled={readOnly}
+                      className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all disabled:opacity-80 disabled:cursor-not-allowed ${
                         isSelected
                           ? "bg-slate-900 text-white shadow-2xs border border-slate-900"
                           : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"
@@ -210,7 +214,8 @@ export default function AIConfig({
 
               <button
                 onClick={() => handleModelSelect(customModel || "custom-model")}
-                className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all ${
+                disabled={readOnly}
+                className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all disabled:opacity-80 disabled:cursor-not-allowed ${
                   isCurrentModelCustom
                     ? "bg-slate-900 text-white shadow-2xs border border-slate-900"
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"
@@ -220,7 +225,7 @@ export default function AIConfig({
               </button>
             </div>
 
-            {(isCurrentModelCustom || aiConfig.provider === "openrouter") && (
+            {!readOnly && (isCurrentModelCustom || aiConfig.provider === "openrouter") && (
               <form onSubmit={handleCustomModelSubmit} className="flex gap-2 max-w-md bg-slate-50 p-1 rounded-lg border border-slate-200">
                 <input
                   type="text"

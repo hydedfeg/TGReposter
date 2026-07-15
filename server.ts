@@ -62,6 +62,13 @@ interface AIConfig {
   model: string;
 }
 
+interface CuratorUser {
+  username: string;
+  passwordHash: string;
+  role: 'super-admin' | 'admin';
+  createdAt: string;
+}
+
 interface CuratorSettings {
   channels: SourceChannel[];
   filters: FilterConfig;
@@ -69,13 +76,14 @@ interface CuratorSettings {
   aiConfig?: AIConfig;
   posts: CuratedPost[];
   passwordHash?: string;
+  users?: CuratorUser[];
 }
 
 // Database storage
 const DATA_FILE = path.join(process.cwd(), "settings-db.json");
 
 // Memory-based active sessions
-const activeSessions = new Set<string>();
+const activeSessions = new Map<string, { username: string; role: 'super-admin' | 'admin' }>();
 
 function hashPassword(pwd: string): string {
   return crypto.createHash("sha256").update(pwd).digest("hex");
@@ -103,7 +111,8 @@ async function readDb(): Promise<CuratorSettings> {
       provider: "gemini",
       model: "gemini-3.5-flash"
     },
-    posts: []
+    posts: [],
+    users: []
   };
 
   if (isSupabaseConfigured) {
@@ -123,14 +132,34 @@ async function readDb(): Promise<CuratorSettings> {
             });
           }
         }
-        return {
+        
+        let users = sbData.users || [];
+        let didMigrate = false;
+        if (users.length === 0 && sbData.passwordHash) {
+          users.push({
+            username: "superadmin",
+            passwordHash: sbData.passwordHash,
+            role: "super-admin",
+            createdAt: new Date().toISOString()
+          });
+          didMigrate = true;
+        }
+
+        const loadedSettings: CuratorSettings = {
           channels: sbData.channels || defaultSettings.channels,
           filters: sbData.filters || defaultSettings.filters,
           destination: destination,
           aiConfig: sbData.aiConfig || defaultSettings.aiConfig,
           posts: sbData.posts || defaultSettings.posts,
-          passwordHash: sbData.passwordHash
+          passwordHash: sbData.passwordHash,
+          users: users
         };
+
+        if (didMigrate) {
+          await writeSupabaseDb(loadedSettings);
+        }
+
+        return loadedSettings;
       } else {
         // Bootstrap Supabase with current local file settings if available, else defaults
         const local = readDbLocal(defaultSettings);
@@ -165,14 +194,33 @@ function readDbLocal(defaultSettings: CuratorSettings): CuratorSettings {
         }
       }
 
-      return {
+      let users = parsed.users || [];
+      let didMigrate = false;
+      if (users.length === 0 && parsed.passwordHash) {
+        users.push({
+          username: "superadmin",
+          passwordHash: parsed.passwordHash,
+          role: "super-admin",
+          createdAt: new Date().toISOString()
+        });
+        didMigrate = true;
+      }
+
+      const loadedSettings: CuratorSettings = {
         channels: parsed.channels || defaultSettings.channels,
         filters: parsed.filters || defaultSettings.filters,
         destination: destination,
         aiConfig: parsed.aiConfig || defaultSettings.aiConfig,
         posts: parsed.posts || defaultSettings.posts,
-        passwordHash: parsed.passwordHash
+        passwordHash: parsed.passwordHash,
+        users: users
       };
+
+      if (didMigrate) {
+        writeDbLocal(loadedSettings);
+      }
+
+      return loadedSettings;
     } catch (e) {
       console.error("Error reading JSON database:", e);
       return defaultSettings;
@@ -224,14 +272,19 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 const authMiddleware = async (req: any, res: any, next: any) => {
   try {
     const db = await readDb();
-    if (!db.passwordHash) {
-      // No password configured yet, allow access to set up password
+    const usersExist = db.users && db.users.length > 0;
+    if (!usersExist) {
+      // No users configured yet, allow access to set up initial super-admin
       return next();
     }
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(" ")[1];
-    if (token && activeSessions.has(token)) {
-      return next();
+    if (token) {
+      const session = activeSessions.get(token);
+      if (session) {
+        req.user = session; // Attach user/role details
+        return next();
+      }
     }
     return res.status(401).json({ error: "Unauthorized. Please log in." });
   } catch (err) {
@@ -240,58 +293,87 @@ const authMiddleware = async (req: any, res: any, next: any) => {
   }
 };
 
+const requireSuperAdmin = (req: any, res: any, next: any) => {
+  if (req.user && req.user.role === "super-admin") {
+    return next();
+  }
+  return res.status(403).json({ error: "Forbidden. Super-admin access required." });
+};
+
 // --- Authentication Endpoints ---
 
 // Check authentication status
 app.post("/api/auth/status", async (req, res) => {
   const db = await readDb();
+  const usersExist = db.users && db.users.length > 0;
   const { token } = req.body;
-  const isTokenValid = token ? activeSessions.has(token) : false;
+  const session = token ? activeSessions.get(token) : null;
   res.json({
-    passwordSet: !!db.passwordHash,
-    authenticated: isTokenValid
+    passwordSet: usersExist,
+    authenticated: !!session,
+    role: session ? session.role : null,
+    username: session ? session.username : null
   });
 });
 
-// Setup initial password
+// Setup initial super-admin account
 app.post("/api/auth/setup", async (req, res) => {
   const db = await readDb();
-  if (db.passwordHash) {
-    return res.status(400).json({ error: "Password has already been configured." });
+  if (db.users && db.users.length > 0) {
+    return res.status(400).json({ error: "Administration account has already been configured." });
   }
-  const { password } = req.body;
+  const { username, password } = req.body;
+  if (!username || username.trim().length < 3) {
+    return res.status(400).json({ error: "Username must be at least 3 characters." });
+  }
   if (!password || password.length < 4) {
     return res.status(400).json({ error: "Password must be at least 4 characters long." });
   }
 
-  db.passwordHash = hashPassword(password);
+  const newUser: CuratorUser = {
+    username: username.trim().toLowerCase(),
+    passwordHash: hashPassword(password),
+    role: "super-admin",
+    createdAt: new Date().toISOString()
+  };
+
+  db.users = [newUser];
+  db.passwordHash = newUser.passwordHash; // keep for backward compatibility
   await writeDb(db);
 
   // Auto-log in on setup
   const token = crypto.randomBytes(32).toString("hex");
-  activeSessions.add(token);
+  activeSessions.set(token, { username: newUser.username, role: newUser.role });
 
-  res.json({ success: true, token, message: "Password configured successfully!" });
+  res.json({ success: true, token, role: newUser.role, username: newUser.username, message: "Super-admin account configured successfully!" });
 });
 
 // Login endpoint
 app.post("/api/auth/login", async (req, res) => {
   const db = await readDb();
-  if (!db.passwordHash) {
-    return res.status(400).json({ error: "No password configured. Please set up a password first." });
+  const usersExist = db.users && db.users.length > 0;
+  if (!usersExist) {
+    return res.status(400).json({ error: "No accounts configured. Please set up owner credentials." });
   }
-  const { password } = req.body;
-  if (!password) {
-    return res.status(400).json({ error: "Password is required." });
+  const { username, password } = req.body;
+  if (!username || !password) {
+    return res.status(400).json({ error: "Username and password are required." });
+  }
+
+  const checkUser = username.trim().toLowerCase();
+  const user = db.users?.find(u => u.username === checkUser);
+
+  if (!user) {
+    return res.status(401).json({ error: "Invalid username or password." });
   }
 
   const hash = hashPassword(password);
-  if (hash === db.passwordHash) {
+  if (hash === user.passwordHash) {
     const token = crypto.randomBytes(32).toString("hex");
-    activeSessions.add(token);
-    return res.json({ success: true, token });
+    activeSessions.set(token, { username: user.username, role: user.role });
+    return res.json({ success: true, token, role: user.role, username: user.username });
   } else {
-    return res.status(401).json({ error: "Invalid password." });
+    return res.status(401).json({ error: "Invalid username or password." });
   }
 });
 
@@ -304,40 +386,148 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ success: true, message: "Logged out successfully" });
 });
 
+// --- User Management Endpoints (Super-Admin Only) ---
+
+// Add user (admin/super-admin)
+app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || username.trim().length < 3) {
+    return res.status(400).json({ error: "Username must be at least 3 characters." });
+  }
+  if (!password || password.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters long." });
+  }
+  if (role !== "super-admin" && role !== "admin") {
+    return res.status(400).json({ error: "Invalid role. Must be 'super-admin' or 'admin'." });
+  }
+
+  const db = await readDb();
+  const newUsername = username.trim().toLowerCase();
+
+  if (db.users?.some(u => u.username === newUsername)) {
+    return res.status(400).json({ error: `User '${newUsername}' already exists.` });
+  }
+
+  const newUser: CuratorUser = {
+    username: newUsername,
+    passwordHash: hashPassword(password),
+    role,
+    createdAt: new Date().toISOString()
+  };
+
+  if (!db.users) db.users = [];
+  db.users.push(newUser);
+  await writeDb(db);
+
+  const safeUsers = db.users.map(({ passwordHash, ...u }) => u);
+  res.json({ success: true, message: `User '${newUsername}' added successfully.`, users: safeUsers });
+});
+
+// Delete user
+app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any, res: any) => {
+  const { username } = req.body;
+  if (!username) {
+    return res.status(400).json({ error: "Username is required." });
+  }
+
+  const db = await readDb();
+  const targetUsername = username.trim().toLowerCase();
+
+  const userToDelete = db.users?.find(u => u.username === targetUsername);
+  if (!userToDelete) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  if (userToDelete.username === req.user.username) {
+    return res.status(400).json({ error: "You cannot delete your own account." });
+  }
+
+  const superAdminsLeft = db.users?.filter(u => u.role === "super-admin" && u.username !== targetUsername);
+  if (userToDelete.role === "super-admin" && (!superAdminsLeft || superAdminsLeft.length === 0)) {
+    return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+  }
+
+  db.users = db.users?.filter(u => u.username !== targetUsername);
+  await writeDb(db);
+
+  const safeUsers = db.users?.map(({ passwordHash, ...u }) => u) || [];
+  res.json({ success: true, message: `User '${targetUsername}' deleted successfully.`, users: safeUsers });
+});
+
 // --- API Endpoints ---
 
 // Get current configuration & state
-app.get("/api/settings", authMiddleware, async (req, res) => {
+app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const db = await readDb();
-  const { passwordHash, ...safeDb } = db as any;
+  const isSuper = req.user.role === "super-admin";
+  
+  const { passwordHash, users, ...safeDb } = db as any;
+  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+
+  if (!isSuper && safeDb.destination) {
+    // Mask botToken for normal admins
+    if (safeDb.destination.botToken) {
+      const len = safeDb.destination.botToken.length;
+      if (len > 8) {
+        safeDb.destination.botToken = "•".repeat(12) + safeDb.destination.botToken.slice(-4);
+      } else {
+        safeDb.destination.botToken = "••••••••••••";
+      }
+    }
+  }
+
   res.json({
     ...safeDb,
-    passwordSet: !!passwordHash,
+    passwordSet: !!(users && users.length > 0),
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
-    openrouterActive: !!process.env.OPENROUTER_API_KEY
+    openrouterActive: !!process.env.OPENROUTER_API_KEY,
+    ...(isSuper ? { users: safeUsers } : {})
   });
 });
 
 // Update configuration & state
-app.post("/api/settings", authMiddleware, async (req, res) => {
+app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const incoming = req.body as Partial<CuratorSettings>;
   const db = await readDb();
+  const isSuper = req.user.role === "super-admin";
 
-  if (incoming.channels) db.channels = incoming.channels;
-  if (incoming.filters) db.filters = incoming.filters;
-  if (incoming.destination) db.destination = incoming.destination;
-  if (incoming.aiConfig) db.aiConfig = incoming.aiConfig;
+  // Admins can only update posts, they are forbidden from modifying infrastructure config!
+  if (!isSuper) {
+    if (incoming.channels || incoming.filters || incoming.destination || incoming.aiConfig) {
+      return res.status(403).json({ error: "Forbidden. Admins can only edit or approve posts. System configurations are locked." });
+    }
+  }
+
+  if (incoming.channels && isSuper) db.channels = incoming.channels;
+  if (incoming.filters && isSuper) db.filters = incoming.filters;
+  if (incoming.destination && isSuper) db.destination = incoming.destination;
+  if (incoming.aiConfig && isSuper) db.aiConfig = incoming.aiConfig;
   if (incoming.posts) db.posts = incoming.posts;
 
   await writeDb(db);
-  const { passwordHash, ...safeDb } = db as any;
+
+  const { passwordHash, users, ...safeDb } = db as any;
+  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+
+  if (!isSuper && safeDb.destination) {
+    if (safeDb.destination.botToken) {
+      const len = safeDb.destination.botToken.length;
+      if (len > 8) {
+        safeDb.destination.botToken = "•".repeat(12) + safeDb.destination.botToken.slice(-4);
+      } else {
+        safeDb.destination.botToken = "••••••••••••";
+      }
+    }
+  }
+
   res.json({
     ...safeDb,
-    passwordSet: !!passwordHash,
+    passwordSet: !!(users && users.length > 0),
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
-    openrouterActive: !!process.env.OPENROUTER_API_KEY
+    openrouterActive: !!process.env.OPENROUTER_API_KEY,
+    ...(isSuper ? { users: safeUsers } : {})
   });
 });
 
@@ -354,8 +544,8 @@ app.get("/api/supabase/status", authMiddleware, async (req, res) => {
   });
 });
 
-// Setup/Bootstrap table on Supabase (using direct postgres connection)
-app.post("/api/supabase/setup-table", authMiddleware, async (req, res) => {
+// Setup/Bootstrap table on Supabase (using direct postgres connection) (super-admin only)
+app.post("/api/supabase/setup-table", authMiddleware, requireSuperAdmin, async (req, res) => {
   const outcome = await autoCreateSettingsTable();
   res.json(outcome);
 });

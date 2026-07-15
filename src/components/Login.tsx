@@ -4,10 +4,11 @@ import { safeResponseJson } from "../utils/api";
 
 interface LoginProps {
   passwordSet: boolean;
-  onSuccess: (token: string, isNewSetup: boolean) => void;
+  onSuccess: (token: string, isNewSetup: boolean, role: 'super-admin' | 'admin', username: string) => void;
 }
 
 export default function Login({ passwordSet, onSuccess }: LoginProps) {
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -17,12 +18,20 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!username.trim()) {
+      setError("Username cannot be empty.");
+      return;
+    }
     if (!password.trim()) {
       setError("Password cannot be empty.");
       return;
     }
 
     if (!passwordSet) {
+      if (username.trim().length < 3) {
+        setError("Username must be at least 3 characters.");
+        return;
+      }
       if (password.length < 4) {
         setError("Password must be at least 4 characters long.");
         return;
@@ -42,7 +51,10 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: password.trim() })
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim()
+        })
       });
 
       const data = await safeResponseJson(res);
@@ -51,10 +63,10 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
         if (!passwordSet) {
           setSetupSuccess(true);
           setTimeout(() => {
-            onSuccess(data.token, true);
+            onSuccess(data.token, true, data.role || "super-admin", data.username || username.trim());
           }, 1500);
         } else {
-          onSuccess(data.token, false);
+          onSuccess(data.token, false, data.role || "admin", data.username || username.trim());
         }
       } else {
         setError(data.error || "Authentication failed. Please verify credentials.");
@@ -80,12 +92,12 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             )}
           </div>
           <h2 className="mt-6 text-2xl font-display font-bold tracking-tight text-slate-900">
-            {passwordSet ? "Secure Curator Access" : "Configure Access Password"}
+            {passwordSet ? "Secure Curator Access" : "Configure Super-Admin Account"}
           </h2>
           <p className="mt-2 text-xs font-sans text-slate-500 leading-relaxed max-w-xs mx-auto">
             {passwordSet 
-              ? "Enter your password to unlock the curation feed, sources scraper, and publishing panel."
-              : "This application is currently unlocked. Set a secure master password to safeguard your configurations."}
+              ? "Sign in with your administrator account to manage sources, filters, and publishing panels."
+              : "This application is currently unlocked. Set a secure super-admin username and password to establish ownership."}
           </p>
         </div>
 
@@ -94,7 +106,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto animate-pulse" />
             <h3 className="font-semibold text-emerald-950 text-sm">Security Initialized</h3>
             <p className="text-emerald-700 text-xs font-sans leading-relaxed">
-              Your master password was configured successfully! Directing to workspace dashboard...
+              Your super-admin account was configured successfully! Directing to workspace dashboard...
             </p>
           </div>
         ) : (
@@ -112,7 +124,21 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             <div className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  {passwordSet ? "Curator Password" : "New Master Password"}
+                  {passwordSet ? "Username" : "Super-Admin Username"}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder={passwordSet ? "Enter your username" : "e.g. owner"}
+                  className="w-full px-3.5 py-3 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Password
                 </label>
                 <div className="relative">
                   <input
@@ -133,7 +159,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                 </div>
                 {!passwordSet && (
                   <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-                    Must be at least 4 characters. Keep it secure; this gates all API credentials and publishing triggers.
+                    Must be at least 4 characters. Keep it secure; this gates all configurations and publishing triggers.
                   </p>
                 )}
               </div>
@@ -141,7 +167,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
               {!passwordSet && (
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                    Confirm Master Password
+                    Confirm Password
                   </label>
                   <input
                     type={showPassword ? "text" : "password"}
@@ -169,7 +195,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-sky-400" />
-                    {passwordSet ? "Unlock Curator Workspace" : "Establish Master Access"}
+                    {passwordSet ? "Unlock Curator Workspace" : "Establish Access Account"}
                   </>
                 )}
               </button>

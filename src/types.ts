@@ -47,6 +47,12 @@ export interface AIConfig {
   model: string;
 }
 
+export interface CuratorUser {
+  username: string;
+  role: 'super-admin' | 'admin';
+  createdAt: string;
+}
+
 export interface CuratorSettings {
   channels: SourceChannel[];
   filters: FilterConfig;
@@ -55,4 +61,5 @@ export interface CuratorSettings {
   posts: CuratedPost[];
   passwordSet?: boolean;
   supabaseActive?: boolean;
+  users?: CuratorUser[];
 }
