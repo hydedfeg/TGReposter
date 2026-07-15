@@ -1,0 +1,6 @@
+{
+  "name": "Telegram Content Curator",
+  "description": "Scrape public Telegram channels, filter posts by keywords or hashtags, edit/rephrase with Gemini, and post selected entries to your Telegram channel using a bot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
