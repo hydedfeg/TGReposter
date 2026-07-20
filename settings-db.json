@@ -1,0 +1,47 @@
+{
+  "channels": [
+    {
+      "username": "techcrunch",
+      "name": "TechCrunch",
+      "lastFetched": "",
+      "status": "idle"
+    },
+    {
+      "username": "durov",
+      "name": "Durov's Channel",
+      "lastFetched": "",
+      "status": "idle"
+    }
+  ],
+  "filters": {
+    "positiveKeywords": [
+      "AI",
+      "Gemini",
+      "Apple",
+      "Google",
+      "Vite",
+      "React",
+      "Startup"
+    ],
+    "negativeKeywords": [
+      "crypto",
+      "scam",
+      "airdrop",
+      "giveaway"
+    ],
+    "requiredHashtags": [],
+    "caseSensitive": false
+  },
+  "destination": {
+    "botToken": "",
+    "channelId": "",
+    "targets": [],
+    "connected": false
+  },
+  "aiConfig": {
+    "provider": "gemini",
+    "model": "gemini-3.5-flash"
+  },
+  "posts": [],
+  "users": []
+}

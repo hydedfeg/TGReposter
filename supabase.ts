@@ -16,6 +16,8 @@ export const supabaseUrl = rawSupabaseUrl;
 export const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+console.log("Supabase configured:", isSupabaseConfigured);
+console.log("Supabase URL:", supabaseUrl);
 
 let supabase: any = null;
 

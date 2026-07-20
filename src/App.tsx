@@ -67,10 +67,12 @@ export default function App() {
   const checkAuth = async (tokenToCheck: string | null) => {
     try {
       const res = await fetch("/api/auth/status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: tokenToCheck })
-      });
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    token: tokenToCheck
+  })
+});
       const data = await safeResponseJson(res);
       setPasswordSet(data.passwordSet);
       if (data.authenticated && tokenToCheck) {
@@ -354,31 +356,39 @@ export default function App() {
     setIsScraping(true);
     showToast(`Fetching feed for @${username}...`);
     try {
-      const response = await fetch("/api/fetch-posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usernames: [username] })
-      });
+  const response = await fetch("/api/fetch-posts", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${authToken}`,
+    },
+    body: JSON.stringify({
+      usernames: [username],
+    }),
+  });
 
-      if (!response.ok) {
-        throw new Error("Server failed to scrape channel.");
-      }
+  if (!response.ok) {
+    throw new Error("Server failed to scrape channel.");
+  }
 
-      const data = await safeResponseJson(response);
-      setSettings(prev => ({
-        ...prev,
-        channels: data.channels,
-        posts: data.posts
-      }));
+  const data = await safeResponseJson(response);
 
-      // Persist latest state
-      localStorage.setItem("telegram-curator-settings", JSON.stringify({
-        ...settings,
-        channels: data.channels,
-        posts: data.posts
-      }));
+  setSettings(prev => ({
+    ...prev,
+    channels: data.channels,
+    posts: data.posts,
+  }));
 
-      showToast(`Scrape completed! Collected posts for @${username}.`);
+  localStorage.setItem(
+    "telegram-curator-settings",
+    JSON.stringify({
+      ...settings,
+      channels: data.channels,
+      posts: data.posts,
+    })
+  );
+
+  showToast(`Scrape completed! Collected posts for @${username}.`);
     } catch (err: any) {
       console.error(err);
       showToast(`Scrape failed for @${username}: ${err.message}`, "error");
@@ -392,10 +402,15 @@ export default function App() {
     showToast("Initiating scraping for all target feeds...");
     try {
       const response = await fetch("/api/fetch-posts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usernames: settings.channels.map(c => c.username) })
-      });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${authToken}`,
+  },
+  body: JSON.stringify({
+    usernames: settings.channels.map(c => c.username)
+  })
+});
 
       if (!response.ok) {
         throw new Error("Server failed to scrape channels.");
@@ -428,14 +443,17 @@ export default function App() {
   const handlePostToTelegram = async (postId: string, text: string, photoUrl?: string): Promise<boolean> => {
     try {
       const res = await fetch("/api/post-telegram", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId,
-          text,
-          photoUrl
-        })
-      });
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${authToken}`,
+  },
+  body: JSON.stringify({
+    postId,
+    text,
+    photoUrl,
+  }),
+});
 
       const data = await safeResponseJson(res);
       if (res.ok && data.success) {

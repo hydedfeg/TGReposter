@@ -1,3 +1,6 @@
+import mediaService from "./server/services/mediaService";
+import postService from "./server/services/postService";
+import channelRoutes from "./server/routes/channels";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -268,6 +271,8 @@ if (process.env.GEMINI_API_KEY) {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+app.use("/api/channels", channelRoutes);
+
 // Authentication Middleware
 const authMiddleware = async (req: any, res: any, next: any) => {
   try {
@@ -278,7 +283,12 @@ const authMiddleware = async (req: any, res: any, next: any) => {
       return next();
     }
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.split(" ")[1];
+console.log("Authorization header:", authHeader);
+
+const token = authHeader && authHeader.split(" ")[1];
+console.log("Parsed token:", token);
+
+console.log("Active sessions:", [...activeSessions.keys()]);
     if (token) {
       const session = activeSessions.get(token);
       if (session) {
@@ -371,6 +381,10 @@ app.post("/api/auth/login", async (req, res) => {
   if (hash === user.passwordHash) {
     const token = crypto.randomBytes(32).toString("hex");
     activeSessions.set(token, { username: user.username, role: user.role });
+    
+    console.log("LOGIN TOKEN:", token);
+console.log("SESSIONS AFTER LOGIN:", [...activeSessions.keys()]);
+
     return res.json({ success: true, token, role: user.role, username: user.username });
   } else {
     return res.status(401).json({ error: "Invalid username or password." });
@@ -459,7 +473,7 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 // Get current configuration & state
 app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const db = await readDb();
-  const isSuper = req.user.role === "super-admin";
+  const isSuper = req.user?.role === "super-admin";
   
   const { passwordHash, users, ...safeDb } = db as any;
   const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
@@ -718,15 +732,47 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
   const updatedPosts = Array.from(currentPostsMap.values());
   updatedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Limit total stored posts to prevent huge file bloat (keep top 400 posts)
-  db.posts = updatedPosts.slice(0, 400);
-  await writeDb(db);
+  // Convert to legacy storage (temporary until migration is complete)
+db.posts = updatedPosts.slice(0, 400);
+await writeDb(db);
 
-  res.json({
-    channels: db.channels,
-    posts: db.posts,
-    fetchedCount: newlyFetchedCount
-  });
+// -------- NEW: Save posts into Supabase --------
+try {
+  const postEntities = db.posts.map(post => ({
+    id: post.id,
+    channel_username: post.channelUsername,
+    original_text: post.originalText,
+    edited_text: post.text,
+    photo_url: post.photoUrl ?? null,
+    telegram_url: post.url,
+    published_at: post.date,
+    status: post.status,
+  }));
+
+  await postService.savePosts(postEntities);
+
+  console.log(`Saved ${postEntities.length} posts to Supabase.`);
+} catch (err) {
+  console.error("Failed saving posts to Supabase:", err);
+}
+// -----------------------------------------------
+
+const latestPosts = (await postService.getRecentPosts(400)).map((p: any) => ({
+  id: p.id,
+  channelUsername: p.channel_username,
+  originalText: p.original_text,
+  text: p.edited_text,
+  photoUrl: p.photo_url,
+  date: p.published_at,
+  url: p.telegram_url,
+  status: p.status,
+}));
+
+res.json({
+  channels: db.channels,
+  posts: latestPosts,
+  fetchedCount: newlyFetchedCount
+});
 });
 
 // Trigger AI Content Curation (Gemini or OpenRouter)
@@ -885,22 +931,72 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
       if (photoUrl || post.photoUrl) {
         const activePhoto = photoUrl || post.photoUrl;
         const sendPhotoUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
-        const photoRes = await fetch(sendPhotoUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: formattedChannelId,
-            photo: activePhoto,
-            caption: formattedText,
-            parse_mode: "HTML"
-          })
-        });
+        const caption =
+  formattedText.length > 1024
+    ? formattedText.slice(0, 1020) + "..."
+    : formattedText;
 
-        responseData = await photoRes.json();
+const tempFile = await mediaService.downloadImage(activePhoto);
+
+if (!tempFile) {
+  throw new Error("Image download failed.");
+}
+
+const form = new FormData();
+
+form.append("chat_id", formattedChannelId);
+form.append("caption", caption);
+form.append("parse_mode", "HTML");
+const imageBuffer = fs.readFileSync(tempFile);
+
+form.append(
+  "photo",
+  new Blob([imageBuffer], { type: "image/jpeg" }),
+  "image.jpg"
+);
+
+const photoRes = await fetch(sendPhotoUrl, {
+  method: "POST",
+  body: form
+});
+
+mediaService.deleteTemp(tempFile);
+
+        console.log("Photo response status:", photoRes.status);
+console.log("Photo response content-type:", photoRes.headers.get("content-type"));
+
+const rawResponse = await photoRes.text();
+
+console.log("Photo raw response:", rawResponse);
+
+responseData = rawResponse ? JSON.parse(rawResponse) : {};
         if (photoRes.ok && responseData.ok) {
-          success = true;
-        } else {
-          console.warn(`sendPhoto failed for target ${target.name}, falling back to sendMessage:`, responseData);
+    success = true;
+
+    if (formattedText.length > 1024) {
+        const remaining = formattedText.slice(1020);
+
+        await fetch(
+            `https://api.telegram.org/bot${botToken}/sendMessage`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    chat_id: formattedChannelId,
+                    text: remaining,
+                    parse_mode: "HTML"
+                })
+            }
+        );
+    }
+} else {
+          console.error("========== TELEGRAM SENDPHOTO ERROR ==========");
+console.error("Target:", target.name);
+console.error("Photo URL:", activePhoto);
+console.error("Telegram response:", JSON.stringify(responseData, null, 2));
+console.error("==============================================");
           // Fallback to text message if photo posting fails
           const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
           const textFallbackRes = await fetch(sendMsgUrl, {
@@ -1048,6 +1144,31 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  app.post("/api/test-download", async (req, res) => {
+  try {
+    console.log("TEST DOWNLOAD START");
+
+    const { url } = req.body;
+    console.log("URL:", url);
+
+    const file = await mediaService.downloadImage(url);
+
+    console.log("DOWNLOADED:", file);
+
+    res.json({
+      success: true,
+      file,
+    });
+  } catch (err: any) {
+    console.error("TEST DOWNLOAD ERROR:", err);
+
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
