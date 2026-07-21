@@ -82,6 +82,89 @@ interface CuratorSettings {
   users?: CuratorUser[];
 }
 
+
+function normalizeTelegramMediaUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl) return undefined;
+
+  const trimmedUrl = rawUrl.trim();
+  if (!trimmedUrl) return undefined;
+
+  if (trimmedUrl.startsWith("//")) {
+    return `https:${trimmedUrl}`;
+  }
+
+  if (trimmedUrl.startsWith("/")) {
+    return `https://t.me${trimmedUrl}`;
+  }
+
+  return trimmedUrl;
+}
+
+function isValidTelegramPostMediaUrl(rawUrl?: string): rawUrl is string {
+  const normalizedUrl = normalizeTelegramMediaUrl(rawUrl);
+  if (!normalizedUrl) return false;
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(normalizedUrl);
+  } catch {
+    return false;
+  }
+
+  const pathname = parsedUrl.pathname.toLowerCase();
+  const hostname = parsedUrl.hostname.toLowerCase();
+
+  // Telegram post HTML can include decorative <img> assets such as emoji glyphs
+  // alongside real post media. Never treat those assets as downloadable media.
+  if (
+    pathname.includes("/img/emoji/") ||
+    pathname.includes("/emoji/") ||
+    pathname.includes("/stickers/") ||
+    pathname.endsWith(".svg") ||
+    pathname.includes("/img/icons/") ||
+    pathname.includes("/img/tgme/")
+  ) {
+    return false;
+  }
+
+  return parsedUrl.protocol === "https:" && (
+    hostname === "cdn4.telegram-cdn.org" ||
+    hostname.endsWith(".telegram-cdn.org") ||
+    hostname === "t.me" ||
+    hostname === "telegram.org"
+  );
+}
+
+function extractTelegramPhotoUrl(block: string): string | undefined {
+  const mediaUrlMatches = [
+    // Prefer Telegram's actual message photo wrapper instead of any image/style in the post.
+    block.match(/tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\(['"]?([^'")]+)['"]?\)/),
+    block.match(/tgme_widget_message_video_thumb[^"]*"[^>]*style="[^"]*background-image:\s*url\(['"]?([^'")]+)['"]?\)/),
+  ];
+
+  for (const match of mediaUrlMatches) {
+    const normalizedUrl = normalizeTelegramMediaUrl(match?.[1]);
+    if (isValidTelegramPostMediaUrl(normalizedUrl)) {
+      return normalizedUrl;
+    }
+  }
+
+  // Backwards-compatible fallback for older Telegram markup, but reject avatars,
+  // emoji images, and decorative icons before assigning photoUrl.
+  const backgroundImageMatches = block.matchAll(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/g);
+  for (const match of backgroundImageMatches) {
+    const nearbyMarkup = block.slice(Math.max(0, (match.index ?? 0) - 200), match.index);
+    if (nearbyMarkup.includes("tgme_widget_message_owner_photo")) continue;
+
+    const normalizedUrl = normalizeTelegramMediaUrl(match[1]);
+    if (isValidTelegramPostMediaUrl(normalizedUrl)) {
+      return normalizedUrl;
+    }
+  }
+
+  return undefined;
+}
+
 // Database storage
 const DATA_FILE = path.join(process.cwd(), "settings-db.json");
 
@@ -636,19 +719,9 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
           date = dateMatch[1];
         }
 
-        // Extract image photo URL
-        let photoUrl: string | undefined = undefined;
-        // Search background-image style in photo wrap
-        const photoMatch = block.match(/tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\(['"]?([^'")]+)['"]?\)/);
-        if (photoMatch) {
-          photoUrl = photoMatch[1];
-        } else {
-          // General media style fallback
-          const generalMediaMatch = block.match(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/);
-          if (generalMediaMatch && !generalMediaMatch[1].includes("tgme_widget_message_owner_photo")) {
-            photoUrl = generalMediaMatch[1];
-          }
-        }
+        // Extract image photo URL. Telegram embeds emoji/decorative assets in post
+        // HTML too, so only keep URLs that validate as actual post media.
+        const photoUrl = extractTelegramPhotoUrl(block);
 
         // Apply keyword/hashtag rules
         const textToMatch = db.filters.caseSensitive ? originalText : originalText.toLowerCase();
