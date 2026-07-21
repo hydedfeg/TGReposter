@@ -165,6 +165,23 @@ function extractTelegramPhotoUrl(block: string): string | undefined {
   return undefined;
 }
 
+function repairLegacyPhotoUrl(existingPhotoUrl?: string, newlyExtractedPhotoUrl?: string): string | undefined {
+  const normalizedExistingPhotoUrl = normalizeTelegramMediaUrl(existingPhotoUrl);
+  const normalizedNewPhotoUrl = normalizeTelegramMediaUrl(newlyExtractedPhotoUrl);
+  const hasValidExistingPhotoUrl = isValidTelegramPostMediaUrl(normalizedExistingPhotoUrl);
+  const hasValidNewPhotoUrl = isValidTelegramPostMediaUrl(normalizedNewPhotoUrl);
+
+  if (!hasValidExistingPhotoUrl) {
+    return hasValidNewPhotoUrl ? normalizedNewPhotoUrl : undefined;
+  }
+
+  if (normalizedExistingPhotoUrl !== existingPhotoUrl) {
+    return normalizedExistingPhotoUrl;
+  }
+
+  return existingPhotoUrl;
+}
+
 // Database storage
 const DATA_FILE = path.join(process.cwd(), "settings-db.json");
 
@@ -766,8 +783,12 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
 
         const initialStatus = isMatch ? "pending" : "archived";
 
-        // Create or update curated post
-        if (!currentPostsMap.has(postId)) {
+        // Create new curated posts, or self-heal only legacy media data for
+        // existing posts created before the emoji-media extraction fix. This
+        // intentionally does not overwrite status, edits, AI output,
+        // moderation state, or publish history.
+        const existingPost = currentPostsMap.get(postId);
+        if (!existingPost) {
           const newPost: CuratedPost = {
             id: postId,
             channelUsername: cleanUsername,
@@ -780,6 +801,11 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
           };
           currentPostsMap.set(postId, newPost);
           newlyFetchedCount++;
+        } else {
+          const repairedPhotoUrl = repairLegacyPhotoUrl(existingPost.photoUrl, photoUrl);
+          if (repairedPhotoUrl !== existingPost.photoUrl) {
+            existingPost.photoUrl = repairedPhotoUrl;
+          }
         }
         parsedCount++;
       }
