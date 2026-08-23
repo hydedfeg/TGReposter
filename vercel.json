@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/[...path]"
+      "destination": "https://api.tgreposter.com/api/:path*"
     }
   ]
 }
