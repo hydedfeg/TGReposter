@@ -137,6 +137,7 @@ async function stopServer(child: ChildProcessWithoutNullStreams) {
 
 test("Telegram publishing route regression suite", { timeout: 45_000 }, async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tgreposter-publish-tests-"));
+  fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(tempDir, "node_modules"), "dir");
   writeState(tempDir, [targetA]);
   writeControl(tempDir, {});
 
