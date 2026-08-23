@@ -36,7 +36,9 @@ interface CuratedPost {
   channelUsername: string;
   originalText: string;
   text: string;
+  mediaType?: 'photo' | 'video';
   photoUrl?: string;
+  videoUrl?: string;
   date: string;
   url: string;
   status: 'pending' | 'approved' | 'posted' | 'archived';
@@ -140,9 +142,9 @@ function isValidTelegramPostMediaUrl(rawUrl?: string): rawUrl is string {
 
 function extractTelegramPhotoUrl(block: string): string | undefined {
   const mediaUrlMatches = [
-    // Prefer Telegram's actual message photo wrapper instead of any image/style in the post.
+    // Prefer Telegram's actual message photo wrapper. Video thumbnails are handled
+    // separately and must never be promoted to authoritative photo media.
     block.match(/tgme_widget_message_photo_wrap[^"]*"[^>]*style="[^"]*background-image:\s*url\(['"]?([^'")]+)['"]?\)/),
-    block.match(/tgme_widget_message_video_thumb[^"]*"[^>]*style="[^"]*background-image:\s*url\(['"]?([^'")]+)['"]?\)/),
   ];
 
   for (const match of mediaUrlMatches) {
@@ -153,13 +155,35 @@ function extractTelegramPhotoUrl(block: string): string | undefined {
   }
 
   // Backwards-compatible fallback for older Telegram markup, but reject avatars,
-  // emoji images, and decorative icons before assigning photoUrl.
+  // video thumbnails, emoji images, and decorative icons before assigning photoUrl.
   const backgroundImageMatches = block.matchAll(/background-image:\s*url\(['"]?([^'")]+)['"]?\)/g);
   for (const match of backgroundImageMatches) {
     const nearbyMarkup = block.slice(Math.max(0, (match.index ?? 0) - 200), match.index);
-    if (nearbyMarkup.includes("tgme_widget_message_owner_photo")) continue;
+    if (
+      nearbyMarkup.includes("tgme_widget_message_owner_photo") ||
+      nearbyMarkup.includes("tgme_widget_message_video_thumb")
+    ) {
+      continue;
+    }
 
     const normalizedUrl = normalizeTelegramMediaUrl(match[1]);
+    if (isValidTelegramPostMediaUrl(normalizedUrl)) {
+      return normalizedUrl;
+    }
+  }
+
+  return undefined;
+}
+
+function extractTelegramVideoUrl(block: string): string | undefined {
+  const videoMatches = [
+    block.match(/<video[^>]*class="[^"]*tgme_widget_message_video[^"]*"[^>]*src="([^"]+)"/i),
+    block.match(/<video[^>]*src="([^"]+)"[^>]*class="[^"]*tgme_widget_message_video[^"]*"/i),
+    block.match(/class="[^"]*tgme_widget_message_video[^"]*"[^>]*src="([^"]+)"/i),
+  ];
+
+  for (const match of videoMatches) {
+    const normalizedUrl = normalizeTelegramMediaUrl(match?.[1]);
     if (isValidTelegramPostMediaUrl(normalizedUrl)) {
       return normalizedUrl;
     }
@@ -773,8 +797,15 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
             .trim();
         }
 
-        // If post has no text, skip or provide empty placeholder
-        if (!originalText) continue;
+        // Extract actual Telegram media before deciding whether the post is empty.
+        // Video source lives on .tgme_widget_message_video; its thumbnail is not the video.
+        const videoUrl = extractTelegramVideoUrl(block);
+        const photoUrl = extractTelegramPhotoUrl(block);
+        const mediaType: CuratedPost['mediaType'] = videoUrl ? 'video' : photoUrl ? 'photo' : undefined;
+
+        // Preserve media-only posts too. Text filters can still archive them when they
+        // do not match configured keywords, but the collector must not discard them.
+        if (!originalText && !photoUrl && !videoUrl) continue;
 
         // Extract date
         let date = new Date().toISOString();
@@ -782,10 +813,6 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
         if (dateMatch) {
           date = dateMatch[1];
         }
-
-        // Extract image photo URL. Telegram embeds emoji/decorative assets in post
-        // HTML too, so only keep URLs that validate as actual post media.
-        const photoUrl = extractTelegramPhotoUrl(block);
 
         // Apply keyword/hashtag rules
         const textToMatch = db.filters.caseSensitive ? originalText : originalText.toLowerCase();
@@ -830,9 +857,8 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
 
         const initialStatus = isMatch ? "pending" : "archived";
 
-        // Create new curated posts, or self-heal only legacy media data for
-        // existing posts created before the emoji-media extraction fix. This
-        // intentionally does not overwrite status, edits, AI output,
+        // Create new curated posts, or self-heal only media data for existing posts.
+        // This intentionally does not overwrite status, edits, AI output,
         // moderation state, or publish history.
         const existingPost = currentPostsMap.get(postId);
         if (!existingPost) {
@@ -841,17 +867,30 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
             channelUsername: cleanUsername,
             originalText,
             text: originalText, // Copy original initially so the user can tweak it
+            mediaType,
             photoUrl,
+            videoUrl,
             date,
             url: `https://t.me/${postId}`,
             status: initialStatus
           };
           currentPostsMap.set(postId, newPost);
           newlyFetchedCount++;
+        } else if (videoUrl) {
+          // Existing video posts created before video support often stored the thumbnail
+          // as photoUrl. Keep edits/status intact while attaching the authoritative video.
+          existingPost.videoUrl = videoUrl;
+          existingPost.mediaType = 'video';
+          if (!photoUrl) {
+            existingPost.photoUrl = undefined;
+          }
         } else {
           const repairedPhotoUrl = repairLegacyPhotoUrl(existingPost.photoUrl, photoUrl);
           if (repairedPhotoUrl !== existingPost.photoUrl) {
             existingPost.photoUrl = repairedPhotoUrl;
+          }
+          if (repairedPhotoUrl) {
+            existingPost.mediaType = 'photo';
           }
         }
         parsedCount++;
@@ -889,7 +928,9 @@ try {
     channel_username: post.channelUsername,
     original_text: post.originalText,
     edited_text: post.text,
+    media_type: post.mediaType ?? null,
     photo_url: post.photoUrl ?? null,
+    video_url: post.videoUrl ?? null,
     telegram_url: post.url,
     published_at: post.date,
     status: post.status,
@@ -908,7 +949,9 @@ const latestPosts = (await postService.getRecentPosts(400)).map((p: any) => ({
   channelUsername: p.channel_username,
   originalText: p.original_text,
   text: p.edited_text,
+  mediaType: p.media_type,
   photoUrl: p.photo_url,
+  videoUrl: p.video_url,
   date: p.published_at,
   url: p.telegram_url,
   status: p.status,
@@ -1074,9 +1117,134 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
       let responseData: any = null;
       let targetWarning: string | undefined;
 
-      // Always use the backend-stored media for the authoritative post record.
+      // Always use backend-stored media from the authoritative post record.
+      // Prefer an actual video over any legacy thumbnail/photo field on video posts.
+      const activeVideo = post.videoUrl;
       const activePhoto = post.photoUrl;
-      if (activePhoto) {
+      if (activeVideo) {
+        const sendVideoUrl = `https://api.telegram.org/bot${botToken}/sendVideo`;
+        const captionParts = splitTelegramText(formattedText, 1000);
+        const caption = captionParts.shift() || "";
+        let downloadedVideo: Awaited<ReturnType<typeof mediaService.downloadVideoWithMetadata>> = null;
+        let videoPublished = false;
+        let mediaFailure = "";
+
+        const parseTelegramResponse = async (telegramResponse: Response, context: string) => {
+          const raw = await telegramResponse.text();
+          try {
+            return raw ? JSON.parse(raw) : {};
+          } catch {
+            return {
+              ok: false,
+              description: `Telegram returned an invalid response while ${context} (HTTP ${telegramResponse.status}).`
+            };
+          }
+        };
+
+        try {
+          downloadedVideo = await mediaService.downloadVideoWithMetadata(activeVideo);
+          if (!downloadedVideo) {
+            throw new Error("Video download failed.");
+          }
+
+          const form = new FormData();
+          form.append("chat_id", formattedChannelId);
+          form.append("supports_streaming", "true");
+          if (caption) {
+            form.append("caption", caption);
+          }
+
+          const videoBuffer = fs.readFileSync(downloadedVideo.filepath);
+          form.append(
+            "video",
+            new Blob([videoBuffer], { type: downloadedVideo.contentType }),
+            downloadedVideo.filename
+          );
+
+          const videoRes = await fetch(sendVideoUrl, {
+            method: "POST",
+            body: form
+          });
+
+          responseData = await parseTelegramResponse(videoRes, "sending the video");
+          if (videoRes.ok && responseData.ok) {
+            videoPublished = true;
+            success = true;
+
+            // Video captions share Telegram's 1024-character caption limit. Send the
+            // rest as ordinary plain-text messages so long posts remain intact.
+            for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
+              const continuationRes = await fetch(
+                `https://api.telegram.org/bot${botToken}/sendMessage`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    chat_id: formattedChannelId,
+                    text: captionParts[chunkIndex],
+                    disable_web_page_preview: false
+                  })
+                }
+              );
+
+              const continuationData = await parseTelegramResponse(continuationRes, "sending video continuation text");
+              if (!continuationRes.ok || !continuationData.ok) {
+                success = false;
+                const telegramError = continuationData.description || "Unknown Telegram continuation error";
+                responseData = {
+                  ok: false,
+                  description: `Video published, but continuation chunk ${chunkIndex + 1}/${captionParts.length} failed: ${telegramError}`
+                };
+                break;
+              }
+            }
+          } else {
+            mediaFailure = responseData.description || "Telegram rejected the video upload.";
+          }
+        } catch (err: any) {
+          mediaFailure = err.message || "Telegram video publishing failed.";
+        } finally {
+          mediaService.deleteTemp(downloadedVideo?.filepath);
+        }
+
+        if (!videoPublished && !success) {
+          const fallbackText = formattedText.trim()
+            ? `${formattedText}\n\nVideo: ${post.url}`
+            : `Video: ${post.url}`;
+          const fallbackChunks = splitTelegramText(fallbackText);
+          const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+          let fallbackSucceeded = fallbackChunks.length > 0;
+
+          for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
+            const fallbackRes = await fetch(sendMsgUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: formattedChannelId,
+                text: fallbackChunks[chunkIndex],
+                disable_web_page_preview: false
+              })
+            });
+
+            const fallbackData = await parseTelegramResponse(fallbackRes, "sending the video text fallback");
+            if (!fallbackRes.ok || !fallbackData.ok) {
+              fallbackSucceeded = false;
+              const telegramError = fallbackData.description || "Unknown Telegram fallback error";
+              responseData = {
+                ok: false,
+                description: `Video publish failed: ${mediaFailure || "unknown media error"}. Text fallback chunk ${chunkIndex + 1}/${fallbackChunks.length} also failed: ${telegramError}`
+              };
+              break;
+            }
+          }
+
+          if (fallbackSucceeded) {
+            success = true;
+            targetWarning = `Video was not attached; text fallback was published instead: ${mediaFailure || "Telegram video upload failed."}`;
+            responseData = { ok: true };
+          }
+        }
+      } else if (activePhoto) {
         const sendPhotoUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
         const captionParts = splitTelegramText(formattedText, 1000);
         const caption = captionParts.shift() || "";
