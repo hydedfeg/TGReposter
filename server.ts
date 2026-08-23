@@ -974,7 +974,7 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
 
 // Post curated text directly to target Telegram channels via Telegram Bot API
 app.post("/api/post-telegram", authMiddleware, async (req, res) => {
-  const { postId, text, photoUrl, targetIds } = req.body;
+  const { postId, text, targetIds } = req.body;
   const db = await readDb();
   const { botToken, targets, channelId } = db.destination;
 
@@ -1026,9 +1026,9 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
       let success = false;
       let responseData: any = null;
 
-      // Format photo payload if photo URL exists
-      if (photoUrl || post.photoUrl) {
-        const activePhoto = photoUrl || post.photoUrl;
+      // Always use the backend-stored media for the authoritative post record.
+      const activePhoto = post.photoUrl;
+      if (activePhoto) {
         const sendPhotoUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
         const caption =
   formattedText.length > 1024
