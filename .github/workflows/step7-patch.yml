@@ -1,0 +1,77 @@
+name: Apply Step 7 publishing patch
+
+on:
+  push:
+    branches:
+      - bot-step-7-multitarget-robustness
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bot-step-7-multitarget-robustness
+          fetch-depth: 0
+
+      - name: Patch multi-target publishing
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('server.ts')
+          text = path.read_text()
+
+          helper_anchor = '''  return chunks;\n}\n\n// Database storage'''
+          helper_replacement = '''  return chunks;\n}\n\n// Bound Telegram Bot API requests so one slow destination cannot stall publishing indefinitely.\n// Media uploads get a wider window than ordinary text requests; no automatic retries are used\n// because an ambiguous Telegram timeout could otherwise create duplicate posts.\nasync function fetchTelegramWithTimeout(\n  input: string | URL | Request,\n  init?: RequestInit\n): Promise<Response> {\n  const requestUrl =\n    typeof input === "string"\n      ? input\n      : input instanceof URL\n        ? input.toString()\n        : input.url;\n  const timeoutMs = /\\/send(?:Photo|Video)$/.test(requestUrl) ? 90_000 : 30_000;\n  const controller = new AbortController();\n  const timeout = setTimeout(() => controller.abort(), timeoutMs);\n\n  try {\n    return await fetch(input, { ...init, signal: controller.signal });\n  } catch (err: any) {\n    if (err?.name === "AbortError") {\n      throw new Error(`Telegram request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);\n    }\n    throw err;\n  } finally {\n    clearTimeout(timeout);\n  }\n}\n\n// Database storage'''
+          if helper_anchor not in text:
+              raise SystemExit('helper anchor not found')
+          text = text.replace(helper_anchor, helper_replacement, 1)
+
+          route_start = text.index('// Post curated text directly to target Telegram channels via Telegram Bot API')
+          route_end = text.index('// Test bot connectivity in stages so configuration errors are easy to diagnose.')
+          route = text[route_start:route_end]
+
+          old_loop_header = '''  const results: { targetId: string; name: string; success: boolean; error?: string; warning?: string }[] = [];\n  let atLeastOneSuccess = false;\n\n  for (const target of activeTargets) {'''
+          new_loop_header = '''  const results: { targetId: string; name: string; success: boolean; error?: string; warning?: string }[] = [];\n  let atLeastOneSuccess = false;\n\n  await Promise.all(activeTargets.map(async (target) => {'''
+          if old_loop_header not in route:
+              raise SystemExit('loop header not found')
+          route = route.replace(old_loop_header, new_loop_header, 1)
+
+          empty_target_block = '''      continue;\n    }\n\n    let formattedChannelId = rawChannelId;'''
+          empty_target_replacement = '''      return;\n    }\n\n    let formattedChannelId = rawChannelId;'''
+          if empty_target_block not in route:
+              raise SystemExit('empty target continue not found')
+          route = route.replace(empty_target_block, empty_target_replacement, 1)
+
+          # Every fetch inside this route is a Telegram Bot API send. Apply timeouts uniformly.
+          route = route.replace('await fetch(', 'await fetchTelegramWithTimeout(')
+
+          old_loop_end = '''    }\n  }\n\n  if (atLeastOneSuccess) {'''
+          new_loop_end = '''    }\n  }));\n\n  // Promise completion order is nondeterministic; restore configured target order for callers.\n  const targetOrder = new Map(activeTargets.map((target, index) => [target.id, index]));\n  results.sort(\n    (a, b) => (targetOrder.get(a.targetId) ?? Number.MAX_SAFE_INTEGER) -\n      (targetOrder.get(b.targetId) ?? Number.MAX_SAFE_INTEGER)\n  );\n\n  const successCount = results.filter(result => result.success).length;\n  const failureCount = results.length - successCount;\n  const warningCount = results.filter(result => !!result.warning).length;\n  atLeastOneSuccess = successCount > 0;\n  const outcome: "success" | "partial" | "failure" =\n    successCount === results.length\n      ? "success"\n      : successCount > 0\n        ? "partial"\n        : "failure";\n\n  if (atLeastOneSuccess) {'''
+          if old_loop_end not in route:
+              raise SystemExit('loop end not found')
+          route = route.replace(old_loop_end, new_loop_end, 1)
+
+          old_return = '''  return res.json({\n    success: atLeastOneSuccess,\n    post: db.posts[postIdx],\n    results,\n    destination: db.destination\n  });'''
+          new_return = '''  return res.json({\n    success: atLeastOneSuccess,\n    outcome,\n    summary: {\n      total: results.length,\n      succeeded: successCount,\n      failed: failureCount,\n      warnings: warningCount\n    },\n    post: db.posts[postIdx],\n    results,\n    destination: db.destination\n  });'''
+          if old_return not in route:
+              raise SystemExit('return block not found')
+          route = route.replace(old_return, new_return, 1)
+
+          text = text[:route_start] + route + text[route_end:]
+          path.write_text(text)
+          PY
+
+          rm .github/workflows/step7-patch.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server.ts .github/workflows/step7-patch.yml
+          git commit -m "fix(bot): make multi-target publishing concurrent and bounded"
+          git push origin HEAD:bot-step-7-multitarget-robustness
