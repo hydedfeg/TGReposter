@@ -253,6 +253,35 @@ function splitTelegramText(text: string, maxLength = 4000): string[] {
   return chunks;
 }
 
+// Bound Telegram Bot API requests so one slow destination cannot stall publishing indefinitely.
+// Media uploads get a wider window than ordinary text requests; no automatic retries are used
+// because an ambiguous Telegram timeout could otherwise create duplicate posts.
+async function fetchTelegramWithTimeout(
+  input: string | URL | Request,
+  init?: RequestInit
+): Promise<Response> {
+  const requestUrl =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input.url;
+  const timeoutMs = /\/send(?:Photo|Video)$/.test(requestUrl) ? 90_000 : 30_000;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      throw new Error(`Telegram request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Database storage
 const DATA_FILE = path.join(process.cwd(), "settings-db.json");
 
@@ -1168,7 +1197,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   const results: { targetId: string; name: string; success: boolean; error?: string; warning?: string }[] = [];
   let atLeastOneSuccess = false;
 
-  for (const target of activeTargets) {
+  await Promise.all(activeTargets.map(async (target) => {
     const dbTargetIdx = db.destination.targets?.findIndex(t => t.id === target.id);
     const rawChannelId = typeof target.channelId === "string" ? target.channelId.trim() : "";
 
@@ -1179,7 +1208,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
         db.destination.targets[dbTargetIdx].status = "error";
         db.destination.targets[dbTargetIdx].errorMessage = error;
       }
-      continue;
+      return;
     }
 
     let formattedChannelId = rawChannelId;
@@ -1236,7 +1265,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
             downloadedVideo.filename
           );
 
-          const videoRes = await fetch(sendVideoUrl, {
+          const videoRes = await fetchTelegramWithTimeout(sendVideoUrl, {
             method: "POST",
             body: form
           });
@@ -1249,7 +1278,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
             // Video captions share Telegram's 1024-character caption limit. Send the
             // rest as ordinary plain-text messages so long posts remain intact.
             for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
-              const continuationRes = await fetch(
+              const continuationRes = await fetchTelegramWithTimeout(
                 `https://api.telegram.org/bot${botToken}/sendMessage`,
                 {
                   method: "POST",
@@ -1291,7 +1320,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
           let fallbackSucceeded = fallbackChunks.length > 0;
 
           for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
-            const fallbackRes = await fetch(sendMsgUrl, {
+            const fallbackRes = await fetchTelegramWithTimeout(sendMsgUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1358,7 +1387,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
             downloadedImage.filename
           );
 
-          const photoRes = await fetch(sendPhotoUrl, {
+          const photoRes = await fetchTelegramWithTimeout(sendPhotoUrl, {
             method: "POST",
             body: form
           });
@@ -1371,7 +1400,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
             // Telegram photo captions are limited to 1024 characters. Any remaining
             // text is sent as plain continuation messages without parse_mode.
             for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
-              const continuationRes = await fetch(
+              const continuationRes = await fetchTelegramWithTimeout(
                 `https://api.telegram.org/bot${botToken}/sendMessage`,
                 {
                   method: "POST",
@@ -1416,7 +1445,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
           let fallbackSucceeded = fallbackChunks.length > 0;
 
           for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
-            const fallbackRes = await fetch(sendMsgUrl, {
+            const fallbackRes = await fetchTelegramWithTimeout(sendMsgUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1454,7 +1483,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
 
         const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
         for (let chunkIndex = 0; chunkIndex < textChunks.length; chunkIndex++) {
-          const textRes = await fetch(sendMsgUrl, {
+          const textRes = await fetchTelegramWithTimeout(sendMsgUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1517,7 +1546,25 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
         db.destination.targets[dbTargetIdx].errorMessage = err.message;
       }
     }
-  }
+  }));
+
+  // Promise completion order is nondeterministic; restore configured target order for callers.
+  const targetOrder = new Map(activeTargets.map((target, index) => [target.id, index]));
+  results.sort(
+    (a, b) => (targetOrder.get(a.targetId) ?? Number.MAX_SAFE_INTEGER) -
+      (targetOrder.get(b.targetId) ?? Number.MAX_SAFE_INTEGER)
+  );
+
+  const successCount = results.filter(result => result.success).length;
+  const failureCount = results.length - successCount;
+  const warningCount = results.filter(result => !!result.warning).length;
+  atLeastOneSuccess = successCount > 0;
+  const outcome: "success" | "partial" | "failure" =
+    successCount === results.length
+      ? "success"
+      : successCount > 0
+        ? "partial"
+        : "failure";
 
   if (atLeastOneSuccess) {
     // Update post status to posted
@@ -1542,6 +1589,13 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   await writeDb(db);
   return res.json({
     success: atLeastOneSuccess,
+    outcome,
+    summary: {
+      total: results.length,
+      succeeded: successCount,
+      failed: failureCount,
+      warnings: warningCount
+    },
     post: db.posts[postIdx],
     results,
     destination: db.destination
