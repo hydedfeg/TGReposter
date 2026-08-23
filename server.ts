@@ -82,7 +82,6 @@ interface CuratorSettings {
   users?: CuratorUser[];
 }
 
-
 function normalizeTelegramMediaUrl(rawUrl?: string): string | undefined {
   if (!rawUrl) return undefined;
 
@@ -180,6 +179,50 @@ function repairLegacyPhotoUrl(existingPhotoUrl?: string, newlyExtractedPhotoUrl?
   }
 
   return existingPhotoUrl;
+}
+
+// Keep text-only Telegram messages below the documented 4096-character limit.
+// Array.from() splits by Unicode code point, so emoji/surrogate pairs are never cut in half.
+function splitTelegramText(text: string, maxLength = 4000): string[] {
+  const characters = Array.from(text);
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < characters.length) {
+    const remainingLength = characters.length - start;
+    if (remainingLength <= maxLength) {
+      const finalChunk = characters.slice(start).join("");
+      if (finalChunk.trim()) chunks.push(finalChunk);
+      break;
+    }
+
+    const window = characters.slice(start, start + maxLength);
+    const minimumNaturalBreak = Math.floor(maxLength * 0.6);
+    let splitAt = -1;
+
+    for (let i = window.length - 1; i >= minimumNaturalBreak; i--) {
+      if (window[i] === "\n") {
+        splitAt = i + 1;
+        break;
+      }
+    }
+
+    if (splitAt === -1) {
+      for (let i = window.length - 1; i >= minimumNaturalBreak; i--) {
+        if (/\s/.test(window[i])) {
+          splitAt = i + 1;
+          break;
+        }
+      }
+    }
+
+    const take = splitAt > 0 ? splitAt : maxLength;
+    const chunk = characters.slice(start, start + take).join("");
+    if (chunk.trim()) chunks.push(chunk);
+    start += take;
+  }
+
+  return chunks;
 }
 
 // Database storage
@@ -1115,22 +1158,47 @@ console.error("==============================================");
           }
         }
       } else {
-        // Send normal text message
-        const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-        const textRes = await fetch(sendMsgUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: formattedChannelId,
-            text: formattedText,
-            parse_mode: "HTML",
-            disable_web_page_preview: false
-          })
-        });
+        // Text-only publishing intentionally avoids parse_mode. Curated/user text can
+        // contain literal <, >, &, or model-generated markup that is not valid Telegram HTML.
+        const textChunks = splitTelegramText(formattedText);
+        if (textChunks.length === 0) {
+          throw new Error("Cannot publish an empty text post.");
+        }
 
-        responseData = await textRes.json();
-        if (textRes.ok && responseData.ok) {
-          success = true;
+        const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        for (let chunkIndex = 0; chunkIndex < textChunks.length; chunkIndex++) {
+          const textRes = await fetch(sendMsgUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              chat_id: formattedChannelId,
+              text: textChunks[chunkIndex],
+              disable_web_page_preview: false
+            })
+          });
+
+          const rawTextResponse = await textRes.text();
+          try {
+            responseData = rawTextResponse ? JSON.parse(rawTextResponse) : {};
+          } catch {
+            responseData = {
+              ok: false,
+              description: `Telegram returned an invalid response while sending text chunk ${chunkIndex + 1}/${textChunks.length}.`
+            };
+          }
+
+          if (!textRes.ok || !responseData.ok) {
+            const telegramError = responseData.description || "Unknown Telegram text publishing error";
+            responseData = {
+              ...responseData,
+              description: `Text chunk ${chunkIndex + 1}/${textChunks.length} failed: ${telegramError}`
+            };
+            break;
+          }
+
+          if (chunkIndex === textChunks.length - 1) {
+            success = true;
+          }
         }
       }
 
@@ -1354,7 +1422,6 @@ app.post("/api/test-bot", authMiddleware, async (req, res) => {
     });
   }
 });
-
 
 // Serve static Vite files in production, else mount development Vite server middleware
 async function startServer() {
