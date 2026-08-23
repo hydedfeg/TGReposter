@@ -1072,18 +1072,80 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "Bot Token is missing in configuration." });
   }
 
-  // Identify active targets to post to
-  let activeTargets = targets ? targets.filter(t => t.enabled) : [];
-  
-  if (targetIds && Array.isArray(targetIds)) {
-    activeTargets = targets.filter(t => targetIds.includes(t.id));
+  const configuredTargets = Array.isArray(targets) ? targets : [];
+  let activeTargets: DestinationTarget[] = [];
+
+  if (targetIds !== undefined) {
+    if (!Array.isArray(targetIds)) {
+      return res.status(400).json({ error: "targetIds must be an array when provided." });
+    }
+
+    const hasMalformedTargetId = targetIds.some(
+      (targetId: unknown) => typeof targetId !== "string" || targetId.trim().length === 0
+    );
+    if (hasMalformedTargetId) {
+      return res.status(400).json({ error: "Every selected target ID must be a non-empty string." });
+    }
+
+    const requestedTargetIds = Array.from(
+      new Set(targetIds.map((targetId: string) => targetId.trim()))
+    );
+
+    if (requestedTargetIds.length === 0) {
+      return res.status(400).json({ error: "No Telegram targets were selected." });
+    }
+
+    const configuredById = new Map(configuredTargets.map(target => [target.id, target]));
+    const unknownTargetIds = requestedTargetIds.filter(targetId => !configuredById.has(targetId));
+    if (unknownTargetIds.length > 0) {
+      return res.status(400).json({
+        error: `Unknown Telegram target ID${unknownTargetIds.length === 1 ? "" : "s"}: ${unknownTargetIds.join(", ")}.`,
+        invalidTargetIds: unknownTargetIds
+      });
+    }
+
+    const disabledTargetIds = requestedTargetIds.filter(
+      targetId => configuredById.get(targetId)?.enabled !== true
+    );
+    if (disabledTargetIds.length > 0) {
+      return res.status(400).json({
+        error: `Disabled Telegram target${disabledTargetIds.length === 1 ? "" : "s"} cannot be selected for publishing: ${disabledTargetIds.join(", ")}.`,
+        disabledTargetIds
+      });
+    }
+
+    const requestedTargetIdSet = new Set(requestedTargetIds);
+    const seenTargetIds = new Set<string>();
+    activeTargets = configuredTargets.filter(target => {
+      if (!target.enabled || !requestedTargetIdSet.has(target.id) || seenTargetIds.has(target.id)) {
+        return false;
+      }
+      seenTargetIds.add(target.id);
+      return true;
+    });
+  } else {
+    const seenTargetIds = new Set<string>();
+    activeTargets = configuredTargets.filter(target => {
+      if (!target.enabled || seenTargetIds.has(target.id)) {
+        return false;
+      }
+      seenTargetIds.add(target.id);
+      return true;
+    });
   }
 
-  // Fallback to old single channelId configuration if targets array is empty
-  if (activeTargets.length === 0 && channelId) {
+  // The legacy single-channel fallback is only for configurations that have never
+  // migrated to destination.targets. Never bypass intentionally disabled targets.
+  const legacyChannelId = typeof channelId === "string" ? channelId.trim() : "";
+  if (
+    targetIds === undefined &&
+    activeTargets.length === 0 &&
+    configuredTargets.length === 0 &&
+    legacyChannelId
+  ) {
     activeTargets = [{
       id: "legacy",
-      channelId: channelId,
+      channelId: legacyChannelId,
       name: "Default Target",
       enabled: true,
       status: "idle"
@@ -1107,7 +1169,20 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   let atLeastOneSuccess = false;
 
   for (const target of activeTargets) {
-    let formattedChannelId = target.channelId.trim();
+    const dbTargetIdx = db.destination.targets?.findIndex(t => t.id === target.id);
+    const rawChannelId = typeof target.channelId === "string" ? target.channelId.trim() : "";
+
+    if (!rawChannelId) {
+      const error = "Target channel/group ID is empty.";
+      results.push({ targetId: target.id, name: target.name, success: false, error });
+      if (dbTargetIdx !== undefined && dbTargetIdx !== -1) {
+        db.destination.targets[dbTargetIdx].status = "error";
+        db.destination.targets[dbTargetIdx].errorMessage = error;
+      }
+      continue;
+    }
+
+    let formattedChannelId = rawChannelId;
     if (!formattedChannelId.startsWith("@") && !formattedChannelId.startsWith("-") && isNaN(Number(formattedChannelId))) {
       formattedChannelId = `@${formattedChannelId}`;
     }
@@ -1414,8 +1489,6 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
         }
       }
 
-      const dbTargetIdx = db.destination.targets?.findIndex(t => t.id === target.id);
-
       if (success) {
         results.push({
           targetId: target.id,
@@ -1439,7 +1512,6 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     } catch (err: any) {
       console.error(`Error posting to target ${target.name}:`, err);
       results.push({ targetId: target.id, name: target.name, success: false, error: err.message });
-      const dbTargetIdx = db.destination.targets?.findIndex(t => t.id === target.id);
       if (dbTargetIdx !== undefined && dbTargetIdx !== -1) {
         db.destination.targets[dbTargetIdx].status = "error";
         db.destination.targets[dbTargetIdx].errorMessage = err.message;
