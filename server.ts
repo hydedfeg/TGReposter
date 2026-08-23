@@ -1191,39 +1191,167 @@ console.error("==============================================");
   });
 });
 
-// Test bot connectivity
+// Test bot connectivity in stages so configuration errors are easy to diagnose.
 app.post("/api/test-bot", authMiddleware, async (req, res) => {
-  const { botToken, channelId } = req.body;
+  const botToken = typeof req.body?.botToken === "string" ? req.body.botToken.trim() : "";
+  const channelId = typeof req.body?.channelId === "string" ? req.body.channelId.trim() : "";
+
   if (!botToken || !channelId) {
-    return res.status(400).json({ error: "Missing Bot Token or Channel ID" });
+    return res.status(400).json({
+      success: false,
+      stage: "input",
+      error: "Bot Token and Channel ID are required."
+    });
   }
 
-  let formattedChannelId = channelId.trim();
+  let formattedChannelId = channelId;
   if (!formattedChannelId.startsWith("@") && !formattedChannelId.startsWith("-") && isNaN(Number(formattedChannelId))) {
     formattedChannelId = `@${formattedChannelId}`;
   }
 
-  try {
-    const testMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-    const response = await fetch(testMsgUrl, {
+  const callTelegram = async (method: string, payload: Record<string, unknown> = {}) => {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: formattedChannelId,
-        text: `🤖 <b>Telegram Content Curator Connected!</b>\n\nYour connection to this channel/group has been verified successfully. Date: ${new Date().toLocaleString()}`,
-        parse_mode: "HTML"
-      })
+      body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
-    if (response.ok && data.ok) {
-      res.json({ success: true, message: `Verification successful! Test message published to ${formattedChannelId}.` });
-    } else {
-      res.status(400).json({ error: data.description || "Verification failed" });
+    const rawBody = await response.text();
+    let data: any = {};
+    try {
+      data = rawBody ? JSON.parse(rawBody) : {};
+    } catch {
+      data = {
+        ok: false,
+        description: `Telegram returned an invalid response (HTTP ${response.status}).`
+      };
     }
+
+    return { response, data };
+  };
+
+  try {
+    // 1) Validate the bot token and identify the bot account.
+    const botCheck = await callTelegram("getMe");
+    if (!botCheck.response.ok || !botCheck.data.ok) {
+      return res.status(400).json({
+        success: false,
+        stage: "bot",
+        error: `Bot token validation failed: ${botCheck.data.description || "Telegram rejected the bot token."}`
+      });
+    }
+
+    const bot = botCheck.data.result;
+
+    // 2) Verify that Telegram can resolve the configured target.
+    const chatCheck = await callTelegram("getChat", { chat_id: formattedChannelId });
+    if (!chatCheck.response.ok || !chatCheck.data.ok) {
+      return res.status(400).json({
+        success: false,
+        stage: "target",
+        error: `Target validation failed for ${formattedChannelId}: ${chatCheck.data.description || "Telegram could not resolve this chat."}`,
+        bot: {
+          id: bot.id,
+          username: bot.username,
+          firstName: bot.first_name
+        }
+      });
+    }
+
+    const chat = chatCheck.data.result;
+
+    // 3) Inspect membership/admin rights when Telegram can provide them.
+    // Telegram documents getChatMember as guaranteed for other users only when
+    // the bot is an administrator, so a failed membership lookup is not treated
+    // as final; the real send test below remains authoritative.
+    const memberCheck = await callTelegram("getChatMember", {
+      chat_id: formattedChannelId,
+      user_id: bot.id
+    });
+
+    let permissions: any = undefined;
+    if (memberCheck.response.ok && memberCheck.data.ok) {
+      const member = memberCheck.data.result;
+      permissions = {
+        status: member.status,
+        canPostMessages: member.can_post_messages
+      };
+
+      if (member.status === "left" || member.status === "kicked") {
+        return res.status(400).json({
+          success: false,
+          stage: "permissions",
+          error: `The bot is not an active member of ${formattedChannelId}. Add the bot to the target before publishing.`
+        });
+      }
+
+      if (chat.type === "channel" && member.status !== "administrator" && member.status !== "creator") {
+        return res.status(400).json({
+          success: false,
+          stage: "permissions",
+          error: `The bot is not an administrator of ${formattedChannelId}. Channel publishing requires bot administrator access.`
+        });
+      }
+
+      if (chat.type === "channel" && member.status === "administrator" && member.can_post_messages === false) {
+        return res.status(400).json({
+          success: false,
+          stage: "permissions",
+          error: `The bot is an administrator of ${formattedChannelId}, but it does not have permission to post messages.`
+        });
+      }
+    }
+
+    // 4) Perform the definitive permission check by publishing a quiet test message.
+    const sendCheck = await callTelegram("sendMessage", {
+      chat_id: formattedChannelId,
+      text: "🤖 Telegram Content Curator connection test successful.",
+      disable_notification: true
+    });
+
+    if (!sendCheck.response.ok || !sendCheck.data.ok) {
+      return res.status(400).json({
+        success: false,
+        stage: "send",
+        error: `Telegram could not publish to ${formattedChannelId}: ${sendCheck.data.description || "Message delivery failed."}`,
+        bot: {
+          id: bot.id,
+          username: bot.username,
+          firstName: bot.first_name
+        },
+        target: {
+          id: chat.id,
+          title: chat.title,
+          username: chat.username,
+          type: chat.type
+        },
+        permissions
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Verification successful! Test message published to ${formattedChannelId}.`,
+      bot: {
+        id: bot.id,
+        username: bot.username,
+        firstName: bot.first_name
+      },
+      target: {
+        id: chat.id,
+        title: chat.title,
+        username: chat.username,
+        type: chat.type
+      },
+      permissions
+    });
   } catch (err: any) {
-    console.error("Test bot error:", err);
-    res.status(500).json({ error: err.message || "Connection failed to Telegram API" });
+    console.error("Telegram bot connection test failed:", err);
+    return res.status(502).json({
+      success: false,
+      stage: "network",
+      error: err.message || "Could not reach the Telegram Bot API."
+    });
   }
 });
 
