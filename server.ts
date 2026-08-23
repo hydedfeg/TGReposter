@@ -127,10 +127,14 @@ function isValidTelegramPostMediaUrl(rawUrl?: string): rawUrl is string {
   }
 
   return parsedUrl.protocol === "https:" && (
-    hostname === "cdn4.telegram-cdn.org" ||
-    hostname.endsWith(".telegram-cdn.org") ||
     hostname === "t.me" ||
-    hostname === "telegram.org"
+    hostname === "telegram.org" ||
+    hostname === "telesco.pe" ||
+    hostname.endsWith(".telesco.pe") ||
+    hostname === "cdn-telegram.org" ||
+    hostname.endsWith(".cdn-telegram.org") ||
+    hostname === "cdn4.telegram-cdn.org" ||
+    hostname.endsWith(".telegram-cdn.org")
   );
 }
 
