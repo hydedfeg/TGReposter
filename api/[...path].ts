@@ -1,1 +1,1 @@
-import "../server.ts";
+import "../dist/server.cjs";
