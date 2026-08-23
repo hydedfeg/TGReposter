@@ -305,7 +305,19 @@ export default function CurationFeed({
                       </p>
                     </div>
 
-                    {post.photoUrl && (
+                    {post.videoUrl ? (
+                      <div className="relative group rounded-lg overflow-hidden border border-slate-100 bg-slate-900">
+                        <video
+                          src={post.videoUrl}
+                          controls
+                          preload="metadata"
+                          className="w-full max-h-[260px] object-contain bg-black"
+                        />
+                        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-md font-mono pointer-events-none">
+                          ATTACHED VIDEO
+                        </div>
+                      </div>
+                    ) : post.photoUrl ? (
                       <div className="relative group rounded-lg overflow-hidden border border-slate-100 max-h-[180px] bg-slate-900">
                         <img
                           src={post.photoUrl}
@@ -317,7 +329,7 @@ export default function CurationFeed({
                           ATTACHED MEDIA
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Right Column: Curated Editor & AI tools */}

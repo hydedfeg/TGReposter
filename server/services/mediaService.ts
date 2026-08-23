@@ -9,9 +9,17 @@ export interface DownloadedImage {
   sizeBytes: number;
 }
 
+export interface DownloadedVideo {
+  filepath: string;
+  filename: string;
+  contentType: "video/mp4";
+  sizeBytes: number;
+}
+
 export class MediaService {
   private tempDir = path.join(process.cwd(), "temp");
   private readonly maxImageBytes = 10 * 1024 * 1024;
+  private readonly maxVideoBytes = 50 * 1024 * 1024;
   private readonly maxRedirects = 3;
   private readonly requestTimeoutMs = 15000;
 
@@ -150,6 +158,48 @@ export class MediaService {
       filepath,
       filename,
       contentType: mediaType.contentType,
+      sizeBytes: buffer.byteLength
+    };
+  }
+
+  async downloadVideoWithMetadata(url: string): Promise<DownloadedVideo | null> {
+    if (!url) return null;
+
+    const response = await this.fetchTelegramMedia(url);
+    if (!response.ok) {
+      throw new Error(`Failed downloading video (${response.status}).`);
+    }
+
+    const contentTypeHeader = (response.headers.get("content-type") || "")
+      .split(";")[0]
+      .trim()
+      .toLowerCase();
+
+    if (contentTypeHeader !== "video/mp4") {
+      throw new Error(`Unsupported Telegram video content type: ${contentTypeHeader || "unknown"}. Expected video/mp4.`);
+    }
+
+    const declaredLength = Number(response.headers.get("content-length") || "0");
+    if (Number.isFinite(declaredLength) && declaredLength > this.maxVideoBytes) {
+      throw new Error("Telegram video exceeds the 50 MB Bot API upload limit.");
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength === 0) {
+      throw new Error("Downloaded Telegram video was empty.");
+    }
+    if (buffer.byteLength > this.maxVideoBytes) {
+      throw new Error("Telegram video exceeds the 50 MB Bot API upload limit.");
+    }
+
+    const filename = `${crypto.randomUUID()}.mp4`;
+    const filepath = path.join(this.tempDir, filename);
+    fs.writeFileSync(filepath, buffer);
+
+    return {
+      filepath,
+      filename,
+      contentType: "video/mp4",
       sizeBytes: buffer.byteLength
     };
   }

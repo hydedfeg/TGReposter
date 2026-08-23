@@ -18,7 +18,9 @@ export interface CuratedPost {
   channelUsername: string;
   originalText: string;
   text: string; // the curated/edited text
+  mediaType?: 'photo' | 'video';
   photoUrl?: string;
+  videoUrl?: string;
   date: string;
   url: string;
   status: 'pending' | 'approved' | 'posted' | 'archived';
