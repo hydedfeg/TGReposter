@@ -5,9 +5,9 @@ export interface PostEntity {
   channel_username: string;
   original_text: string;
   edited_text: string;
-  media_type?: 'photo' | 'video';
-  photo_url?: string;
-  video_url?: string;
+  media_type?: 'photo' | 'video' | null;
+  photo_url?: string | null;
+  video_url?: string | null;
   telegram_url: string;
   published_at: string;
   status: string;
