@@ -17,7 +17,9 @@ export interface DownloadedVideo {
 }
 
 export class MediaService {
-  private tempDir = path.join(process.cwd(), "temp");
+  private tempDir = process.env.VERCEL
+    ? path.join("/tmp", "tgreposter-media")
+    : path.join(process.cwd(), "temp");
   private readonly maxImageBytes = 10 * 1024 * 1024;
   private readonly maxVideoBytes = 50 * 1024 * 1024;
   private readonly maxRedirects = 3;
