@@ -127,10 +127,14 @@ function isValidTelegramPostMediaUrl(rawUrl?: string): rawUrl is string {
   }
 
   return parsedUrl.protocol === "https:" && (
-    hostname === "cdn4.telegram-cdn.org" ||
-    hostname.endsWith(".telegram-cdn.org") ||
     hostname === "t.me" ||
-    hostname === "telegram.org"
+    hostname === "telegram.org" ||
+    hostname === "telesco.pe" ||
+    hostname.endsWith(".telesco.pe") ||
+    hostname === "cdn-telegram.org" ||
+    hostname.endsWith(".cdn-telegram.org") ||
+    hostname === "cdn4.telegram-cdn.org" ||
+    hostname.endsWith(".telegram-cdn.org")
   );
 }
 
@@ -1056,7 +1060,7 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   const post = db.posts[postIdx];
   const formattedText = text || post.text;
 
-  const results: { targetId: string; name: string; success: boolean; error?: string }[] = [];
+  const results: { targetId: string; name: string; success: boolean; error?: string; warning?: string }[] = [];
   let atLeastOneSuccess = false;
 
   for (const target of activeTargets) {
@@ -1068,93 +1072,133 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     try {
       let success = false;
       let responseData: any = null;
+      let targetWarning: string | undefined;
 
       // Always use the backend-stored media for the authoritative post record.
       const activePhoto = post.photoUrl;
       if (activePhoto) {
         const sendPhotoUrl = `https://api.telegram.org/bot${botToken}/sendPhoto`;
-        const caption =
-  formattedText.length > 1024
-    ? formattedText.slice(0, 1020) + "..."
-    : formattedText;
+        const captionParts = splitTelegramText(formattedText, 1000);
+        const caption = captionParts.shift() || "";
+        let downloadedImage: Awaited<ReturnType<typeof mediaService.downloadImageWithMetadata>> = null;
+        let photoPublished = false;
+        let mediaFailure = "";
 
-const tempFile = await mediaService.downloadImage(activePhoto);
+        const parseTelegramResponse = async (telegramResponse: Response, context: string) => {
+          const raw = await telegramResponse.text();
+          try {
+            return raw ? JSON.parse(raw) : {};
+          } catch {
+            return {
+              ok: false,
+              description: `Telegram returned an invalid response while ${context} (HTTP ${telegramResponse.status}).`
+            };
+          }
+        };
 
-if (!tempFile) {
-  throw new Error("Image download failed.");
-}
+        try {
+          downloadedImage = await mediaService.downloadImageWithMetadata(activePhoto);
+          if (!downloadedImage) {
+            throw new Error("Image download failed.");
+          }
 
-const form = new FormData();
+          const form = new FormData();
+          form.append("chat_id", formattedChannelId);
+          if (caption) {
+            form.append("caption", caption);
+          }
 
-form.append("chat_id", formattedChannelId);
-form.append("caption", caption);
-form.append("parse_mode", "HTML");
-const imageBuffer = fs.readFileSync(tempFile);
+          const imageBuffer = fs.readFileSync(downloadedImage.filepath);
+          form.append(
+            "photo",
+            new Blob([imageBuffer], { type: downloadedImage.contentType }),
+            downloadedImage.filename
+          );
 
-form.append(
-  "photo",
-  new Blob([imageBuffer], { type: "image/jpeg" }),
-  "image.jpg"
-);
-
-const photoRes = await fetch(sendPhotoUrl, {
-  method: "POST",
-  body: form
-});
-
-mediaService.deleteTemp(tempFile);
-
-        console.log("Photo response status:", photoRes.status);
-console.log("Photo response content-type:", photoRes.headers.get("content-type"));
-
-const rawResponse = await photoRes.text();
-
-console.log("Photo raw response:", rawResponse);
-
-responseData = rawResponse ? JSON.parse(rawResponse) : {};
-        if (photoRes.ok && responseData.ok) {
-    success = true;
-
-    if (formattedText.length > 1024) {
-        const remaining = formattedText.slice(1020);
-
-        await fetch(
-            `https://api.telegram.org/bot${botToken}/sendMessage`,
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    chat_id: formattedChannelId,
-                    text: remaining,
-                    parse_mode: "HTML"
-                })
-            }
-        );
-    }
-} else {
-          console.error("========== TELEGRAM SENDPHOTO ERROR ==========");
-console.error("Target:", target.name);
-console.error("Photo URL:", activePhoto);
-console.error("Telegram response:", JSON.stringify(responseData, null, 2));
-console.error("==============================================");
-          // Fallback to text message if photo posting fails
-          const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-          const textFallbackRes = await fetch(sendMsgUrl, {
+          const photoRes = await fetch(sendPhotoUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              chat_id: formattedChannelId,
-              text: `${formattedText}\n\n<i>(Photo attachments: ${activePhoto})</i>`,
-              parse_mode: "HTML",
-              disable_web_page_preview: false
-            })
+            body: form
           });
 
-          responseData = await textFallbackRes.json();
-          if (textFallbackRes.ok && responseData.ok) {
+          responseData = await parseTelegramResponse(photoRes, "sending the photo");
+          if (photoRes.ok && responseData.ok) {
+            photoPublished = true;
             success = true;
+
+            // Telegram photo captions are limited to 1024 characters. Any remaining
+            // text is sent as plain continuation messages without parse_mode.
+            for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
+              const continuationRes = await fetch(
+                `https://api.telegram.org/bot${botToken}/sendMessage`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    chat_id: formattedChannelId,
+                    text: captionParts[chunkIndex],
+                    disable_web_page_preview: false
+                  })
+                }
+              );
+
+              const continuationData = await parseTelegramResponse(continuationRes, "sending photo continuation text");
+              if (!continuationRes.ok || !continuationData.ok) {
+                success = false;
+                const telegramError = continuationData.description || "Unknown Telegram continuation error";
+                responseData = {
+                  ok: false,
+                  description: `Photo published, but continuation chunk ${chunkIndex + 1}/${captionParts.length} failed: ${telegramError}`
+                };
+                break;
+              }
+            }
+          } else {
+            mediaFailure = responseData.description || "Telegram rejected the photo upload.";
+          }
+        } catch (err: any) {
+          mediaFailure = err.message || "Telegram photo publishing failed.";
+        } finally {
+          mediaService.deleteTemp(downloadedImage?.filepath);
+        }
+
+        // If the photo itself was never published, preserve the post content by falling
+        // back to plain text plus the stored Telegram media URL. Keep the warning in the
+        // per-target result so callers can distinguish a true photo publish from fallback.
+        if (!photoPublished && !success) {
+          const fallbackText = formattedText.trim()
+            ? `${formattedText}\n\nPhoto: ${activePhoto}`
+            : `Photo: ${activePhoto}`;
+          const fallbackChunks = splitTelegramText(fallbackText);
+          const sendMsgUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+          let fallbackSucceeded = fallbackChunks.length > 0;
+
+          for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
+            const fallbackRes = await fetch(sendMsgUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: formattedChannelId,
+                text: fallbackChunks[chunkIndex],
+                disable_web_page_preview: false
+              })
+            });
+
+            const fallbackData = await parseTelegramResponse(fallbackRes, "sending the photo text fallback");
+            if (!fallbackRes.ok || !fallbackData.ok) {
+              fallbackSucceeded = false;
+              const telegramError = fallbackData.description || "Unknown Telegram fallback error";
+              responseData = {
+                ok: false,
+                description: `Photo publish failed: ${mediaFailure || "unknown media error"}. Text fallback chunk ${chunkIndex + 1}/${fallbackChunks.length} also failed: ${telegramError}`
+              };
+              break;
+            }
+          }
+
+          if (fallbackSucceeded) {
+            success = true;
+            targetWarning = `Photo was not attached; text fallback was published instead: ${mediaFailure || "Telegram photo upload failed."}`;
+            responseData = { ok: true };
           }
         }
       } else {
@@ -1205,7 +1249,12 @@ console.error("==============================================");
       const dbTargetIdx = db.destination.targets?.findIndex(t => t.id === target.id);
 
       if (success) {
-        results.push({ targetId: target.id, name: target.name, success: true });
+        results.push({
+          targetId: target.id,
+          name: target.name,
+          success: true,
+          ...(targetWarning ? { warning: targetWarning } : {})
+        });
         atLeastOneSuccess = true;
         if (dbTargetIdx !== undefined && dbTargetIdx !== -1) {
           db.destination.targets[dbTargetIdx].status = "success";
