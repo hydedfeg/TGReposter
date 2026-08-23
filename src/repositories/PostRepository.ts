@@ -5,7 +5,9 @@ export interface PostRecord {
   channel_username: string;
   original_text: string;
   edited_text?: string;
+  media_type?: 'photo' | 'video';
   photo_url?: string;
+  video_url?: string;
   telegram_url: string;
   published_at: string;
   status: string;
