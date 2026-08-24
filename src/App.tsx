@@ -501,7 +501,7 @@ export default function App() {
         </main>
         <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <p>© 2026 Telegram Content Curator. Powered by server-side Gemini 3.5 Flash.</p>
+            <p>© 2026 Telegram Content Curator. Powered by server-side AI.</p>
             <p className="font-mono text-[10px]">Secure, localized server storage • V1.0.0</p>
           </div>
         </footer>
@@ -556,7 +556,7 @@ export default function App() {
             <div>
               <p className="font-bold">Bot Configuration Required</p>
               <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-                You haven't configured an active Telegram target yet! You can still scrape source channels and edit posts using Gemini, but to publish them directly, go to the <b>Destination Bot</b> workspace tab, supply bot credentials, and activate at least one channel or group.
+                You haven't configured an active Telegram target yet! You can still scrape source channels and edit posts using AI, but to publish them directly, go to the <b>Destination Bot</b> workspace tab, supply bot credentials, and activate at least one channel or group.
               </p>
             </div>
           </div>
@@ -734,7 +734,7 @@ export default function App() {
 
       <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>© 2026 Telegram Content Curator. Powered by server-side Gemini 3.5 Flash.</p>
+          <p>© 2026 Telegram Content Curator. Powered by server-side AI.</p>
           <p className="font-mono text-[10px]">Secure, localized server storage • V1.0.0</p>
         </div>
       </footer>

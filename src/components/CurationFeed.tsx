@@ -23,6 +23,10 @@ import {
 } from "lucide-react";
 import { CuratedPost, DestinationTarget } from "../types";
 import { safeResponseJson } from "../utils/api";
+import {
+  AI_CONNECTION_FALLBACK_ERROR,
+  AI_CURATION_FALLBACK_ERROR
+} from "../utils/aiErrors";
 
 interface CurationFeedProps {
   posts: CuratedPost[];
@@ -116,10 +120,10 @@ export default function CurationFeed({
           onUpdatePost(postId, { text: newText });
         }
       } else {
-        alert(data.error || "Gemini was unable to curate this post. Is your API Key configured?");
+        alert(data.error || AI_CURATION_FALLBACK_ERROR);
       }
     } catch (err: any) {
-      alert(err.message || "Failed to contact Gemini API.");
+      alert(err.message || AI_CONNECTION_FALLBACK_ERROR);
     } finally {
       setAiLoadingId(null);
     }
@@ -385,11 +389,11 @@ export default function CurationFeed({
                       )}
                     </div>
 
-                    {/* Gemini AI curation toolbox */}
+                    {/* AI curation toolbox */}
                     <div className="border-t border-slate-100 pt-4 mt-2">
                       <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
                         <Sparkles className="w-3.5 h-3.5 text-sky-500 animate-bounce" />
-                        AI Curation Toolkit (Gemini 3.5 Flash)
+                        AI Curation Toolkit
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">

@@ -38,7 +38,7 @@ export default function Header({ connected, channelId, targets, onLogout, supaba
                 Telegram Content Curator
               </h1>
               <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 text-xs px-2.5 py-0.5 rounded-full font-medium font-sans">
-                <Sparkles className="w-3.5 h-3.5" /> Gemini 3.5 Powered
+                <Sparkles className="w-3.5 h-3.5" /> AI Powered
               </span>
             </div>
             <p className="text-slate-500 text-sm mt-0.5 font-sans">

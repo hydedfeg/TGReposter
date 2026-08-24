@@ -1,6 +1,8 @@
 import mediaService from "./server/services/mediaService";
 import postService from "./server/services/postService";
 import channelRoutes from "./server/routes/channels";
+import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
+import { dispatchCuration } from "./server/ai/curationDispatcher";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -1004,91 +1006,26 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "Missing post text" });
   }
 
-  let prompt = "";
-  if (action === "rephrase") {
-    const tone = context || "professional and engaging";
-    prompt = `You are an expert Telegram channel editor. Rephrase this post to sound ${tone}. Ensure the writing is concise, captures readers' interest instantly, preserves any external URL links, and is formatted nicely for reading. Respond with ONLY the finalized text, no conversational introductions or explanations.\n\nPost:\n${text}`;
-  } else if (action === "summarize") {
-    prompt = `You are a professional news summarizer. Write a highly scannable, engaging 1-2 sentence summary of this post. Respond with ONLY the summary content, no intros, no quotes.\n\nPost:\n${text}`;
-  } else if (action === "hashtags") {
-    prompt = `Generate 3 to 6 highly relevant, catchy hashtags based on the content of this post. Output them on a single line, space-separated, with '#' characters. Do not include any other text.\n\nPost:\n${text}`;
-  } else if (action === "translate") {
-    const targetLang = context || "English";
-    prompt = `Translate the following Telegram post into ${targetLang}. Retain the original layout, bullet points, and any link URLs. Respond with ONLY the translated text, no meta-comments.\n\nPost:\n${text}`;
-  } else {
+  if (!isCurationAction(action)) {
     return res.status(400).json({ error: "Invalid curation action" });
   }
 
-  if (aiProvider === "gemini") {
-    if (!process.env.GEMINI_API_KEY || !ai) {
-      return res.status(400).json({
-        error: "Gemini API Key is missing. Please add GEMINI_API_KEY in the Secrets panel."
-      });
-    }
+  const prompt = buildCurationPrompt(action, text, context);
 
-    try {
-      const response = await ai.models.generateContent({
-        model: aiModel,
-        contents: prompt,
-      });
+  const result = await dispatchCuration({
+    provider: aiProvider,
+    model: aiModel,
+    prompt,
+    geminiClient: ai,
+    geminiApiKey: process.env.GEMINI_API_KEY,
+    openRouterApiKey: process.env.OPENROUTER_API_KEY
+  });
 
-      const resultText = response.text?.trim() || "";
-      res.json({ result: resultText });
-    } catch (err: any) {
-      console.error("Gemini curation error:", err);
-      res.status(500).json({ error: err.message || "Gemini API call failed" });
-    }
-  } else if (aiProvider === "openrouter") {
-    const apiKey = process.env.OPENROUTER_API_KEY;
-    if (!apiKey) {
-      return res.status(400).json({
-        error: "OpenRouter API Key is missing. Please add OPENROUTER_API_KEY in the Secrets panel."
-      });
-    }
-
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://ai.studio/build",
-          "X-Title": "Telegram Curator"
-        },
-        body: JSON.stringify({
-          model: aiModel,
-          messages: [
-            {
-              role: "user",
-              content: prompt
-            }
-          ]
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("OpenRouter API returned error:", response.status, errorText);
-        let errorMsg = "OpenRouter API call failed";
-        try {
-          const parsedError = JSON.parse(errorText);
-          if (parsedError.error?.message) {
-            errorMsg = parsedError.error.message;
-          }
-        } catch (_) {}
-        return res.status(500).json({ error: `${errorMsg} (${response.status})` });
-      }
-
-      const data = (await response.json()) as any;
-      const resultText = data.choices?.[0]?.message?.content?.trim() || "";
-      res.json({ result: resultText });
-    } catch (err: any) {
-      console.error("OpenRouter curation error:", err);
-      res.status(500).json({ error: err.message || "OpenRouter connection failed" });
-    }
-  } else {
-    res.status(400).json({ error: `Unsupported AI Provider: ${aiProvider}` });
+  if (result.ok === false) {
+    return res.status(result.status).json({ error: result.error });
   }
+
+  res.json({ result: result.result });
 });
 
 // Post curated text directly to target Telegram channels via Telegram Bot API

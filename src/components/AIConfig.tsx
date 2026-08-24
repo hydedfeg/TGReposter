@@ -182,7 +182,7 @@ export default function AIConfig({
 
             <p className="text-[11px] text-slate-400 mt-2.5 leading-relaxed flex items-start gap-1">
               <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-              To change API keys, configure <b>GEMINI_API_KEY</b> or <b>OPENROUTER_API_KEY</b> in the AI Studio Settings &gt; Secrets panel. No manual keys can be written client-side.
+              To change API keys, configure <b>GEMINI_API_KEY</b> or <b>OPENROUTER_API_KEY</b> in your deployment environment&apos;s secrets settings. No manual keys can be written client-side.
             </p>
           </div>
 
