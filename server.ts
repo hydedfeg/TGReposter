@@ -2,6 +2,7 @@ import mediaService from "./server/services/mediaService";
 import postService from "./server/services/postService";
 import telegramPublisherService from "./server/services/telegramPublisherService";
 import channelRoutes from "./server/routes/channels";
+import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import express from "express";
@@ -439,6 +440,15 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
   }
   return res.status(403).json({ error: "Forbidden. Super-admin access required." });
 };
+
+// Promotion configuration is server-owned and mounted only after authentication
+// middleware exists. Bot-account mutations and target configuration are further
+// restricted by the promotion router to super-admins.
+app.use("/api/promotion", createPromotionRouter({
+  authMiddleware,
+  requireSuperAdmin,
+  readLegacySettings: readDb,
+}));
 
 // --- Authentication Endpoints ---
 
