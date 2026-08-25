@@ -1,5 +1,4 @@
 import promotionRepository, {
-  type PromotionTargetRecord,
   type TelegramBotAccountRecord,
 } from "../repositories/promotionRepository";
 import promotionCampaignRepository, {
@@ -107,10 +106,18 @@ export function renderPromotionText(
   campaignPost: PromotionCampaignPostRecord,
   sourcePost: PromotionSourcePostRecord
 ): string {
+  const promotionalCopy = (campaignPost.promotionText || "").trim();
+  if (campaignPost.contentMode !== "original" && !promotionalCopy) {
+    throw new PromotionCampaignError(
+      400,
+      "CONTENT_NOT_READY",
+      `Campaign post '${campaignPost.id}' requires promotionText for ${campaignPost.contentMode} mode.`
+    );
+  }
+
   const baseText = campaignPost.contentMode === "original"
     ? sourcePost.originalText.trim()
-    : (campaignPost.promotionText || "").trim();
-
+    : promotionalCopy;
   const sourceLink = (campaignPost.sourceLinkOverride || sourcePost.telegramUrl || "").trim();
   const cta = (campaignPost.ctaText || "").trim();
   const parts: string[] = [];
@@ -307,11 +314,6 @@ export class PromotionCampaignService {
     if (problems.length) {
       throw new PromotionCampaignError(400, "INVALID_TARGETS", "One or more promotion targets are not ready for publishing.", { targets: problems });
     }
-
-    return {
-      targets: targetIds.map(id => targetById.get(id)!),
-      accountsById: accountById,
-    };
   }
 
   private async validateCampaignContent(campaignId: string) {
@@ -327,7 +329,6 @@ export class PromotionCampaignService {
       }
       renderPromotionText(campaignPost, sourcePost);
     }
-    return campaignPosts;
   }
 
   private async recordFailure(items: Array<{ item: PromotionDeliveryWorkItem; attemptNumber: number }>, message: string) {
@@ -352,7 +353,7 @@ export class PromotionCampaignService {
         throw new PromotionCampaignError(
           400,
           "DELIVERIES_NOT_RETRYABLE",
-          "Some selected deliveries do not belong to this campaign or are not failed.",
+          "Some selected deliveries do not belong to this campaign or are not in the required delivery state.",
           { deliveryIds: unavailable }
         );
       }
@@ -375,19 +376,20 @@ export class PromotionCampaignService {
       if (claimed.length === 0) continue;
 
       const publishable: typeof claimed = [];
-      const configurationFailures: Array<{ claimed: (typeof claimed)[number]; message: string }> = [];
+      const configurationFailures: Array<{ entry: (typeof claimed)[number]; message: string }> = [];
       for (const entry of claimed) {
         if (!entry.item.target.enabled) {
-          configurationFailures.push({ claimed: entry, message: "Promotion target is disabled." });
+          configurationFailures.push({ entry, message: "Promotion target is disabled." });
         } else if (entry.item.target.connectionStatus !== "ok") {
-          configurationFailures.push({ claimed: entry, message: "Promotion target is no longer verified for publishing." });
+          configurationFailures.push({ entry, message: "Promotion target is no longer verified for publishing." });
         } else if (!entry.item.botAccount.enabled) {
-          configurationFailures.push({ claimed: entry, message: "Telegram bot account is disabled." });
+          configurationFailures.push({ entry, message: "Telegram bot account is disabled." });
         } else {
           publishable.push(entry);
         }
       }
-      await Promise.all(configurationFailures.map(({ claimed: entry, message }) =>
+
+      await Promise.all(configurationFailures.map(({ entry, message }) =>
         this.repository.completeDeliveryAttempt({
           deliveryId: entry.item.delivery.id,
           attemptNumber: entry.attemptNumber,
@@ -399,8 +401,8 @@ export class PromotionCampaignService {
 
       let botToken: string;
       let text: string;
+      const representative = publishable[0].item;
       try {
-        const representative = publishable[0].item;
         botToken = await resolveTelegramBotToken(
           representative.botAccount as TelegramBotAccountRecord,
           this.readLegacySettings
@@ -411,9 +413,9 @@ export class PromotionCampaignService {
         continue;
       }
 
-      const representative = publishable[0].item;
+      let publishResult: Awaited<ReturnType<typeof telegramPublisherService.publish>>;
       try {
-        const publishResult = await telegramPublisherService.publish({
+        publishResult = await telegramPublisherService.publish({
           botToken,
           targets: publishable.map(({ item }) => ({
             id: item.delivery.id,
@@ -427,30 +429,31 @@ export class PromotionCampaignService {
           },
           text,
         });
+      } catch (error: any) {
+        await this.recordFailure(publishable, error?.message || "Telegram publishing failed unexpectedly.");
+        continue;
+      }
 
-        const resultsByDeliveryId = new Map(publishResult.results.map(result => [result.targetId, result]));
-        await Promise.all(publishable.map(async ({ item, attemptNumber }) => {
-          const result = resultsByDeliveryId.get(item.delivery.id);
-          if (!result) {
-            await this.repository.completeDeliveryAttempt({
-              deliveryId: item.delivery.id,
-              attemptNumber,
-              success: false,
-              errorMessage: "Telegram publisher returned no result for this delivery.",
-            });
-            return;
-          }
+      const resultsByDeliveryId = new Map(publishResult.results.map(result => [result.targetId, result]));
+      await Promise.all(publishable.map(async ({ item, attemptNumber }) => {
+        const result = resultsByDeliveryId.get(item.delivery.id);
+        if (!result) {
           await this.repository.completeDeliveryAttempt({
             deliveryId: item.delivery.id,
             attemptNumber,
-            success: result.success,
-            warningMessage: result.warning,
-            errorMessage: result.error,
+            success: false,
+            errorMessage: "Telegram publisher returned no result for this delivery.",
           });
-        }));
-      } catch (error: any) {
-        await this.recordFailure(publishable, error?.message || "Telegram publishing failed unexpectedly.");
-      }
+          return;
+        }
+        await this.repository.completeDeliveryAttempt({
+          deliveryId: item.delivery.id,
+          attemptNumber,
+          success: result.success,
+          warningMessage: result.warning,
+          errorMessage: result.error,
+        });
+      }));
     }
   }
 
@@ -506,6 +509,18 @@ export class PromotionCampaignService {
     const failedWork = await this.repository.listDeliveryWorkItems(campaignId, ["failed"], deliveryIds);
     if (failedWork.length === 0) {
       throw new PromotionCampaignError(400, "NO_FAILED_DELIVERIES", "No failed promotion deliveries are available to retry.");
+    }
+    if (deliveryIds?.length) {
+      const found = new Set(failedWork.map(item => item.delivery.id));
+      const unavailable = deliveryIds.filter(id => !found.has(id));
+      if (unavailable.length) {
+        throw new PromotionCampaignError(
+          400,
+          "DELIVERIES_NOT_RETRYABLE",
+          "Some selected deliveries do not belong to this campaign or are not failed.",
+          { deliveryIds: unavailable }
+        );
+      }
     }
 
     const targetIds = Array.from(new Set(failedWork.map(item => item.target.id)));
