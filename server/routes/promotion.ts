@@ -30,6 +30,14 @@ export function createPromotionRouter({
   const service = new PromotionAdminService(readLegacySettings);
 
   router.use(authMiddleware);
+  router.use((req: any, res, next) => {
+    // The legacy auth middleware allows bootstrap traffic when no users exist.
+    // Promotion infrastructure must remain closed until a real session exists.
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized. Please log in." });
+    }
+    return next();
+  });
 
   // Bot credentials/configuration are super-admin only.
   router.get("/bot-accounts", requireSuperAdmin, async (_req, res) => {
