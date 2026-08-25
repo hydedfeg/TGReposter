@@ -1,4 +1,4 @@
-import { Pool, type PoolClient } from "pg";
+import { Pool } from "pg";
 
 export type PromotionCampaignStatus = "draft" | "ready" | "running" | "completed" | "partial" | "failed" | "cancelled";
 export type PromotionContentMode = "original" | "teaser" | "ai" | "custom";
@@ -139,9 +139,7 @@ function getPool(): Pool {
   if (!connectionString) {
     throw new Error("Promotion database access is not configured. DATABASE_URL is missing.");
   }
-  if (!pool) {
-    pool = new Pool({ connectionString, max: 5 });
-  }
+  if (!pool) pool = new Pool({ connectionString, max: 5 });
   return pool;
 }
 
@@ -201,7 +199,7 @@ function mapDelivery(row: any): PromotionDeliveryRecord {
     campaignPostId: row.campaign_post_id,
     targetId: row.target_id,
     status: row.status,
-    attemptCount: row.attempt_count,
+    attemptCount: Number(row.attempt_count),
     telegramMessageId: row.telegram_message_id == null ? undefined : Number(row.telegram_message_id),
     warningMessage: row.warning_message ?? undefined,
     errorMessage: row.error_message ?? undefined,
@@ -216,7 +214,7 @@ function mapAttempt(row: any): PromotionDeliveryAttemptRecord {
   return {
     id: row.id,
     deliveryId: row.delivery_id,
-    attemptNumber: row.attempt_number,
+    attemptNumber: Number(row.attempt_number),
     outcome: row.outcome,
     telegramMessageId: row.telegram_message_id == null ? undefined : Number(row.telegram_message_id),
     telegramErrorCode: row.telegram_error_code ?? undefined,
@@ -226,17 +224,14 @@ function mapAttempt(row: any): PromotionDeliveryAttemptRecord {
   };
 }
 
-const campaignSelect = `id, name, description, status, created_by_username, started_at, completed_at, created_at, updated_at`;
-const campaignPostSelect = `id, campaign_id, post_id, content_mode, promotion_text, cta_text, source_link_override, position, created_at, updated_at`;
-const deliverySelect = `id, campaign_post_id, target_id, status, attempt_count, telegram_message_id, warning_message, error_message, last_attempt_at, published_at, created_at, updated_at`;
+const campaignSelect = "id, name, description, status, created_by_username, started_at, completed_at, created_at, updated_at";
+const campaignPostSelect = "id, campaign_id, post_id, content_mode, promotion_text, cta_text, source_link_override, position, created_at, updated_at";
+const deliverySelect = "id, campaign_post_id, target_id, status, attempt_count, telegram_message_id, warning_message, error_message, last_attempt_at, published_at, created_at, updated_at";
 
 export class PromotionCampaignRepository {
   async listCampaigns(limit = 100): Promise<PromotionCampaignRecord[]> {
     const result = await getPool().query(
-      `select ${campaignSelect}
-       from public.promotion_campaigns
-       order by created_at desc
-       limit $1`,
+      `select ${campaignSelect} from public.promotion_campaigns order by created_at desc limit $1`,
       [limit]
     );
     return result.rows.map(mapCampaign);
@@ -253,8 +248,7 @@ export class PromotionCampaignRepository {
   async createCampaign(input: CreateCampaignInput): Promise<PromotionCampaignRecord> {
     const result = await getPool().query(
       `insert into public.promotion_campaigns (name, description, created_by_username)
-       values ($1, $2, $3)
-       returning ${campaignSelect}`,
+       values ($1, $2, $3) returning ${campaignSelect}`,
       [input.name, input.description ?? null, input.createdByUsername ?? null]
     );
     return mapCampaign(result.rows[0]);
@@ -265,12 +259,8 @@ export class PromotionCampaignRepository {
     if (!current) return null;
     const result = await getPool().query(
       `update public.promotion_campaigns
-       set name = $2,
-           description = $3,
-           status = $4,
-           updated_at = now()
-       where id = $1
-       returning ${campaignSelect}`,
+       set name = $2, description = $3, status = $4, updated_at = now()
+       where id = $1 returning ${campaignSelect}`,
       [
         id,
         input.name ?? current.name,
@@ -282,7 +272,7 @@ export class PromotionCampaignRepository {
   }
 
   async deleteCampaign(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.promotion_campaigns where id = $1`, [id]);
+    const result = await getPool().query("delete from public.promotion_campaigns where id = $1", [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
@@ -320,15 +310,8 @@ export class PromotionCampaignRepository {
         (campaign_id, post_id, content_mode, promotion_text, cta_text, source_link_override, position)
        values ($1, $2, $3, $4, $5, $6, $7)
        returning ${campaignPostSelect}`,
-      [
-        input.campaignId,
-        input.postId,
-        input.contentMode,
-        input.promotionText ?? null,
-        input.ctaText ?? null,
-        input.sourceLinkOverride ?? null,
-        input.position ?? 0,
-      ]
+      [input.campaignId, input.postId, input.contentMode, input.promotionText ?? null,
+       input.ctaText ?? null, input.sourceLinkOverride ?? null, input.position ?? 0]
     );
     return mapCampaignPost(result.rows[0]);
   }
@@ -338,14 +321,9 @@ export class PromotionCampaignRepository {
     if (!current) return null;
     const result = await getPool().query(
       `update public.promotion_campaign_posts
-       set content_mode = $2,
-           promotion_text = $3,
-           cta_text = $4,
-           source_link_override = $5,
-           position = $6,
-           updated_at = now()
-       where id = $1
-       returning ${campaignPostSelect}`,
+       set content_mode = $2, promotion_text = $3, cta_text = $4,
+           source_link_override = $5, position = $6, updated_at = now()
+       where id = $1 returning ${campaignPostSelect}`,
       [
         id,
         input.contentMode ?? current.contentMode,
@@ -359,13 +337,15 @@ export class PromotionCampaignRepository {
   }
 
   async deleteCampaignPost(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.promotion_campaign_posts where id = $1`, [id]);
+    const result = await getPool().query("delete from public.promotion_campaign_posts where id = $1", [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
   async listDeliveries(campaignId: string): Promise<PromotionDeliveryRecord[]> {
     const result = await getPool().query(
-      `select d.${deliverySelect.replaceAll(", ", ", d.")}
+      `select d.id, d.campaign_post_id, d.target_id, d.status, d.attempt_count,
+              d.telegram_message_id, d.warning_message, d.error_message, d.last_attempt_at,
+              d.published_at, d.created_at, d.updated_at
        from public.promotion_deliveries d
        join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
        where cp.campaign_id = $1
@@ -410,6 +390,7 @@ export class PromotionCampaignRepository {
         [campaignId]
       );
       if (!campaignResult.rows[0]) throw new Error("CAMPAIGN_NOT_FOUND");
+
       const campaign = mapCampaign(campaignResult.rows[0]);
       const resumed = campaign.status === "running";
       if (!["draft", "ready", "running"].includes(campaign.status)) {
@@ -419,15 +400,16 @@ export class PromotionCampaignRepository {
       if (!resumed) {
         await client.query(
           `update public.promotion_campaigns
-           set status = 'running', started_at = coalesce(started_at, now()), completed_at = null, updated_at = now()
+           set status = 'running', started_at = coalesce(started_at, now()),
+               completed_at = null, updated_at = now()
            where id = $1`,
           [campaignId]
         );
         await client.query(
           `insert into public.promotion_deliveries (campaign_post_id, target_id, status)
-           select cp.id, target_id, 'pending'
+           select cp.id, selected.target_id, 'pending'
            from public.promotion_campaign_posts cp
-           cross join unnest($2::uuid[]) as target_id
+           cross join unnest($2::uuid[]) as selected(target_id)
            where cp.campaign_id = $1
            on conflict (campaign_post_id, target_id) do nothing`,
           [campaignId, targetIds]
@@ -468,22 +450,24 @@ export class PromotionCampaignRepository {
     let idFilter = "";
     if (deliveryIds?.length) {
       values.push(deliveryIds);
-      idFilter = `and d.id = any($3::uuid[])`;
+      idFilter = "and d.id = any($3::uuid[])";
     }
 
     const result = await getPool().query(
       `select
          d.id as delivery_id, d.campaign_post_id, d.target_id, d.status as delivery_status,
          d.attempt_count, d.telegram_message_id, d.warning_message, d.error_message,
-         d.last_attempt_at, d.published_at as delivery_published_at, d.created_at as delivery_created_at,
-         d.updated_at as delivery_updated_at,
+         d.last_attempt_at, d.published_at as delivery_published_at,
+         d.created_at as delivery_created_at, d.updated_at as delivery_updated_at,
          cp.id as cp_id, cp.campaign_id, cp.post_id, cp.content_mode, cp.promotion_text,
-         cp.cta_text, cp.source_link_override, cp.position, cp.created_at as cp_created_at, cp.updated_at as cp_updated_at,
-         p.channel_username, p.original_text, p.edited_text, p.photo_url, p.video_url, p.telegram_url,
-         p.status as post_status, p.published_at as post_published_at,
-         t.id as target_row_id, t.bot_account_id, t.name as target_name, t.chat_id, t.chat_type,
-         t.enabled as target_enabled, t.connection_status,
-         b.id as bot_id, b.name as bot_name, b.bot_username, b.credential_source, b.credential_ref, b.enabled as bot_enabled
+         cp.cta_text, cp.source_link_override, cp.position,
+         cp.created_at as cp_created_at, cp.updated_at as cp_updated_at,
+         p.channel_username, p.original_text, p.edited_text, p.photo_url, p.video_url,
+         p.telegram_url, p.status as post_status, p.published_at as post_published_at,
+         t.id as target_row_id, t.bot_account_id, t.name as target_name, t.chat_id,
+         t.chat_type, t.enabled as target_enabled, t.connection_status,
+         b.id as bot_id, b.name as bot_name, b.bot_username, b.credential_source,
+         b.credential_ref, b.enabled as bot_enabled
        from public.promotion_deliveries d
        join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
        join public.posts p on p.id = cp.post_id
@@ -557,11 +541,8 @@ export class PromotionCampaignRepository {
   async claimDelivery(id: string, allowedStatus: PromotionDeliveryStatus): Promise<PromotionDeliveryRecord | null> {
     const result = await getPool().query(
       `update public.promotion_deliveries
-       set status = 'in_progress',
-           attempt_count = attempt_count + 1,
-           last_attempt_at = now(),
-           warning_message = null,
-           error_message = null,
+       set status = 'in_progress', attempt_count = attempt_count + 1,
+           last_attempt_at = now(), warning_message = null, error_message = null,
            updated_at = now()
        where id = $1 and status = $2
        returning ${deliverySelect}`,
@@ -585,22 +566,8 @@ export class PromotionCampaignRepository {
       const outcome: PromotionDeliveryOutcome = input.success
         ? (input.warningMessage ? "warning" : "success")
         : "failed";
-      await client.query(
-        `insert into public.promotion_delivery_attempts
-          (delivery_id, attempt_number, outcome, telegram_message_id, telegram_error_code, warning_message, error_message)
-         values ($1, $2, $3, $4, $5, $6, $7)
-         on conflict (delivery_id, attempt_number) do nothing`,
-        [
-          input.deliveryId,
-          input.attemptNumber,
-          outcome,
-          input.telegramMessageId ?? null,
-          input.telegramErrorCode ?? null,
-          input.warningMessage ?? null,
-          input.errorMessage ?? null,
-        ]
-      );
-      const result = await client.query(
+
+      const deliveryResult = await client.query(
         `update public.promotion_deliveries
          set status = $2,
              telegram_message_id = $3,
@@ -619,9 +586,26 @@ export class PromotionCampaignRepository {
           input.attemptNumber,
         ]
       );
-      if (!result.rows[0]) throw new Error("DELIVERY_STATE_CONFLICT");
+      if (!deliveryResult.rows[0]) throw new Error("DELIVERY_STATE_CONFLICT");
+
+      await client.query(
+        `insert into public.promotion_delivery_attempts
+          (delivery_id, attempt_number, outcome, telegram_message_id, telegram_error_code,
+           warning_message, error_message)
+         values ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          input.deliveryId,
+          input.attemptNumber,
+          outcome,
+          input.telegramMessageId ?? null,
+          input.telegramErrorCode ?? null,
+          input.warningMessage ?? null,
+          input.errorMessage ?? null,
+        ]
+      );
+
       await client.query("commit");
-      return mapDelivery(result.rows[0]);
+      return mapDelivery(deliveryResult.rows[0]);
     } catch (error) {
       await client.query("rollback");
       throw error;
@@ -647,19 +631,19 @@ export class PromotionCampaignRepository {
     );
     const row = result.rows[0];
     return {
-      total: row.total,
-      pending: row.pending,
-      inProgress: row.in_progress,
-      succeeded: row.succeeded,
-      failed: row.failed,
-      skipped: row.skipped,
-      warnings: row.warnings,
+      total: Number(row.total),
+      pending: Number(row.pending),
+      inProgress: Number(row.in_progress),
+      succeeded: Number(row.succeeded),
+      failed: Number(row.failed),
+      skipped: Number(row.skipped),
+      warnings: Number(row.warnings),
     };
   }
 
   async refreshCampaignOutcome(campaignId: string): Promise<PromotionCampaignRecord | null> {
     const summary = await this.getDeliverySummary(campaignId);
-    let status: PromotionCampaignStatus = "running";
+    let status: PromotionCampaignStatus;
     if (summary.total === 0) status = "draft";
     else if (summary.pending > 0 || summary.inProgress > 0) status = "running";
     else if (summary.succeeded === summary.total) status = "completed";
