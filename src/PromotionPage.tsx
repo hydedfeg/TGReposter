@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import Header from "./components/Header";
-import PromotionWorkspace from "./components/PromotionWorkspace";
+import PromotionCenter from "./components/PromotionCenter";
 import type { CuratorSettings } from "./types";
 import { safeResponseJson } from "./utils/api";
 
@@ -120,7 +120,7 @@ export default function PromotionPage() {
           </div>
         )}
 
-        <PromotionWorkspace
+        <PromotionCenter
           posts={settings.posts || []}
           currentUserRole={currentUserRole}
           onToast={showToast}
@@ -129,8 +129,8 @@ export default function PromotionPage() {
 
       <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>© 2026 Telegram Content Curator. Promotion campaigns use server-owned Telegram credentials.</p>
-          <p className="font-mono text-[10px]">Campaign delivery history retained for audit</p>
+          <p>© 2026 Telegram Content Curator. Promotion campaigns use server-owned Telegram credentials and AI provider keys.</p>
+          <p className="font-mono text-[10px]">AI output requires human review before campaign publishing</p>
         </div>
       </footer>
     </div>
