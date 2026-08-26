@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import { PromotionAdminError, PromotionAdminService } from "../services/promotionAdminService";
+import { PromotionAIError, PromotionAIService } from "../services/promotionAIService";
 import { PromotionCampaignError, PromotionCampaignService } from "../services/promotionCampaignService";
 import type { LegacySettingsReader } from "../services/telegramCredentialService";
 
@@ -10,7 +11,11 @@ interface PromotionRouterDependencies {
 }
 
 function sendError(res: any, error: any) {
-  if (error instanceof PromotionAdminError || error instanceof PromotionCampaignError) {
+  if (
+    error instanceof PromotionAdminError ||
+    error instanceof PromotionCampaignError ||
+    error instanceof PromotionAIError
+  ) {
     return res.status(error.status).json({
       error: error.message,
       code: error.code,
@@ -30,6 +35,7 @@ export function createPromotionRouter({
   const router = Router();
   const adminService = new PromotionAdminService(readLegacySettings);
   const campaignService = new PromotionCampaignService(readLegacySettings);
+  const aiService = new PromotionAIService(readLegacySettings);
 
   router.use(authMiddleware);
   router.use((req: any, res, next) => {
@@ -194,6 +200,16 @@ export function createPromotionRouter({
   router.delete("/campaigns/:id/posts/:campaignPostId", async (req, res) => {
     try {
       res.json(await campaignService.deleteCampaignPost(req.params.id, req.params.campaignPostId));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // AI generation is scoped to an existing mutable campaign post. The server resolves
+  // the configured provider/model and API credentials; the frontend receives only copy.
+  router.post("/campaigns/:id/posts/:campaignPostId/ai", async (req, res) => {
+    try {
+      res.json(await aiService.generate(req.params.id, req.params.campaignPostId, req.body));
     } catch (error) {
       sendError(res, error);
     }
