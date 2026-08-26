@@ -1,4 +1,4 @@
-import { Send, Sparkles, CheckCircle2, AlertCircle, LogOut, Database } from "lucide-react";
+import { Send, Sparkles, CheckCircle2, AlertCircle, LogOut, Database, Megaphone, LayoutDashboard } from "lucide-react";
 import { DestinationTarget } from "../types";
 
 interface HeaderProps {
@@ -13,6 +13,7 @@ interface HeaderProps {
 
 export default function Header({ connected, channelId, targets, onLogout, supabaseActive, currentUsername, currentUserRole }: HeaderProps) {
   const activeTargetsCount = targets ? targets.filter(t => t.enabled).length : 0;
+  const isPromotionPage = window.location.hash === "#promotion";
   
   let statusDetail = "Configure in Destination tab";
   if (connected) {
@@ -47,7 +48,7 @@ export default function Header({ connected, channelId, targets, onLogout, supaba
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
           {connected ? (
             <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-lg text-emerald-800 text-xs font-medium">
               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -85,14 +86,30 @@ export default function Header({ connected, channelId, targets, onLogout, supaba
           )}
 
           {currentUsername && (
-            <div className="hidden md:flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg text-slate-700 text-xs font-sans">
-              <span className="font-semibold text-slate-800 text-[11px]">{currentUsername}</span>
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ${
-                currentUserRole === "super-admin" ? "bg-slate-900 text-white" : "bg-sky-100 text-sky-800"
-              }`}>
-                {currentUserRole === "super-admin" ? "Owner" : "Admin"}
-              </span>
-            </div>
+            <>
+              <button
+                type="button"
+                onClick={() => { window.location.hash = isPromotionPage ? "" : "promotion"; }}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg cursor-pointer transition-colors ${
+                  isPromotionPage
+                    ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800"
+                    : "bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100"
+                }`}
+                title={isPromotionPage ? "Return to curator workspace" : "Open Promotion Center"}
+              >
+                {isPromotionPage ? <LayoutDashboard className="w-3.5 h-3.5" /> : <Megaphone className="w-3.5 h-3.5" />}
+                <span className="font-semibold">{isPromotionPage ? "Workspace" : "Promotion"}</span>
+              </button>
+
+              <div className="hidden md:flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg text-slate-700 text-xs font-sans">
+                <span className="font-semibold text-slate-800 text-[11px]">{currentUsername}</span>
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ${
+                  currentUserRole === "super-admin" ? "bg-slate-900 text-white" : "bg-sky-100 text-sky-800"
+                }`}>
+                  {currentUserRole === "super-admin" ? "Owner" : "Admin"}
+                </span>
+              </div>
+            </>
           )}
 
           {onLogout && (
