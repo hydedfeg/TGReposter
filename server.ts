@@ -5,6 +5,7 @@ import channelRoutes from "./server/routes/channels";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
+import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -437,22 +438,14 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
   return res.status(403).json({ error: "Forbidden. Super-admin access required." });
 };
 
-function matchesCronSecret(provided?: string): boolean {
-  const expected = process.env.CRON_SECRET?.trim();
-  const candidate = provided?.trim();
-  if (!expected || !candidate) return false;
-
-  const expectedBuffer = Buffer.from(expected);
-  const candidateBuffer = Buffer.from(candidate);
-  if (expectedBuffer.length !== candidateBuffer.length) return false;
-
-  return crypto.timingSafeEqual(expectedBuffer, candidateBuffer);
-}
-
-const authOrCronMiddleware = (req: any, res: any, next: any) => {
-  if (matchesCronSecret(req.get("x-cron-secret"))) {
-    req.user = { username: "system:cron", role: "super-admin" };
-    return next();
+const authOrCronMiddleware = async (req: any, res: any, next: any) => {
+  try {
+    if (await isValidInboxCronSecret(req.get("x-cron-secret"))) {
+      req.user = { username: "system:cron", role: "super-admin" };
+      return next();
+    }
+  } catch (error) {
+    console.error("Cron authentication lookup failed:", error);
   }
 
   return authMiddleware(req, res, next);
