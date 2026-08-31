@@ -555,6 +555,7 @@ export class PromotionCampaignRepository {
     deliveryId: string;
     attemptNumber: number;
     success: boolean;
+    terminalStatus?: "success" | "failed" | "skipped";
     warningMessage?: string;
     errorMessage?: string;
     telegramMessageId?: number;
@@ -563,6 +564,10 @@ export class PromotionCampaignRepository {
     const client = await getPool().connect();
     try {
       await client.query("begin");
+      const terminalStatus = input.terminalStatus ?? (input.success ? "success" : "failed");
+      if (input.success && terminalStatus !== "success") {
+        throw new Error("Successful delivery attempts must use success terminal status.");
+      }
       const outcome: PromotionDeliveryOutcome = input.success
         ? (input.warningMessage ? "warning" : "success")
         : "failed";
@@ -579,7 +584,7 @@ export class PromotionCampaignRepository {
          returning ${deliverySelect}`,
         [
           input.deliveryId,
-          input.success ? "success" : "failed",
+          terminalStatus,
           input.telegramMessageId ?? null,
           input.warningMessage ?? null,
           input.errorMessage ?? null,
