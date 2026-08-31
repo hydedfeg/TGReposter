@@ -17,11 +17,28 @@ function recordCall(entry: Record<string, unknown>) {
   fs.appendFileSync(callsPath, `${JSON.stringify(entry)}\n`, "utf8");
 }
 
-function telegramJson(ok: boolean, description?: string, status = ok ? 200 : 400) {
+function telegramJson(
+  ok: boolean,
+  description?: string,
+  status = ok ? 200 : 400,
+  extras: Record<string, unknown> = {}
+) {
   return new Response(
-    JSON.stringify(ok ? { ok: true, result: { message_id: 1 } } : { ok: false, description }),
+    JSON.stringify(ok
+      ? { ok: true, result: { message_id: 1 }, ...extras }
+      : { ok: false, description, ...extras }),
     { status, headers: { "content-type": "application/json" } }
   );
+}
+
+const sequenceCounters = new Map<string, number>();
+
+function resolveBehavior(chatId: string, method: string, behavior: any) {
+  if (behavior?.type !== "sequence" || !Array.isArray(behavior.responses)) return behavior;
+  const key = `${chatId}:${method}:${JSON.stringify(behavior.responses)}`;
+  const index = sequenceCounters.get(key) || 0;
+  sequenceCounters.set(key, index + 1);
+  return behavior.responses[Math.min(index, behavior.responses.length - 1)] ?? "success";
 }
 
 function serializeFormData(form: FormData) {
@@ -60,7 +77,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     const chatId = String(payload.chat_id || "");
     recordCall({ type: "telegram", method, chatId, payload });
 
-    const behavior = readControl()?.targets?.[chatId]?.[method] ?? "success";
+    const configuredBehavior = readControl()?.targets?.[chatId]?.[method] ?? "success";
+    const behavior = resolveBehavior(chatId, method, configuredBehavior);
 
     if (behavior === "abort" || behavior?.type === "abort") {
       const error = new Error("mock abort");
@@ -80,7 +98,10 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 
     if (behavior === "error" || behavior?.type === "error") {
       const description = behavior?.description || "Mock Telegram error";
-      return telegramJson(false, description, behavior?.status || 400);
+      return telegramJson(false, description, behavior?.status || 400, {
+        ...(behavior?.errorCode ? { error_code: behavior.errorCode } : {}),
+        ...(behavior?.parameters ? { parameters: behavior.parameters } : {})
+      });
     }
 
     return telegramJson(true);
