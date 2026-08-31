@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   normalizePostgresConnectionString,
+  rewriteSupabaseDirectConnectionToPooler,
   PostgresConnectionConfigError,
 } from "../server/utils/postgresConnection";
 
@@ -52,6 +53,54 @@ test("missing DATABASE_URL produces a configuration error", () => {
     (error: any) => {
       assert.ok(error instanceof PostgresConnectionConfigError);
       assert.match(error.message, /DATABASE_URL is missing/);
+      return true;
+    }
+  );
+});
+
+
+test("Supabase direct connection is rewritten to the IPv4-compatible session pooler", () => {
+  const direct =
+    "postgresql://postgres:secret@db.biowrbnafkagaafonzws.supabase.co:5432/postgres";
+
+  const pooled = rewriteSupabaseDirectConnectionToPooler(direct, {
+    region: "eu-north-1",
+  });
+  const parsed = new URL(pooled);
+
+  assert.equal(parsed.hostname, "aws-0-eu-north-1.pooler.supabase.com");
+  assert.equal(parsed.port, "5432");
+  assert.equal(parsed.username, "postgres.biowrbnafkagaafonzws");
+  assert.equal(parsed.pathname, "/postgres");
+  assert.equal(parsed.searchParams.get("sslmode"), "require");
+  assert.equal(decodeURIComponent(parsed.password), "secret");
+});
+
+test("Supabase pooler host override is supported without exposing credentials", () => {
+  const direct =
+    "postgresql://postgres:p%40ss@db.biowrbnafkagaafonzws.supabase.co:5432/postgres?connect_timeout=10";
+
+  const pooled = rewriteSupabaseDirectConnectionToPooler(direct, {
+    poolerHost: "custom.pooler.supabase.com",
+  });
+  const parsed = new URL(pooled);
+
+  assert.equal(parsed.hostname, "custom.pooler.supabase.com");
+  assert.equal(parsed.username, "postgres.biowrbnafkagaafonzws");
+  assert.equal(decodeURIComponent(parsed.password), "p@ss");
+  assert.equal(parsed.searchParams.get("connect_timeout"), "10");
+  assert.equal(parsed.searchParams.get("sslmode"), "require");
+});
+
+test("Supabase direct connection fails closed when no pooler routing is configured", () => {
+  assert.throws(
+    () =>
+      rewriteSupabaseDirectConnectionToPooler(
+        "postgresql://postgres:secret@db.biowrbnafkagaafonzws.supabase.co:5432/postgres"
+      ),
+    (error: any) => {
+      assert.ok(error instanceof PostgresConnectionConfigError);
+      assert.match(error.message, /SUPABASE_DB_REGION|SUPABASE_DB_POOLER_HOST/);
       return true;
     }
   );
