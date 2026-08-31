@@ -3,6 +3,7 @@ import { PromotionAdminError, PromotionAdminService } from "../services/promotio
 import { PromotionAIError, PromotionAIService } from "../services/promotionAIService";
 import { PromotionCampaignError, PromotionCampaignService } from "../services/promotionCampaignService";
 import type { LegacySettingsReader } from "../services/telegramCredentialService";
+import { PostgresConnectionConfigError } from "../utils/postgresConnection";
 
 interface PromotionRouterDependencies {
   authMiddleware: RequestHandler;
@@ -11,6 +12,13 @@ interface PromotionRouterDependencies {
 }
 
 function sendError(res: any, error: any) {
+  if (error instanceof PostgresConnectionConfigError) {
+    return res.status(503).json({
+      error: "Promotion database connection is not configured correctly. Check DATABASE_URL.",
+      code: "PROMOTION_DATABASE_CONFIG_ERROR",
+    });
+  }
+
   if (
     error instanceof PromotionAdminError ||
     error instanceof PromotionCampaignError ||
