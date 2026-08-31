@@ -141,7 +141,11 @@ test("Telegram publishing route regression suite", { timeout: 45_000 }, async t 
   writeState(tempDir, [targetA]);
   writeControl(tempDir, {});
 
-  const env = { ...process.env, NODE_ENV: "production" } as Record<string, string>;
+  const env = {
+    ...process.env,
+    NODE_ENV: "production",
+    TELEGRAM_RATE_LIMIT_DISABLED: "true"
+  } as Record<string, string>;
   delete env.SUPABASE_URL;
   delete env.SUPABASE_ANON_KEY;
   delete env.SUPABASE_KEY;
@@ -353,5 +357,62 @@ test("Telegram publishing route regression suite", { timeout: 45_000 }, async t 
     assert.equal(body.results[0].warning.includes("Video was not attached"), true);
     assert.equal(fallback.payload.text.includes("https://t.me/source/1"), true);
     assertTempMediaCleaned(tempDir);
+  });
+
+  await t.test("partial text delivery is quarantined from automatic retry", async () => {
+    writeState(tempDir, [targetA], makePost({ text: "x".repeat(5000) }));
+    writeControl(tempDir, {
+      targets: {
+        "@alpha": {
+          sendMessage: {
+            type: "sequence",
+            responses: [
+              "success",
+              { type: "error", description: "second chunk rejected", status: 400, errorCode: 400 }
+            ]
+          }
+        }
+      }
+    });
+    clearCalls(tempDir);
+
+    const { body } = await postTelegram({
+      postId: "source/1",
+      text: "x".repeat(5000),
+      targetIds: ["a"]
+    });
+
+    assert.equal(body.outcome, "failure");
+    assert.equal(body.results[0].success, false);
+    assert.equal(body.results[0].failureKind, "partial_delivery");
+    assert.equal(body.results[0].retryable, false);
+    assert.equal(body.results[0].telegramMessageId, 1);
+    assert.equal(readCalls(tempDir).filter(call => call.method === "sendMessage").length, 2);
+  });
+
+  await t.test("flood-control errors expose Telegram retry metadata", async () => {
+    writeState(tempDir, [targetA]);
+    writeControl(tempDir, {
+      targets: {
+        "@alpha": {
+          sendMessage: {
+            type: "error",
+            description: "Too Many Requests",
+            status: 429,
+            errorCode: 429,
+            parameters: { retry_after: 12 }
+          }
+        }
+      }
+    });
+    clearCalls(tempDir);
+
+    const { body } = await postTelegram({ postId: "source/1", targetIds: ["a"] });
+
+    assert.equal(body.results[0].failureKind, "flood_control");
+    assert.equal(body.results[0].retryable, true);
+    assert.equal(body.results[0].telegramErrorCode, 429);
+    assert.equal(body.results[0].retryAfterSeconds, 12);
+    assert.equal(readCalls(tempDir).filter(call => call.method === "sendMessage").length, 1);
   });
 });
