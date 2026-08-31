@@ -359,6 +359,33 @@ test("Telegram publishing route regression suite", { timeout: 45_000 }, async t 
     assertTempMediaCleaned(tempDir);
   });
 
+  await t.test("ambiguous photo timeout never falls back to text", async () => {
+    writeState(
+      tempDir,
+      [targetA],
+      makePost({ photoUrl: "https://cdn4.telesco.pe/photo.jpg", mediaType: "photo" })
+    );
+    writeControl(tempDir, {
+      targets: {
+        "@alpha": {
+          sendPhoto: "abort",
+          sendMessage: "success"
+        }
+      }
+    });
+    clearCalls(tempDir);
+
+    const { body } = await postTelegram({ postId: "source/1", targetIds: ["a"] });
+    const calls = readCalls(tempDir);
+
+    assert.equal(body.outcome, "failure");
+    assert.equal(body.results[0].failureKind, "timeout");
+    assert.equal(body.results[0].retryable, false);
+    assert.equal(calls.filter(call => call.method === "sendPhoto").length, 1);
+    assert.equal(calls.filter(call => call.method === "sendMessage").length, 0);
+    assertTempMediaCleaned(tempDir);
+  });
+
   await t.test("partial text delivery is quarantined from automatic retry", async () => {
     writeState(tempDir, [targetA], makePost({ text: "x".repeat(5000) }));
     writeControl(tempDir, {
