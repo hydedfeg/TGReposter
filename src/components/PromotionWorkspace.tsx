@@ -38,6 +38,14 @@ import { safeResponseJson } from "../utils/api";
 type UserRole = "super-admin" | "admin" | null;
 type PromotionSection = "overview" | "campaigns" | "create" | "targets" | "history";
 
+interface PromotionBotAccount {
+  id: string;
+  name: string;
+  botUsername?: string;
+  enabled: boolean;
+  credentialConfigured?: boolean;
+}
+
 interface PromotionApiTarget extends PromotionTarget {
   botAccount?: {
     id: string;
@@ -151,6 +159,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   const [section, setSection] = useState<PromotionSection>("overview");
   const [campaigns, setCampaigns] = useState<PromotionCampaign[]>([]);
   const [targets, setTargets] = useState<PromotionApiTarget[]>([]);
+  const [botAccounts, setBotAccounts] = useState<PromotionBotAccount[]>([]);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -170,6 +179,10 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   const [editCtaText, setEditCtaText] = useState("");
   const [editSourceLink, setEditSourceLink] = useState("");
   const [selectedFailedDeliveryIds, setSelectedFailedDeliveryIds] = useState<string[]>([]);
+  const [targetName, setTargetName] = useState("");
+  const [targetChatId, setTargetChatId] = useState("");
+  const [targetChatType, setTargetChatType] = useState<"channel" | "group" | "supergroup">("channel");
+  const [targetBotAccountId, setTargetBotAccountId] = useState("");
 
   const authFetch = async (url: string, options: RequestInit = {}) => {
     const token = localStorage.getItem("curator_token");
@@ -192,13 +205,30 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const loadCampaignsAndTargets = async () => {
-    const [campaignData, targetData] = await Promise.all([
+    const requests: Promise<any>[] = [
       requestJson("/api/promotion/campaigns"),
       requestJson("/api/promotion/targets"),
-    ]);
-    setCampaigns(campaignData.campaigns || []);
-    setTargets(targetData.targets || []);
-    return { campaigns: campaignData.campaigns || [], targets: targetData.targets || [] };
+    ];
+    if (currentUserRole === "super-admin") {
+      requests.push(requestJson("/api/promotion/bot-accounts"));
+    }
+
+    const [campaignData, targetData, botData] = await Promise.all(requests);
+    const nextCampaigns = campaignData.campaigns || [];
+    const nextTargets = targetData.targets || [];
+    const nextBotAccounts = botData?.botAccounts || [];
+
+    setCampaigns(nextCampaigns);
+    setTargets(nextTargets);
+    if (currentUserRole === "super-admin") {
+      setBotAccounts(nextBotAccounts);
+      setTargetBotAccountId(current =>
+        current && nextBotAccounts.some((account: PromotionBotAccount) => account.id === current)
+          ? current
+          : nextBotAccounts.find((account: PromotionBotAccount) => account.enabled)?.id || ""
+      );
+    }
+    return { campaigns: nextCampaigns, targets: nextTargets, botAccounts: nextBotAccounts };
   };
 
   const loadCampaignDetail = async (campaignId: string) => {
@@ -402,6 +432,85 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
       onToast("Post removed from campaign.");
     } catch (error: any) {
       onToast(error.message || "Unable to remove campaign post.", "error");
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const createPromotionTarget = async () => {
+    if (currentUserRole !== "super-admin") return;
+    if (!targetName.trim() || !targetChatId.trim() || !targetBotAccountId) {
+      onToast("Target name, Telegram chat ID, and bot account are required.", "error");
+      return;
+    }
+
+    setIsActionLoading(true);
+    try {
+      await requestJson("/api/promotion/targets", {
+        method: "POST",
+        body: JSON.stringify({
+          name: targetName.trim(),
+          chatId: targetChatId.trim(),
+          chatType: targetChatType,
+          botAccountId: targetBotAccountId,
+          enabled: true,
+        }),
+      });
+      setTargetName("");
+      setTargetChatId("");
+      await loadCampaignsAndTargets();
+      onToast("Promotion destination created. Test the connection before campaign use.");
+    } catch (error: any) {
+      onToast(error.message || "Unable to create promotion destination.", "error");
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const testPromotionTarget = async (targetId: string) => {
+    if (currentUserRole !== "super-admin") return;
+    setIsActionLoading(true);
+    try {
+      await requestJson(`/api/promotion/targets/${targetId}/test`, { method: "POST" });
+      await loadCampaignsAndTargets();
+      onToast("Promotion destination verified and ready for campaigns.");
+    } catch (error: any) {
+      await loadCampaignsAndTargets().catch(() => undefined);
+      onToast(error.message || "Promotion destination verification failed.", "error");
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const setPromotionTargetEnabled = async (target: PromotionApiTarget, enabled: boolean) => {
+    if (currentUserRole !== "super-admin") return;
+    setIsActionLoading(true);
+    try {
+      await requestJson(`/api/promotion/targets/${target.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      });
+      await loadCampaignsAndTargets();
+      onToast(enabled ? "Promotion destination enabled." : "Promotion destination disabled.");
+    } catch (error: any) {
+      onToast(error.message || "Unable to update promotion destination.", "error");
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const deletePromotionTarget = async (target: PromotionApiTarget) => {
+    if (currentUserRole !== "super-admin") return;
+    if (!window.confirm(`Delete promotion destination “${target.name}”? Existing delivery history will prevent deletion when required for audit.`)) return;
+
+    setIsActionLoading(true);
+    try {
+      await requestJson(`/api/promotion/targets/${target.id}`, { method: "DELETE" });
+      setSelectedTargetIds(current => current.filter(id => id !== target.id));
+      await loadCampaignsAndTargets();
+      onToast("Promotion destination deleted.");
+    } catch (error: any) {
+      onToast(error.message || "Unable to delete promotion destination.", "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -863,25 +972,184 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
       )}
 
       {section === "targets" && (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-slate-900">Promotion targets</h3><p className="text-[11px] text-slate-500 mt-0.5">Channels and groups available to campaign delivery.</p></div>
-            <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">{verifiedTargets.length} verified · {targets.length} total</div>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {targets.map(target => {
-              const ready = verifiedTargets.some(item => item.id === target.id);
-              return (
-                <div key={target.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-                  <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center ${ready ? "bg-emerald-50 text-emerald-600" : target.connectionStatus === "error" ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500"}`}><Target className="w-5 h-5" /></div>
-                  <div className="min-w-0 flex-1"><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-slate-900">{target.name}</p><span className={`text-[9px] font-bold rounded-full px-2 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : target.connectionStatus === "error" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>{ready ? "Ready" : target.connectionStatus}</span>{!target.enabled && <span className="text-[9px] font-bold rounded-full px-2 py-0.5 bg-slate-200 text-slate-500">Disabled</span>}</div><p className="text-xs text-slate-500 mt-1">{target.chatId} · {target.chatType || "type not verified"}</p><p className="text-[10px] text-slate-400 mt-1">Bot: {target.botAccount?.name || "Unknown"}{target.botAccount?.botUsername ? ` (@${target.botAccount.botUsername})` : ""}{target.lastCheckedAt ? ` · Checked ${campaignDate(target.lastCheckedAt)}` : ""}</p>{target.errorMessage && <p className="text-[10px] text-rose-600 mt-1.5">{target.errorMessage}</p>}</div>
-                  <div className="text-[10px] font-semibold text-slate-400">{ready ? "Selectable for campaigns" : "Not selectable"}</div>
+        <div className="space-y-5">
+          {currentUserRole === "super-admin" && (
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
+              <div className="p-5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-sky-600" />
+                  <h3 className="text-sm font-bold text-slate-900">Add campaign destination</h3>
                 </div>
-              );
-            })}
-            {targets.length === 0 && <div className="p-10 text-center"><Target className="w-8 h-8 text-slate-300 mx-auto" /><p className="text-sm font-bold text-slate-700 mt-3">No promotion targets configured</p><p className="text-xs text-slate-500 mt-1">Super Admin target configuration is available on the backend; once a target is verified it appears here automatically.</p></div>}
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Add the Telegram channel or group that campaigns may publish to. A connection test is required before the destination becomes selectable.
+                </p>
+              </div>
+
+              <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Destination name</span>
+                  <input
+                    value={targetName}
+                    onChange={event => setTargetName(event.target.value)}
+                    placeholder="Partner News Channel"
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs outline-none focus:border-sky-400"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Telegram chat ID / @username</span>
+                  <input
+                    value={targetChatId}
+                    onChange={event => setTargetChatId(event.target.value)}
+                    placeholder="@channel or -100..."
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-mono outline-none focus:border-sky-400"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Chat type</span>
+                  <select
+                    value={targetChatType}
+                    onChange={event => setTargetChatType(event.target.value as "channel" | "group" | "supergroup")}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs bg-white outline-none focus:border-sky-400"
+                  >
+                    <option value="channel">Channel</option>
+                    <option value="group">Group</option>
+                    <option value="supergroup">Supergroup</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Publishing bot</span>
+                  <select
+                    value={targetBotAccountId}
+                    onChange={event => setTargetBotAccountId(event.target.value)}
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs bg-white outline-none focus:border-sky-400"
+                  >
+                    <option value="">Select bot account</option>
+                    {botAccounts.map(account => (
+                      <option key={account.id} value={account.id} disabled={!account.enabled || account.credentialConfigured === false}>
+                        {account.name}{account.botUsername ? ` (@${account.botUsername})` : ""}{!account.enabled ? " — disabled" : account.credentialConfigured === false ? " — credential missing" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="px-5 pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-[10px] text-slate-500">
+                  The bot must already be a member/admin of the destination with permission to post.
+                </p>
+                <button
+                  disabled={isActionLoading || !targetName.trim() || !targetChatId.trim() || !targetBotAccountId}
+                  onClick={createPromotionTarget}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 text-white px-4 py-2.5 text-xs font-bold disabled:bg-slate-300"
+                >
+                  {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  Add destination
+                </button>
+              </div>
+
+              {botAccounts.length === 0 && (
+                <div className="mx-5 mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[10px] text-amber-800">
+                  No Promotion bot account is available. The existing Destination Bot can be registered as a Promotion bot account first.
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Campaign destinations</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  These channels and groups are the destination pool shown when launching a campaign.
+                </p>
+              </div>
+              <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
+                {verifiedTargets.length} verified · {targets.length} total
+              </div>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {targets.map(target => {
+                const ready = verifiedTargets.some(item => item.id === target.id);
+                return (
+                  <div key={target.id} className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center gap-4">
+                    <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center ${ready ? "bg-emerald-50 text-emerald-600" : target.connectionStatus === "error" ? "bg-rose-50 text-rose-600" : "bg-slate-100 text-slate-500"}`}>
+                      <Target className="w-5 h-5" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-bold text-slate-900">{target.name}</p>
+                        <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : target.connectionStatus === "error" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>
+                          {ready ? "Ready for campaigns" : target.connectionStatus === "unknown" ? "Needs verification" : "Connection error"}
+                        </span>
+                        {!target.enabled && <span className="text-[9px] font-bold rounded-full px-2 py-0.5 bg-slate-200 text-slate-500">Disabled</span>}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{target.chatId} · {target.chatType || "type not verified"}</p>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Bot: {target.botAccount?.name || "Unknown"}{target.botAccount?.botUsername ? ` (@${target.botAccount.botUsername})` : ""}
+                        {target.lastCheckedAt ? ` · Checked ${campaignDate(target.lastCheckedAt)}` : ""}
+                      </p>
+                      {target.errorMessage && <p className="text-[10px] text-rose-600 mt-1.5">{target.errorMessage}</p>}
+                    </div>
+
+                    {currentUserRole === "super-admin" ? (
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          disabled={isActionLoading || !target.enabled}
+                          onClick={() => testPromotionTarget(target.id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-3 py-2 text-[10px] font-bold text-sky-700 disabled:text-slate-300 disabled:border-slate-200"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          {ready ? "Re-test" : "Test connection"}
+                        </button>
+                        <button
+                          disabled={isActionLoading}
+                          onClick={() => setPromotionTargetEnabled(target, !target.enabled)}
+                          className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600"
+                        >
+                          {target.enabled ? "Disable" : "Enable"}
+                        </button>
+                        <button
+                          disabled={isActionLoading}
+                          onClick={() => deletePromotionTarget(target)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] font-semibold text-slate-400">
+                        {ready ? "Selectable for campaigns" : "Not selectable"}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {targets.length === 0 && (
+                <div className="p-10 text-center">
+                  <Target className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="text-sm font-bold text-slate-700 mt-3">No campaign destinations configured</p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {currentUserRole === "super-admin"
+                      ? "Add a Telegram channel or group above, then test its connection."
+                      : "Ask a Super Admin to configure and verify a Promotion destination."}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {currentUserRole === "admin" && (
+              <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-[10px] text-amber-700">
+                Admins can select verified campaign destinations but cannot change Telegram infrastructure.
+              </div>
+            )}
           </div>
-          {currentUserRole === "admin" && <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-[10px] text-amber-700">Admins can use verified promotion targets in campaigns but cannot change Telegram bot or target infrastructure.</div>}
         </div>
       )}
 
