@@ -1,10 +1,12 @@
 import fs from "fs";
 import mediaService from "./mediaService";
+import telegramRateLimiter, { type TelegramRateLimitChatType } from "./telegramRateLimiter";
 
 export interface TelegramPublishTarget {
   id: string;
   channelId: string;
   name: string;
+  chatType?: TelegramRateLimitChatType;
 }
 
 export interface TelegramPublishPost {
@@ -13,12 +15,25 @@ export interface TelegramPublishPost {
   videoUrl?: string;
 }
 
+export type TelegramFailureKind =
+  | "flood_control"
+  | "telegram_api"
+  | "timeout"
+  | "network"
+  | "partial_delivery"
+  | "invalid_target";
+
 export interface TelegramPublishTargetResult {
   targetId: string;
   name: string;
   success: boolean;
   error?: string;
   warning?: string;
+  telegramMessageId?: number;
+  telegramErrorCode?: number;
+  retryAfterSeconds?: number;
+  failureKind?: TelegramFailureKind;
+  retryable?: boolean;
 }
 
 export interface TelegramPublishSummary {
@@ -42,6 +57,28 @@ export interface TelegramPublishInput {
   targets: TelegramPublishTarget[];
   post: TelegramPublishPost;
   text: string;
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const safeLimit = Math.max(1, Math.min(Math.floor(limit) || 1, items.length));
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const runners = Array.from({ length: safeLimit }, async () => {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      results[index] = await worker(items[index], index);
+    }
+  });
+
+  await Promise.all(runners);
+  return results;
 }
 
 // Keep text-only Telegram messages below the documented 4096-character limit.
@@ -88,12 +125,33 @@ export function splitTelegramText(text: string, maxLength = 4000): string[] {
   return chunks;
 }
 
+const MAX_AUTOMATIC_FLOOD_RETRY_SECONDS = 8;
+
+class TelegramTransportError extends Error {
+  constructor(
+    message: string,
+    readonly failureKind: "timeout" | "network",
+    readonly retryable = false
+  ) {
+    super(message);
+    this.name = "TelegramTransportError";
+  }
+}
+
+interface TelegramRequestRateContext {
+  botToken: string;
+  channelId: string;
+  chatType?: TelegramRateLimitChatType;
+}
+
 // Bound Telegram Bot API requests so one slow destination cannot stall publishing indefinitely.
-// Media uploads get a wider window than ordinary text requests; no automatic retries are used
-// because an ambiguous Telegram timeout could otherwise create duplicate posts.
+// Definite flood-control responses can be retried once after Telegram's retry_after interval.
+// Ambiguous transport failures are never retried automatically because Telegram may already have
+// accepted the message even when the caller did not receive the response.
 async function fetchTelegramWithTimeout(
   input: string | URL | Request,
-  init?: RequestInit
+  init: RequestInit | undefined,
+  rateContext: TelegramRequestRateContext
 ): Promise<Response> {
   const requestUrl =
     typeof input === "string"
@@ -102,19 +160,51 @@ async function fetchTelegramWithTimeout(
         ? input.toString()
         : input.url;
   const timeoutMs = /\/send(?:Photo|Video)$/.test(requestUrl) ? 90_000 : 30_000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } catch (err: any) {
-    if (err?.name === "AbortError") {
-      throw new Error(`Telegram request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+  const performRequest = async () => {
+    await telegramRateLimiter.wait(
+      rateContext.botToken,
+      rateContext.channelId,
+      rateContext.chatType
+    );
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        throw new TelegramTransportError(
+          `Telegram request timed out after ${Math.round(timeoutMs / 1000)} seconds; delivery outcome is unknown.`,
+          "timeout"
+        );
+      }
+      throw new TelegramTransportError(
+        err?.message || "Telegram network request failed; delivery outcome is unknown.",
+        "network"
+      );
+    } finally {
+      clearTimeout(timeout);
     }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
+  };
+
+  let response = await performRequest();
+  if (response.status !== 429) return response;
+
+  let retryAfterSeconds = 0;
+  try {
+    const floodData: any = await response.clone().json();
+    retryAfterSeconds = Number(floodData?.parameters?.retry_after || 0);
+  } catch {}
+
+  if (
+    retryAfterSeconds > 0 &&
+    retryAfterSeconds <= MAX_AUTOMATIC_FLOOD_RETRY_SECONDS
+  ) {
+    telegramRateLimiter.block(rateContext.botToken, rateContext.channelId, retryAfterSeconds);
+    response = await performRequest();
   }
+
+  return response;
 }
 
 function formatTelegramChannelId(rawChannelId: string): string {
@@ -132,13 +222,42 @@ function formatTelegramChannelId(rawChannelId: string): string {
 async function parseTelegramResponse(telegramResponse: Response, context: string) {
   const raw = await telegramResponse.text();
   try {
-    return raw ? JSON.parse(raw) : {};
+    const parsed = raw ? JSON.parse(raw) : {};
+    return { ...parsed, __httpStatus: telegramResponse.status };
   } catch {
     return {
       ok: false,
+      __httpStatus: telegramResponse.status,
       description: `Telegram returned an invalid response while ${context} (HTTP ${telegramResponse.status}).`
     };
   }
+}
+
+function telegramMessageId(data: any): number | undefined {
+  const value = data?.result?.message_id;
+  return Number.isFinite(Number(value)) ? Number(value) : undefined;
+}
+
+function classifyTelegramFailure(data: any) {
+  const telegramErrorCode = Number.isFinite(Number(data?.error_code))
+    ? Number(data.error_code)
+    : undefined;
+  const retryAfterSeconds = Number.isFinite(Number(data?.parameters?.retry_after))
+    ? Number(data.parameters.retry_after)
+    : undefined;
+  if (telegramErrorCode === 429 || retryAfterSeconds) {
+    return {
+      failureKind: "flood_control" as const,
+      retryable: true,
+      ...(telegramErrorCode ? { telegramErrorCode } : {}),
+      ...(retryAfterSeconds ? { retryAfterSeconds } : {})
+    };
+  }
+  return {
+    failureKind: "telegram_api" as const,
+    retryable: true,
+    ...(telegramErrorCode ? { telegramErrorCode } : {})
+  };
 }
 
 async function publishTextChunks(
@@ -185,16 +304,25 @@ async function publishToTarget(
       targetId: target.id,
       name: target.name,
       success: false,
-      error: "Target channel/group ID is empty."
+      error: "Target channel/group ID is empty.",
+      failureKind: "invalid_target",
+      retryable: false
     };
   }
 
   const formattedChannelId = formatTelegramChannelId(rawChannelId);
+  const telegramFetch = (input: string | URL | Request, init?: RequestInit) =>
+    fetchTelegramWithTimeout(input, init, {
+      botToken,
+      channelId: formattedChannelId,
+      chatType: target.chatType,
+    });
 
   try {
     let success = false;
     let responseData: any = null;
     let targetWarning: string | undefined;
+    let primaryMessageId: number | undefined;
 
     // Always use backend-stored media from the authoritative post record.
     // Prefer an actual video over any legacy thumbnail/photo field on video posts.
@@ -229,20 +357,21 @@ async function publishToTarget(
           downloadedVideo.filename
         );
 
-        const videoRes = await fetchTelegramWithTimeout(sendVideoUrl, {
+        const videoRes = await telegramFetch(sendVideoUrl, {
           method: "POST",
           body: form
         });
 
         responseData = await parseTelegramResponse(videoRes, "sending the video");
         if (videoRes.ok && responseData.ok) {
+          primaryMessageId = telegramMessageId(responseData) ?? primaryMessageId;
           videoPublished = true;
           success = true;
 
           // Video captions share Telegram's 1024-character caption limit. Send the
           // rest as ordinary plain-text messages so long posts remain intact.
           for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
-            const continuationRes = await fetchTelegramWithTimeout(
+            const continuationRes = await telegramFetch(
               `https://api.telegram.org/bot${botToken}/sendMessage`,
               {
                 method: "POST",
@@ -286,7 +415,7 @@ async function publishToTarget(
         let fallbackSucceeded = fallbackChunks.length > 0;
 
         for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
-          const fallbackRes = await fetchTelegramWithTimeout(
+          const fallbackRes = await telegramFetch(
             `https://api.telegram.org/bot${botToken}/sendMessage`,
             {
               method: "POST",
@@ -303,6 +432,9 @@ async function publishToTarget(
             fallbackRes,
             "sending the video text fallback"
           );
+          if (fallbackRes.ok && fallbackData.ok && primaryMessageId === undefined) {
+            primaryMessageId = telegramMessageId(fallbackData);
+          }
           if (!fallbackRes.ok || !fallbackData.ok) {
             fallbackSucceeded = false;
             const telegramError = fallbackData.description || "Unknown Telegram fallback error";
@@ -347,20 +479,21 @@ async function publishToTarget(
           downloadedImage.filename
         );
 
-        const photoRes = await fetchTelegramWithTimeout(sendPhotoUrl, {
+        const photoRes = await telegramFetch(sendPhotoUrl, {
           method: "POST",
           body: form
         });
 
         responseData = await parseTelegramResponse(photoRes, "sending the photo");
         if (photoRes.ok && responseData.ok) {
+          primaryMessageId = telegramMessageId(responseData) ?? primaryMessageId;
           photoPublished = true;
           success = true;
 
           // Telegram photo captions are limited to 1024 characters. Any remaining
           // text is sent as plain continuation messages without parse_mode.
           for (let chunkIndex = 0; chunkIndex < captionParts.length; chunkIndex++) {
-            const continuationRes = await fetchTelegramWithTimeout(
+            const continuationRes = await telegramFetch(
               `https://api.telegram.org/bot${botToken}/sendMessage`,
               {
                 method: "POST",
@@ -407,7 +540,7 @@ async function publishToTarget(
         let fallbackSucceeded = fallbackChunks.length > 0;
 
         for (let chunkIndex = 0; chunkIndex < fallbackChunks.length; chunkIndex++) {
-          const fallbackRes = await fetchTelegramWithTimeout(
+          const fallbackRes = await telegramFetch(
             `https://api.telegram.org/bot${botToken}/sendMessage`,
             {
               method: "POST",
@@ -424,6 +557,9 @@ async function publishToTarget(
             fallbackRes,
             "sending the photo text fallback"
           );
+          if (fallbackRes.ok && fallbackData.ok && primaryMessageId === undefined) {
+            primaryMessageId = telegramMessageId(fallbackData);
+          }
           if (!fallbackRes.ok || !fallbackData.ok) {
             fallbackSucceeded = false;
             const telegramError = fallbackData.description || "Unknown Telegram fallback error";
@@ -450,7 +586,7 @@ async function publishToTarget(
       }
 
       for (let chunkIndex = 0; chunkIndex < textChunks.length; chunkIndex++) {
-        const textRes = await fetchTelegramWithTimeout(
+        const textRes = await telegramFetch(
           `https://api.telegram.org/bot${botToken}/sendMessage`,
           {
             method: "POST",
@@ -473,6 +609,10 @@ async function publishToTarget(
           };
         }
 
+        if (textRes.ok && responseData.ok && primaryMessageId === undefined) {
+          primaryMessageId = telegramMessageId(responseData);
+        }
+
         if (!textRes.ok || !responseData.ok) {
           const telegramError = responseData.description || "Unknown Telegram text publishing error";
           responseData = {
@@ -493,31 +633,58 @@ async function publishToTarget(
         targetId: target.id,
         name: target.name,
         success: true,
+        ...(primaryMessageId !== undefined ? { telegramMessageId: primaryMessageId } : {}),
         ...(targetWarning ? { warning: targetWarning } : {})
       };
     }
 
+    const failure = primaryMessageId !== undefined
+      ? { failureKind: "partial_delivery" as const, retryable: false }
+      : classifyTelegramFailure(responseData);
     return {
       targetId: target.id,
       name: target.name,
       success: false,
-      error: responseData ? responseData.description : "Unknown error response from Telegram"
+      error: responseData ? responseData.description : "Unknown error response from Telegram",
+      ...(primaryMessageId !== undefined ? { telegramMessageId: primaryMessageId } : {}),
+      ...failure
     };
   } catch (err: any) {
     console.error(`Error posting to target ${target.name}:`, err);
+    if (err instanceof TelegramTransportError) {
+      return {
+        targetId: target.id,
+        name: target.name,
+        success: false,
+        error: err.message,
+        failureKind: err.failureKind,
+        retryable: err.retryable
+      };
+    }
     return {
       targetId: target.id,
       name: target.name,
       success: false,
-      error: err.message
+      error: err.message,
+      failureKind: "network",
+      retryable: false
     };
   }
 }
 
 export class TelegramPublisherService {
+  constructor(
+    private readonly maxConcurrency = Math.max(
+      1,
+      Math.min(10, Number(process.env.TELEGRAM_PUBLISH_CONCURRENCY || 5) || 5)
+    )
+  ) {}
+
   async publish(input: TelegramPublishInput): Promise<TelegramPublishBatchResult> {
-    const results = await Promise.all(
-      input.targets.map(target => publishToTarget(input.botToken, target, input.post, input.text))
+    const results = await mapWithConcurrency(
+      input.targets,
+      this.maxConcurrency,
+      target => publishToTarget(input.botToken, target, input.post, input.text)
     );
 
     // Promise completion order is nondeterministic; restore configured target order for callers.
