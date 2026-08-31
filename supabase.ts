@@ -1,10 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import runtimeSettingsRepository from "./server/repositories/settingsRepository";
+import { getPostgresConnectionString } from "./server/utils/postgresConnection";
 
 dotenv.config();
 
 let rawSupabaseUrl = process.env.SUPABASE_URL;
-if (rawSupabaseUrl && !rawSupabaseUrl.startsWith("http://") && !rawSupabaseUrl.startsWith("https://")) {
+if (
+  rawSupabaseUrl &&
+  !rawSupabaseUrl.startsWith("http://") &&
+  !rawSupabaseUrl.startsWith("https://")
+) {
   if (!rawSupabaseUrl.includes(".")) {
     rawSupabaseUrl = `https://${rawSupabaseUrl}.supabase.co`;
   } else {
@@ -15,156 +21,212 @@ if (rawSupabaseUrl && !rawSupabaseUrl.startsWith("http://") && !rawSupabaseUrl.s
 export const supabaseUrl = rawSupabaseUrl;
 export const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
-export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+const isSupabaseClientConfigured = !!(supabaseUrl && supabaseAnonKey);
+export const isSupabaseConfigured =
+  !!process.env.DATABASE_URL || isSupabaseClientConfigured;
+
 console.log("Supabase configured:", isSupabaseConfigured);
 console.log("Supabase URL:", supabaseUrl);
 
 let supabase: any = null;
 
 export function getSupabaseClient() {
-  if (!isSupabaseConfigured) return null;
+  if (!isSupabaseClientConfigured) return null;
   if (!supabase) {
     supabase = createClient(supabaseUrl!, supabaseAnonKey!);
   }
   return supabase;
 }
 
-/**
- * SQL Setup Schema to run in Supabase SQL Editor:
- * 
- * create table if not exists curator_settings (
- *   id text primary key default 'default',
- *   data jsonb not null,
- *   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
- * );
- */
+async function readLegacySettingsViaRest(): Promise<any | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
 
-// Check if database table exists
-export async function checkTableExists(): Promise<{ exists: boolean; error?: string; methodUsed: string }> {
-  // Try using pg direct connection if DATABASE_URL is present
-  const dbUrl = process.env.DATABASE_URL;
-  if (dbUrl) {
+  const { data, error } = await client
+    .from("curator_settings")
+    .select("data")
+    .eq("id", "default")
+    .single();
+
+  if (error) {
+    console.warn("Supabase legacy settings read failed:", error.message);
+    return null;
+  }
+
+  return data?.data ?? null;
+}
+
+async function writeLegacySettingsViaRest(settings: any): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  const { error } = await client
+    .from("curator_settings")
+    .upsert({
+      id: "default",
+      data: settings,
+      updated_at: new Date().toISOString(),
+    });
+
+  if (error) {
+    console.error("Supabase legacy settings write failed:", error.message);
+    return false;
+  }
+
+  return true;
+}
+
+export async function checkTableExists(): Promise<{
+  exists: boolean;
+  error?: string;
+  methodUsed: string;
+}> {
+  if (process.env.DATABASE_URL) {
     try {
       const { Client } = await import("pg");
-      const client = new Client({ connectionString: dbUrl });
+      const client = new Client({
+        connectionString: getPostgresConnectionString(),
+      });
       await client.connect();
-      const res = await client.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_name = 'curator_settings'
-        );
+      const result = await client.query(`
+        select exists (
+          select 1
+          from information_schema.tables
+          where table_schema = 'public'
+            and table_name = 'curator_settings'
+        ) as exists
       `);
       await client.end();
-      return { exists: res.rows[0].exists, methodUsed: "Direct PostgreSQL" };
-    } catch (e: any) {
-      console.warn("Direct PostgreSQL connection check failed, trying REST API:", e.message);
+      return {
+        exists: !!result.rows[0]?.exists,
+        methodUsed: "Backend PostgreSQL",
+      };
+    } catch (error: any) {
+      console.warn(
+        "Backend PostgreSQL table check failed, trying REST API:",
+        error?.message
+      );
     }
   }
 
-  // Fallback to Supabase client check
   const client = getSupabaseClient();
   if (!client) {
-    return { exists: false, error: "Supabase URL and Anon Key are not configured in environment variables.", methodUsed: "REST API" };
+    return {
+      exists: false,
+      error:
+        "Supabase database access is not configured. Set DATABASE_URL for the backend.",
+      methodUsed: "Unavailable",
+    };
   }
 
   try {
-    const { data, error } = await client
+    const { error } = await client
       .from("curator_settings")
       .select("id")
       .limit(1);
 
     if (error) {
-      // PostgREST error codes: 
-      // PGRST116 means unique row not found or single empty, but table exists
-      // 42P01 (often in message/details) or error.code === 'PGRST116' with no rows doesn't mean failure.
-      // Let's check if error contains 'does not exist' or code is 42P01.
-      if (error.code === "PGRST116") {
-        return { exists: true, methodUsed: "REST API" };
+      if (
+        error.code === "42P01" ||
+        error.message?.includes("does not exist") ||
+        error.message?.includes("relation")
+      ) {
+        return {
+          exists: false,
+          error: "Table 'curator_settings' does not exist.",
+          methodUsed: "REST API",
+        };
       }
-      if (error.message && (error.message.includes("does not exist") || error.message.includes("relation"))) {
-        return { exists: false, error: "Table 'curator_settings' does not exist in your Supabase database.", methodUsed: "REST API" };
-      }
-      // If code is "42P01"
-      if (error.code === "42P01") {
-        return { exists: false, error: "Table 'curator_settings' does not exist in your Supabase database.", methodUsed: "REST API" };
-      }
-      return { exists: false, error: error.message, methodUsed: "REST API" };
+
+      return {
+        exists: false,
+        error: error.message,
+        methodUsed: "REST API",
+      };
     }
+
     return { exists: true, methodUsed: "REST API" };
-  } catch (err: any) {
-    return { exists: false, error: err.message, methodUsed: "REST API" };
+  } catch (error: any) {
+    return {
+      exists: false,
+      error: error?.message,
+      methodUsed: "REST API",
+    };
   }
 }
 
-// Auto-create table using direct PostgreSQL
-export async function autoCreateSettingsTable(): Promise<{ success: boolean; message: string }> {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
-    return { 
-      success: false, 
-      message: "Direct PostgreSQL connection string (DATABASE_URL) is not defined in environment variables. Please configure DATABASE_URL in your env settings to run schema updates automatically, or copy the SQL below to run manually in your Supabase SQL Editor." 
+export async function autoCreateSettingsTable(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  if (!process.env.DATABASE_URL) {
+    return {
+      success: false,
+      message:
+        "DATABASE_URL is not configured on the backend. Schema changes must use the managed Supabase migrations.",
     };
   }
 
   try {
     const { Client } = await import("pg");
-    const client = new Client({ connectionString: dbUrl });
+    const client = new Client({
+      connectionString: getPostgresConnectionString(),
+    });
     await client.connect();
     await client.query(`
-      CREATE TABLE IF NOT EXISTS curator_settings (
-        id TEXT PRIMARY KEY DEFAULT 'default',
-        data JSONB NOT NULL,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-      );
+      create table if not exists public.curator_settings (
+        id text primary key default 'default',
+        data jsonb not null,
+        updated_at timestamptz not null default timezone('utc', now())
+      )
     `);
     await client.end();
-    return { success: true, message: "Database table 'curator_settings' was successfully created and verified using your direct PostgreSQL connection string!" };
-  } catch (err: any) {
-    console.error("Auto table creation failed:", err.message);
-    return { success: false, message: `Failed to create table via direct connection: ${err.message}` };
+
+    return {
+      success: true,
+      message:
+        "Database compatibility table verified through the backend PostgreSQL connection.",
+    };
+  } catch (error: any) {
+    console.error("Database table verification failed:", error?.message);
+    return {
+      success: false,
+      message: `Failed to verify compatibility table: ${error?.message}`,
+    };
   }
 }
 
-// Read settings from Supabase
+// Runtime settings are assembled from normalized tables whenever the backend
+// PostgreSQL connection is available. REST/JSON remains only as a local-dev
+// compatibility fallback and is not the production source of truth.
 export async function readSupabaseDb(): Promise<any | null> {
-  const client = getSupabaseClient();
-  if (!client) return null;
-
-  try {
-    const { data, error } = await client
-      .from("curator_settings")
-      .select("data")
-      .eq("id", "default")
-      .single();
-
-    if (error) {
-      console.warn("Supabase fetch notice (table may not exist or empty):", error.message);
-      return null;
+  if (process.env.DATABASE_URL) {
+    try {
+      return await runtimeSettingsRepository.read();
+    } catch (error: any) {
+      console.error(
+        "Normalized PostgreSQL settings read failed:",
+        error?.message || error
+      );
+      throw error;
     }
-    return data?.data || null;
-  } catch (err: any) {
-    console.error("Supabase read exception:", err.message);
-    return null;
   }
+
+  return readLegacySettingsViaRest();
 }
 
-// Write settings to Supabase
 export async function writeSupabaseDb(settings: any): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const { error } = await client
-      .from("curator_settings")
-      .upsert({ id: "default", data: settings, updated_at: new Date().toISOString() });
-
-    if (error) {
-      console.error("Supabase write error:", error.message);
-      return false;
+  if (process.env.DATABASE_URL) {
+    try {
+      return await runtimeSettingsRepository.write(settings);
+    } catch (error: any) {
+      console.error(
+        "Normalized PostgreSQL settings write failed:",
+        error?.message || error
+      );
+      throw error;
     }
-    return true;
-  } catch (err: any) {
-    console.error("Supabase write exception:", err.message);
-    return false;
   }
+
+  return writeLegacySettingsViaRest(settings);
 }
