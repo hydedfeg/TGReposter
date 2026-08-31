@@ -84,6 +84,40 @@ export function normalizePostgresConnectionString(raw: unknown): string {
   }
 }
 
+export function rewriteSupabaseDirectConnectionToPooler(
+  connectionString: string,
+  options: {
+    region?: string;
+    poolerHost?: string;
+  } = {}
+): string {
+  const parsed = new URL(connectionString);
+  const directMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+  if (!directMatch) return connectionString;
+
+  const projectRef = directMatch[1];
+  const region = options.region?.trim();
+  const poolerHost = options.poolerHost?.trim() || (region ? `aws-0-${region}.pooler.supabase.com` : "");
+
+  if (!poolerHost) {
+    throw new PostgresConnectionConfigError(
+      "Supabase direct DATABASE_URL requires SUPABASE_DB_REGION or SUPABASE_DB_POOLER_HOST for an IPv4-compatible pooler connection."
+    );
+  }
+
+  parsed.username = `postgres.${projectRef}`;
+  parsed.hostname = poolerHost;
+  parsed.port = "5432";
+  if (!parsed.searchParams.has("sslmode")) {
+    parsed.searchParams.set("sslmode", "require");
+  }
+  return parsed.toString();
+}
+
 export function getPostgresConnectionString(): string {
-  return normalizePostgresConnectionString(process.env.DATABASE_URL);
+  const normalized = normalizePostgresConnectionString(process.env.DATABASE_URL);
+  return rewriteSupabaseDirectConnectionToPooler(normalized, {
+    region: process.env.SUPABASE_DB_REGION,
+    poolerHost: process.env.SUPABASE_DB_POOLER_HOST,
+  });
 }
