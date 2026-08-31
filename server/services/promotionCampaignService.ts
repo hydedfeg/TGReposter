@@ -33,6 +33,7 @@ const contentModes = new Set<PromotionContentMode>(["original", "teaser", "ai", 
 const mutableCampaignStatuses = new Set<PromotionCampaignStatus>(["draft", "ready"]);
 const editableStatuses = new Set<PromotionCampaignStatus>(["draft", "ready", "cancelled"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export const MAX_PROMOTION_DELIVERY_ATTEMPTS = 3;
 
 function requiredText(value: unknown, field: string): string {
   if (typeof value !== "string" || !value.trim()) {
@@ -141,6 +142,29 @@ function sameIdSet(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const bSet = new Set(b);
   return a.every(id => bSet.has(id));
+}
+
+function formatTelegramDeliveryError(result: {
+  error?: string;
+  failureKind?: string;
+  retryAfterSeconds?: number;
+}) {
+  const parts = [result.error || "Telegram delivery failed."];
+  if (result.failureKind) parts.push(`Failure kind: ${result.failureKind}.`);
+  if (result.retryAfterSeconds) {
+    parts.push(`Telegram retry_after: ${result.retryAfterSeconds}s.`);
+  }
+  return parts.join(" ");
+}
+
+function shouldQuarantineDelivery(result: {
+  success: boolean;
+  retryable?: boolean;
+  failureKind?: string;
+}) {
+  return !result.success &&
+    result.retryable === false &&
+    ["partial_delivery", "timeout", "network"].includes(result.failureKind || "");
 }
 
 export class PromotionCampaignService {
@@ -359,8 +383,23 @@ export class PromotionCampaignService {
       }
     }
 
+    const exhausted = allowedStatus === "failed"
+      ? workItems.filter(item => item.delivery.attemptCount >= MAX_PROMOTION_DELIVERY_ATTEMPTS)
+      : [];
+    if (deliveryIds?.length && exhausted.length > 0) {
+      throw new PromotionCampaignError(
+        409,
+        "DELIVERY_RETRY_LIMIT_REACHED",
+        `Promotion deliveries may be attempted at most ${MAX_PROMOTION_DELIVERY_ATTEMPTS} times.`,
+        { deliveryIds: exhausted.map(item => item.delivery.id) }
+      );
+    }
+    const executableWorkItems = allowedStatus === "failed"
+      ? workItems.filter(item => item.delivery.attemptCount < MAX_PROMOTION_DELIVERY_ATTEMPTS)
+      : workItems;
+
     const groups = new Map<string, PromotionDeliveryWorkItem[]>();
-    for (const item of workItems) {
+    for (const item of executableWorkItems) {
       const key = `${item.campaignPost.id}:${item.botAccount.id}`;
       const group = groups.get(key) || [];
       group.push(item);
@@ -421,6 +460,7 @@ export class PromotionCampaignService {
             id: item.delivery.id,
             channelId: item.target.chatId,
             name: item.target.name,
+            chatType: item.target.chatType,
           })),
           post: {
             url: representative.campaignPost.sourceLinkOverride || representative.sourcePost.telegramUrl || "",
@@ -450,8 +490,15 @@ export class PromotionCampaignService {
           deliveryId: item.delivery.id,
           attemptNumber,
           success: result.success,
+          terminalStatus: result.success
+            ? "success"
+            : shouldQuarantineDelivery(result)
+              ? "skipped"
+              : "failed",
           warningMessage: result.warning,
-          errorMessage: result.error,
+          errorMessage: result.success ? undefined : formatTelegramDeliveryError(result),
+          telegramMessageId: result.telegramMessageId,
+          telegramErrorCode: result.telegramErrorCode,
         });
       }));
     }
@@ -523,7 +570,30 @@ export class PromotionCampaignService {
       }
     }
 
-    const targetIds = Array.from(new Set(failedWork.map(item => item.target.id)));
+    const exhausted = failedWork.filter(
+      item => item.delivery.attemptCount >= MAX_PROMOTION_DELIVERY_ATTEMPTS
+    );
+    if (deliveryIds?.length && exhausted.length > 0) {
+      throw new PromotionCampaignError(
+        409,
+        "DELIVERY_RETRY_LIMIT_REACHED",
+        `Promotion deliveries may be attempted at most ${MAX_PROMOTION_DELIVERY_ATTEMPTS} times.`,
+        { deliveryIds: exhausted.map(item => item.delivery.id) }
+      );
+    }
+
+    const retryableFailedWork = failedWork.filter(
+      item => item.delivery.attemptCount < MAX_PROMOTION_DELIVERY_ATTEMPTS
+    );
+    if (retryableFailedWork.length === 0) {
+      throw new PromotionCampaignError(
+        409,
+        "DELIVERY_RETRY_LIMIT_REACHED",
+        `No failed deliveries remain below the ${MAX_PROMOTION_DELIVERY_ATTEMPTS}-attempt retry limit.`
+      );
+    }
+
+    const targetIds = Array.from(new Set(retryableFailedWork.map(item => item.target.id)));
     await this.validateTargets(targetIds);
     const running = await this.repository.markCampaignRunningForRetry(campaignId);
     if (!running) {
