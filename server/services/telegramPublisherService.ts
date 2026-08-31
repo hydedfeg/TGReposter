@@ -205,6 +205,7 @@ async function fetchTelegramWithTimeout(
     if (rateContext) {
       telegramRateLimiter.block(rateContext.botToken, rateContext.channelId, retryAfterSeconds);
     }
+    await new Promise(resolve => setTimeout(resolve, retryAfterSeconds * 1000 + 100));
     response = await performRequest();
   }
 
@@ -327,6 +328,7 @@ async function publishToTarget(
     let responseData: any = null;
     let targetWarning: string | undefined;
     let primaryMessageId: number | undefined;
+    let transportFailure: TelegramTransportError | undefined;
 
     // Always use backend-stored media from the authoritative post record.
     // Prefer an actual video over any legacy thumbnail/photo field on video posts.
@@ -340,6 +342,7 @@ async function publishToTarget(
       let downloadedVideo: Awaited<ReturnType<typeof mediaService.downloadVideoWithMetadata>> = null;
       let videoPublished = false;
       let mediaFailure = "";
+      let mediaFloodControlled = false;
 
       try {
         downloadedVideo = await mediaService.downloadVideoWithMetadata(activeVideo);
@@ -403,15 +406,19 @@ async function publishToTarget(
             }
           }
         } else {
+          mediaFloodControlled =
+            responseData?.error_code === 429 ||
+            Number(responseData?.parameters?.retry_after || 0) > 0;
           mediaFailure = responseData.description || "Telegram rejected the video upload.";
         }
       } catch (err: any) {
+        if (err instanceof TelegramTransportError) transportFailure = err;
         mediaFailure = err.message || "Telegram video publishing failed.";
       } finally {
         mediaService.deleteTemp(downloadedVideo?.filepath);
       }
 
-      if (!videoPublished && !success) {
+      if (!videoPublished && !success && !transportFailure && !mediaFloodControlled) {
         const fallbackText = formattedText.trim()
           ? `${formattedText}\n\nVideo: ${post.url}`
           : `Video: ${post.url}`;
@@ -463,6 +470,7 @@ async function publishToTarget(
       let downloadedImage: Awaited<ReturnType<typeof mediaService.downloadImageWithMetadata>> = null;
       let photoPublished = false;
       let mediaFailure = "";
+      let mediaFloodControlled = false;
 
       try {
         downloadedImage = await mediaService.downloadImageWithMetadata(activePhoto);
@@ -525,9 +533,13 @@ async function publishToTarget(
             }
           }
         } else {
+          mediaFloodControlled =
+            responseData?.error_code === 429 ||
+            Number(responseData?.parameters?.retry_after || 0) > 0;
           mediaFailure = responseData.description || "Telegram rejected the photo upload.";
         }
       } catch (err: any) {
+        if (err instanceof TelegramTransportError) transportFailure = err;
         mediaFailure = err.message || "Telegram photo publishing failed.";
       } finally {
         mediaService.deleteTemp(downloadedImage?.filepath);
@@ -536,7 +548,7 @@ async function publishToTarget(
       // If the photo itself was never published, preserve the post content by falling
       // back to plain text plus the stored Telegram media URL. Keep the warning in the
       // per-target result so callers can distinguish a true photo publish from fallback.
-      if (!photoPublished && !success) {
+      if (!photoPublished && !success && !transportFailure && !mediaFloodControlled) {
         const fallbackText = formattedText.trim()
           ? `${formattedText}\n\nPhoto: ${activePhoto}`
           : `Photo: ${activePhoto}`;
@@ -644,12 +656,15 @@ async function publishToTarget(
 
     const failure = primaryMessageId !== undefined
       ? { failureKind: "partial_delivery" as const, retryable: false }
-      : classifyTelegramFailure(responseData);
+      : transportFailure
+        ? { failureKind: transportFailure.failureKind, retryable: false }
+        : classifyTelegramFailure(responseData);
     return {
       targetId: target.id,
       name: target.name,
       success: false,
-      error: responseData ? responseData.description : "Unknown error response from Telegram",
+      error: transportFailure?.message ||
+        (responseData ? responseData.description : "Unknown error response from Telegram"),
       ...(primaryMessageId !== undefined ? { telegramMessageId: primaryMessageId } : {}),
       ...failure
     };
