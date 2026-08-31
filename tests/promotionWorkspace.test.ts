@@ -34,3 +34,14 @@ test("promotion frontend never handles raw Telegram bot tokens", () => {
   assert.equal(page.includes("botToken"), false);
   assert.match(workspace, /botAccount\?\.name/);
 });
+
+
+test("super-admin can manage campaign destinations from Promotion Targets", () => {
+  const workspace = read("src/components/PromotionWorkspace.tsx");
+
+  assert.match(workspace, /Add campaign destination/);
+  assert.match(workspace, /\/api\/promotion\/targets/);
+  assert.match(workspace, /\/api\/promotion\/targets\/\$\{targetId\}\/test/);
+  assert.match(workspace, /Campaign destinations/);
+  assert.match(workspace, /Ready for campaigns/);
+});
