@@ -414,12 +414,9 @@ const authMiddleware = async (req: any, res: any, next: any) => {
       return next();
     }
     const authHeader = req.headers.authorization;
-console.log("Authorization header:", authHeader);
 
 const token = authHeader && authHeader.split(" ")[1];
-console.log("Parsed token:", token);
 
-console.log("Active sessions:", [...activeSessions.keys()]);
     if (token) {
       const session = activeSessions.get(token);
       if (session) {
@@ -522,8 +519,6 @@ app.post("/api/auth/login", async (req, res) => {
     const token = crypto.randomBytes(32).toString("hex");
     activeSessions.set(token, { username: user.username, role: user.role });
     
-    console.log("LOGIN TOKEN:", token);
-console.log("SESSIONS AFTER LOGIN:", [...activeSessions.keys()]);
 
     return res.json({ success: true, token, role: user.role, username: user.username });
   } else {
