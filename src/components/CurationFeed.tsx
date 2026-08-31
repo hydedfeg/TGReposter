@@ -1,589 +1,584 @@
-import React, { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Sparkles,
-  ExternalLink,
+  AlertCircle,
   Archive,
-  CheckCircle,
-  Clock,
-  Trash,
-  Copy,
-  ChevronDown,
-  ChevronUp,
-  Languages,
+  ArrowLeft,
   Check,
-  Send,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  FileText,
+  Hash,
+  Inbox,
+  Languages,
   RefreshCw,
   Search,
-  MessageSquare,
-  Hash,
-  AlertCircle,
-  CornerDownRight,
-  BookOpen,
-  Radio
+  Send,
+  Sparkles,
+  WandSparkles,
 } from "lucide-react";
-import { CuratedPost, DestinationTarget } from "../types";
+import type { CuratedPost, DestinationTarget } from "../types";
+import { AI_CONNECTION_FALLBACK_ERROR, AI_CURATION_FALLBACK_ERROR } from "../utils/aiErrors";
 import { safeResponseJson } from "../utils/api";
-import {
-  AI_CONNECTION_FALLBACK_ERROR,
-  AI_CURATION_FALLBACK_ERROR
-} from "../utils/aiErrors";
 
 interface CurationFeedProps {
-  posts: CuratedPost[];
-  onUpdatePost: (postId: string, updatedFields: Partial<CuratedPost>) => void;
-  onPostToTelegram: (postId: string, editedText: string, photoUrl?: string) => Promise<boolean>;
+  initialTab?: TabType;
   isBotConfigured: boolean;
-  onTriggerScrape: () => void;
   isScraping: boolean;
+  onPostToTelegram: (postId: string, editedText: string, photoUrl?: string) => Promise<boolean>;
+  onTriggerScrape: () => void;
+  onUpdatePost: (postId: string, updatedFields: Partial<CuratedPost>) => void | Promise<void>;
+  posts: CuratedPost[];
   targets?: DestinationTarget[];
 }
 
 type TabType = "pending" | "approved" | "posted" | "archived";
+type MobileReviewView = "original" | "edit" | "preview";
+
+interface AiSuggestion {
+  action: string;
+  original: string;
+  result: string;
+}
+
+const tones = ["Professional", "Casual", "Punchy & Viral", "Insightful News", "Bullet Summary"];
+const languages = ["English", "Spanish", "Russian", "French", "German", "Chinese", "Arabic"];
+
+const tabLabels: Record<TabType, string> = {
+  pending: "Pending",
+  approved: "Approved",
+  posted: "Published",
+  archived: "Archived",
+};
+
+function formatDate(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    month: "short",
+  });
+}
+
+function initials(channel: string) {
+  return channel.replace(/^@/, "").slice(0, 2).toUpperCase();
+}
+
+function statusClasses(status: CuratedPost["status"]) {
+  if (status === "approved") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (status === "posted") return "bg-sky-50 text-sky-700 border-sky-200";
+  if (status === "archived") return "bg-slate-100 text-slate-600 border-slate-200";
+  return "bg-amber-50 text-amber-700 border-amber-200";
+}
+
+function OriginalPostPanel({ post }: { post: CuratedPost }) {
+  return (
+    <section className="flex h-full min-h-0 flex-col bg-white" aria-label="Original post">
+      <div className="border-b border-slate-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg font-bold text-slate-950">Original post</h2>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
+                {initials(post.channelUsername)}
+              </span>
+              <div>
+                <p className="text-sm font-bold text-sky-700">@{post.channelUsername}</p>
+                <p className="text-xs text-slate-500">{formatDate(post.date)}</p>
+              </div>
+            </div>
+          </div>
+          <a
+            href={post.url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-bold text-sky-600 hover:bg-sky-50"
+          >
+            Open <ExternalLink className="h-4 w-4" aria-hidden="true" />
+          </a>
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+        <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700">{post.originalText || "This Telegram post contains media without a text caption."}</p>
+        {post.videoUrl ? (
+          <video src={post.videoUrl} controls preload="metadata" className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
+        ) : post.photoUrl ? (
+          <img src={post.photoUrl} alt="Telegram post attachment" referrerPolicy="no-referrer" className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function TelegramPreview({ post, text }: { post: CuratedPost; text: string }) {
+  return (
+    <div className="rounded-2xl bg-[#dcebd2] p-4 shadow-inner">
+      <div className="ml-auto max-w-md rounded-2xl rounded-br-md bg-white px-4 py-3 shadow-sm">
+        <p className="text-sm font-bold text-sky-700">TGReposter</p>
+        <p className="mt-1 whitespace-pre-wrap text-[15px] leading-6 text-slate-800">{text || "Your curated Telegram message will appear here."}</p>
+        <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-400">
+          Preview <Check className="h-3.5 w-3.5 text-sky-500" aria-hidden="true" />
+        </div>
+      </div>
+      <p className="mt-2 text-xs font-semibold text-slate-600">Source: @{post.channelUsername}</p>
+    </div>
+  );
+}
+
+function AiSuggestionCard({ suggestion, onApply, onDismiss }: { suggestion: AiSuggestion; onApply: () => void; onDismiss: () => void }) {
+  return (
+    <div className="rounded-2xl border border-violet-200 bg-violet-50/70 p-4" role="status">
+      <div className="flex items-start gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-slate-900">AI draft ready</p>
+          <p className="mt-1 text-sm text-slate-600">Review the {suggestion.action.toLowerCase()} suggestion before applying it.</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-rose-100 bg-white p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Before</p>
+          <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-600">{suggestion.original}</p>
+        </div>
+        <div className="rounded-xl border border-emerald-100 bg-white p-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-emerald-600">After</p>
+          <p className="mt-1 line-clamp-3 text-sm leading-6 text-slate-700">{suggestion.result}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" onClick={onDismiss} className="min-h-11 rounded-xl px-4 text-sm font-bold text-violet-700 hover:bg-violet-100">Dismiss</button>
+        <button type="button" onClick={onApply} className="min-h-11 rounded-xl bg-violet-600 px-5 text-sm font-bold text-white hover:bg-violet-700">Apply</button>
+      </div>
+    </div>
+  );
+}
 
 export default function CurationFeed({
-  posts,
-  onUpdatePost,
-  onPostToTelegram,
+  initialTab = "pending",
   isBotConfigured,
-  onTriggerScrape,
   isScraping,
-  targets
+  onPostToTelegram,
+  onTriggerScrape,
+  onUpdatePost,
+  posts,
+  targets,
 }: CurationFeedProps) {
-  const [activeTab, setActiveTab] = useState<TabType>("pending");
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [searchQuery, setSearchQuery] = useState("");
-  const [editingPostId, setEditingPostId] = useState<string | null>(null);
-  const [editedText, setEditedText] = useState("");
-  const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
+  const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [activeTone, setActiveTone] = useState("Professional");
+  const [activeLanguage, setActiveLanguage] = useState("English");
+  const [aiLoadingAction, setAiLoadingAction] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [activeTone, setActiveTone] = useState<string>("Professional");
-  const [activeLang, setActiveLang] = useState<string>("English");
+  const [feedback, setFeedback] = useState<{ message: string; type: "error" | "success" } | null>(null);
+  const [mobileReviewOpen, setMobileReviewOpen] = useState(false);
+  const [mobileReviewView, setMobileReviewView] = useState<MobileReviewView>("edit");
+  const [copied, setCopied] = useState(false);
 
-  // Filter posts based on tab and query
-  const filteredPosts = posts.filter((post) => {
-    const matchesTab = post.status === activeTab;
-    const matchesQuery =
-      post.originalText.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      post.text.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      post.channelUsername.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesTab && matchesQuery;
-  });
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
-  const handleStartEdit = (post: CuratedPost) => {
-    setEditingPostId(post.id);
-    setEditedText(post.text);
-  };
+  useEffect(() => {
+    if (!mobileReviewOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileReviewOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileReviewOpen]);
 
-  const handleSaveText = (postId: string) => {
-    onUpdatePost(postId, { text: editedText });
-    setEditingPostId(null);
-  };
-
-  const handleCancelEdit = () => {
-    setEditingPostId(null);
-  };
-
-  // AI Assistant Call
-  const handleAiAction = async (postId: string, postText: string, action: string, context?: string) => {
-    setAiLoadingId(`${postId}-${action}`);
-    try {
-      const savedToken = localStorage.getItem("curator_token");
-      const res = await fetch("/api/ai/curate", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {})
+  const tabCounts = useMemo(
+    () =>
+      posts.reduce<Record<TabType, number>>(
+        (counts, post) => {
+          counts[post.status] += 1;
+          return counts;
         },
-        body: JSON.stringify({
-          action,
-          text: postText,
-          context
-        })
-      });
+        { pending: 0, approved: 0, posted: 0, archived: 0 },
+      ),
+    [posts],
+  );
 
-      const data = await safeResponseJson(res);
-      if (res.ok && data.result) {
-        if (editingPostId === postId) {
-          // If editing, merge/replace in text input
-          if (action === "hashtags") {
-            setEditedText((prev) => `${prev}\n\n${data.result}`);
-          } else {
-            setEditedText(data.result);
-          }
-        } else {
-          // Update db entry Directly
-          let newText = data.result;
-          if (action === "hashtags") {
-            const p = posts.find((x) => x.id === postId);
-            newText = `${p?.text || postText}\n\n${data.result}`;
-          }
-          onUpdatePost(postId, { text: newText });
-        }
-      } else {
-        alert(data.error || AI_CURATION_FALLBACK_ERROR);
-      }
-    } catch (err: any) {
-      alert(err.message || AI_CONNECTION_FALLBACK_ERROR);
-    } finally {
-      setAiLoadingId(null);
-    }
+  const filteredPosts = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    return posts.filter((post) => {
+      if (post.status !== activeTab) return false;
+      if (!normalizedQuery) return true;
+      return [post.originalText, post.text, post.channelUsername].some((value) => value.toLowerCase().includes(normalizedQuery));
+    });
+  }, [activeTab, posts, searchQuery]);
+
+  const selectedPost = useMemo(
+    () => filteredPosts.find((post) => post.id === selectedPostId) || filteredPosts[0] || null,
+    [filteredPosts, selectedPostId],
+  );
+
+  useEffect(() => {
+    if (selectedPost && selectedPost.id !== selectedPostId) setSelectedPostId(selectedPost.id);
+    if (!selectedPost && selectedPostId) setSelectedPostId(null);
+  }, [selectedPost, selectedPostId]);
+
+  useEffect(() => {
+    setDraftText(selectedPost?.text || "");
+    setAiSuggestion(null);
+    setFeedback(null);
+    setCopied(false);
+  }, [selectedPost?.id, selectedPost?.text]);
+
+  const enabledTargets = targets?.filter((target) => target.enabled) || [];
+  const isDirty = Boolean(selectedPost && draftText !== selectedPost.text);
+
+  const selectPost = (post: CuratedPost, openMobile = false) => {
+    setSelectedPostId(post.id);
+    setMobileReviewView("edit");
+    if (openMobile) setMobileReviewOpen(true);
   };
 
-  const handleCopyToClipboard = (postId: string, text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(postId);
-    setTimeout(() => setCopiedId(null), 2000);
+  const saveDraft = async () => {
+    if (!selectedPost || !isDirty) return;
+    await onUpdatePost(selectedPost.id, { text: draftText });
+    setFeedback({ message: "Draft saved.", type: "success" });
   };
 
-  const handlePublish = async (postId: string, text: string, photoUrl?: string) => {
+  const approvePost = async () => {
+    if (!selectedPost) return;
+    await onUpdatePost(selectedPost.id, { status: "approved", text: draftText });
+    setFeedback({ message: "Post approved and moved to the approved queue.", type: "success" });
+  };
+
+  const publishPost = async () => {
+    if (!selectedPost) return;
     if (!isBotConfigured) {
-      alert("Please configure your Telegram Destination Bot first under the 'Destination' tab.");
+      setFeedback({ message: "Configure and enable a Telegram destination before publishing.", type: "error" });
       return;
     }
-
-    setPublishingId(postId);
+    if (isDirty) await onUpdatePost(selectedPost.id, { text: draftText });
+    setPublishingId(selectedPost.id);
     try {
-      const success = await onPostToTelegram(postId, text, photoUrl);
-      if (success) {
-        // Automatically switch tabs or notify
-      }
-    } catch (e) {
-      // errors handled by parent
+      const success = await onPostToTelegram(selectedPost.id, draftText, selectedPost.photoUrl);
+      setFeedback({
+        message: success ? "Published successfully to the selected Telegram destinations." : "Publishing failed. Review the destination error and try again.",
+        type: success ? "success" : "error",
+      });
+      if (success) setMobileReviewOpen(false);
     } finally {
       setPublishingId(null);
     }
   };
 
-  const tones = ["Professional", "Casual", "Punchy & Viral", "Insightful News", "Bullet Summary"];
-  const languages = ["English", "Spanish", "Russian", "French", "German", "Chinese", "Arabic"];
+  const archivePost = async () => {
+    if (!selectedPost) return;
+    await onUpdatePost(selectedPost.id, { status: selectedPost.status === "archived" ? "pending" : "archived" });
+  };
 
-  const getTabLabel = (tab: TabType) => {
-    switch (tab) {
-      case "pending":
-        return "Inbox / Matches";
-      case "approved":
-        return "Approved";
-      case "posted":
-        return "Published";
-      case "archived":
-        return "Archive";
+  const copyDraft = async () => {
+    await navigator.clipboard.writeText(draftText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
+  const runAiAction = async (action: string, context?: string) => {
+    if (!selectedPost) return;
+    setAiLoadingAction(action);
+    setFeedback(null);
+    try {
+      const token = localStorage.getItem("curator_token");
+      const response = await fetch("/api/ai/curate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ action, context, text: draftText }),
+      });
+      const data = await safeResponseJson(response);
+      if (!response.ok || !data.result) throw new Error(data.error || AI_CURATION_FALLBACK_ERROR);
+      const result = action === "hashtags" ? [draftText.trim(), String(data.result).trim()].filter(Boolean).join("\n\n") : String(data.result).trim();
+      setAiSuggestion({ action, original: draftText, result });
+    } catch (error: any) {
+      setFeedback({ message: error.message || AI_CONNECTION_FALLBACK_ERROR, type: "error" });
+    } finally {
+      setAiLoadingAction(null);
     }
   };
 
-  const getTabBadgeColor = (tab: TabType) => {
-    switch (tab) {
-      case "pending":
-        return "bg-amber-100 text-amber-800";
-      case "approved":
-        return "bg-indigo-100 text-indigo-800";
-      case "posted":
-        return "bg-emerald-100 text-emerald-800";
-      case "archived":
-        return "bg-slate-200 text-slate-700";
-    }
+  const applySuggestion = () => {
+    if (!aiSuggestion) return;
+    setDraftText(aiSuggestion.result);
+    setAiSuggestion(null);
+    setFeedback({ message: "AI suggestion applied. Save or approve when ready.", type: "success" });
+  };
+
+  const renderStatusTabs = (mobile = false) => (
+    <div className={`flex gap-2 ${mobile ? "overflow-x-auto pb-1" : "flex-wrap"}`} role="tablist" aria-label="Post status">
+      {(Object.keys(tabLabels) as TabType[]).map((tab) => (
+        <button
+          type="button"
+          key={tab}
+          role="tab"
+          aria-selected={activeTab === tab}
+          onClick={() => {
+            setActiveTab(tab);
+            setMobileReviewOpen(false);
+          }}
+          className={`inline-flex min-h-11 shrink-0 items-center gap-2 rounded-xl border px-3 text-sm font-bold transition-colors ${
+            activeTab === tab
+              ? "border-slate-950 bg-slate-950 text-white"
+              : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          {tabLabels[tab]}
+          <span className={`rounded-full px-2 py-0.5 text-xs ${activeTab === tab ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"}`}>
+            {tabCounts[tab]}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderAiTools = () => (
+    <section className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4" aria-label="AI Curation Toolkit">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-bold text-violet-800">
+          <WandSparkles className="h-5 w-5" aria-hidden="true" /> AI Curation Toolkit
+        </h3>
+        {aiLoadingAction ? <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-600"><RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> Generating</span> : null}
+      </div>
+      <p className="mt-1 text-xs leading-5 text-violet-700">Powered by server-side AI. Use these review-only actions to edit posts using AI.</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("rephrase", activeTone)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+          <Sparkles className="h-4 w-4" aria-hidden="true" /> Rephrase
+        </button>
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("summarize")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+          <FileText className="h-4 w-4" aria-hidden="true" /> Summarize
+        </button>
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("translate", activeLanguage)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+          <Languages className="h-4 w-4" aria-hidden="true" /> Translate
+        </button>
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("hashtags")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+          <Hash className="h-4 w-4" aria-hidden="true" /> Hashtags
+        </button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <label className="text-xs font-bold text-slate-600">
+          Tone
+          <select value={activeTone} onChange={(event) => setActiveTone(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-800 xl:text-sm">
+            {tones.map((tone) => <option key={tone}>{tone}</option>)}
+          </select>
+        </label>
+        <label className="text-xs font-bold text-slate-600">
+          Language
+          <select value={activeLanguage} onChange={(event) => setActiveLanguage(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-800 xl:text-sm">
+            {languages.map((language) => <option key={language}>{language}</option>)}
+          </select>
+        </label>
+      </div>
+    </section>
+  );
+
+  const renderEditor = (showPreview = true) => {
+    if (!selectedPost) return null;
+    return (
+      <section className="space-y-4">
+        <div>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-bold text-slate-950">Curated version</h2>
+            <span className={`text-xs font-bold ${draftText.length > 4096 ? "text-rose-600" : "text-slate-500"}`}>{draftText.length} / 4096</span>
+          </div>
+          <textarea
+            aria-label="Curated version"
+            value={draftText}
+            onChange={(event) => setDraftText(event.target.value)}
+            rows={8}
+            className="mt-2 w-full resize-y rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base leading-7 text-slate-900 outline-hidden transition-shadow focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-500">{isDirty ? "Unsaved changes" : "Draft is saved"}</p>
+            <button type="button" onClick={copyDraft} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-600 hover:bg-slate-100">
+              {copied ? <Check className="h-4 w-4 text-emerald-500" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+        {renderAiTools()}
+        {aiSuggestion ? <AiSuggestionCard suggestion={aiSuggestion} onApply={applySuggestion} onDismiss={() => setAiSuggestion(null)} /> : null}
+        {showPreview ? (
+          <div>
+            <h3 className="mb-2 text-sm font-bold text-slate-800">Telegram preview</h3>
+            <TelegramPreview post={selectedPost} text={draftText} />
+          </div>
+        ) : null}
+        {feedback ? (
+          <div className={`flex items-start gap-2 rounded-xl border p-3 text-sm ${feedback.type === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`} role={feedback.type === "error" ? "alert" : "status"}>
+            {feedback.type === "error" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
+            <span>{feedback.message}</span>
+          </div>
+        ) : null}
+      </section>
+    );
+  };
+
+  const renderDestinationSummary = () => (
+    <div className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-left">
+      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><Send className="h-4 w-4 -rotate-12" aria-hidden="true" /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold text-slate-900">{enabledTargets.length} destination{enabledTargets.length === 1 ? "" : "s"} selected</span>
+        <span className="block truncate text-xs text-slate-500">{enabledTargets.length > 0 ? enabledTargets.map((target) => target.name).join(", ") : "No Telegram destinations enabled"}</span>
+      </span>
+      <ChevronRight className="h-5 w-5 text-slate-400" aria-hidden="true" />
+    </div>
+  );
+
+  const renderActions = (mobile = false) => {
+    if (!selectedPost) return null;
+    const publishing = publishingId === selectedPost.id;
+    return (
+      <div className={`flex gap-2 ${mobile ? "grid grid-cols-3" : "flex-wrap justify-end"}`}>
+        <button type="button" onClick={saveDraft} disabled={!isDirty} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-4 text-sm font-bold text-sky-700 hover:bg-sky-50 disabled:border-slate-200 disabled:text-slate-400">
+          <FileText className="h-4 w-4" aria-hidden="true" /> <span className={mobile ? "hidden min-[370px]:inline" : ""}>Save draft</span>
+        </button>
+        <button type="button" onClick={approvePost} disabled={selectedPost.status === "posted"} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:border-slate-300 disabled:bg-slate-300">
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Approve
+        </button>
+        <button type="button" onClick={publishPost} disabled={publishing || selectedPost.status === "posted"} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-bold text-white shadow-sm hover:bg-sky-700 disabled:bg-slate-300">
+          {publishing ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4 -rotate-12" aria-hidden="true" />}
+          {publishing ? "Publishing" : "Publish"}
+        </button>
+      </div>
+    );
   };
 
   return (
-    <div className="space-y-6">
-      {/* Search and Tabs panel */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col md:flex-row gap-4 justify-between items-center">
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {(["pending", "approved", "posted", "archived"] as TabType[]).map((tab) => {
-            const count = posts.filter((p) => p.status === tab).length;
-            const isActive = activeTab === tab;
-
-            return (
-              <button
-                key={tab}
-                onClick={() => {
-                  setActiveTab(tab);
-                  setEditingPostId(null);
-                }}
-                className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
-                  isActive
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-                }`}
-              >
-                <span>{getTabLabel(tab)}</span>
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-                  isActive ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
-                }`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search */}
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search feed, channel, content..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50 focus:bg-white outline-hidden transition-all"
-          />
-        </div>
-      </div>
-
-      {/* Main Feed Feed */}
-      {filteredPosts.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-xs text-center py-20 px-4">
-          <MessageSquare className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="text-sm font-bold text-slate-700">No curation posts found</h3>
-          <p className="text-xs text-slate-400 mt-1 max-w-[340px] mx-auto leading-relaxed">
-            {searchQuery
-              ? "No posts matches your search criteria. Try modifying your filter text or look under other tabs."
-              : `There are currently no posts classified as '${getTabLabel(activeTab)}'. Click 'Scrape All' to harvest fresh feeds.`}
-          </p>
-          {!searchQuery && activeTab === "pending" && (
-            <button
-              onClick={onTriggerScrape}
-              disabled={isScraping}
-              className="mt-5 inline-flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isScraping ? "animate-spin" : ""}`} />
-              Scrape Fresh Content Now
+    <div className="space-y-4">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="hidden xl:block">{renderStatusTabs()}</div>
+          <div className="xl:hidden">{renderStatusTabs(true)}</div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="relative block min-w-0 sm:w-80">
+              <span className="sr-only">Search posts or channels</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search posts or channels" className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-base outline-hidden focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100 xl:text-sm" />
+            </label>
+            <button type="button" onClick={onTriggerScrape} disabled={isScraping} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50">
+              <RefreshCw className={`h-4 w-4 ${isScraping ? "animate-spin" : ""}`} aria-hidden="true" />
+              {isScraping ? "Syncing" : "Sync sources"}
             </button>
-          )}
+          </div>
         </div>
+      </section>
+
+      {filteredPosts.length === 0 ? (
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-16 text-center shadow-xs">
+          <Inbox className="mx-auto h-12 w-12 text-slate-300" aria-hidden="true" />
+          <h2 className="mt-4 font-display text-lg font-bold text-slate-800">No {tabLabels[activeTab].toLowerCase()} posts</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">{searchQuery ? "No posts match this search. Try another channel or phrase." : "Sync your source channels to collect fresh Telegram content."}</p>
+          {!searchQuery && activeTab === "pending" ? (
+            <button type="button" onClick={onTriggerScrape} disabled={isScraping} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-bold text-white hover:bg-sky-700">
+              <RefreshCw className={`h-4 w-4 ${isScraping ? "animate-spin" : ""}`} aria-hidden="true" /> Sync sources
+            </button>
+          ) : null}
+        </section>
       ) : (
-        <div className="space-y-6">
-          {filteredPosts.map((post) => {
-            const isEditing = editingPostId === post.id;
-            const currentText = isEditing ? editedText : post.text;
-            const isPostAiLoading = aiLoadingId?.startsWith(post.id);
-            const isPostPublishing = publishingId === post.id;
-
-            return (
-              <div
-                key={post.id}
-                className={`bg-white rounded-xl border transition-all shadow-xs overflow-hidden ${
-                  post.errorMessage
-                    ? "border-rose-200 ring-1 ring-rose-100"
-                    : post.status === "posted"
-                    ? "border-emerald-100"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                {/* Header info */}
-                <div className="bg-slate-50/50 border-b border-slate-100 px-5 py-3.5 flex flex-wrap justify-between items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-semibold bg-sky-50 text-sky-700 border border-sky-100 px-2.5 py-0.5 rounded-md">
-                      @{post.channelUsername}
-                    </span>
-                    <span className="text-slate-300 font-sans">•</span>
-                    <span className="text-slate-400 text-xs font-mono">
-                      {new Date(post.date).toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <a
-                      href={post.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-slate-400 hover:text-slate-600 text-xs flex items-center gap-0.5 transition-colors font-semibold"
-                    >
-                      Original Feed <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-
-                    {post.status === "posted" && post.postedAt && (
-                      <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-semibold px-2 py-0.5 rounded-md">
-                        <CheckCircle className="w-3.5 h-3.5" /> Published {new Date(post.postedAt).toLocaleTimeString()}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 p-5">
-                  {/* Left Column: Original and Media */}
-                  <div className="md:col-span-5 space-y-4">
-                    <div className="bg-slate-50/50 rounded-lg p-3.5 border border-slate-100">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Original Content</div>
-                      <p className="text-xs text-slate-600 leading-relaxed font-sans whitespace-pre-wrap max-h-[160px] overflow-y-auto pr-1">
-                        {post.originalText}
-                      </p>
-                    </div>
-
-                    {post.videoUrl ? (
-                      <div className="relative group rounded-lg overflow-hidden border border-slate-100 bg-slate-900">
-                        <video
-                          src={post.videoUrl}
-                          controls
-                          preload="metadata"
-                          className="w-full max-h-[260px] object-contain bg-black"
-                        />
-                        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-md font-mono pointer-events-none">
-                          ATTACHED VIDEO
-                        </div>
-                      </div>
-                    ) : post.photoUrl ? (
-                      <div className="relative group rounded-lg overflow-hidden border border-slate-100 max-h-[180px] bg-slate-900">
-                        <img
-                          src={post.photoUrl}
-                          alt="Post attachment"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-[180px] object-contain group-hover:scale-102 transition-transform duration-300"
-                        />
-                        <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-xs text-white text-[9px] px-2 py-0.5 rounded-md font-mono">
-                          ATTACHED MEDIA
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Right Column: Curated Editor & AI tools */}
-                  <div className="md:col-span-7 space-y-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-center mb-1.5">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-700">
-                          <CornerDownRight className="w-3.5 h-3.5 text-sky-500" />
-                          Curated Output Text (HTML Formatted)
-                        </span>
-
-                        {!isEditing && (
-                          <button
-                            onClick={() => handleStartEdit(post)}
-                            className="text-xs font-semibold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer"
-                          >
-                            Edit Manually
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Editing Area */}
-                      {isEditing ? (
-                        <div className="space-y-2">
-                          <textarea
-                            value={editedText}
-                            onChange={(e) => setEditedText(e.target.value)}
-                            rows={6}
-                            className="w-full p-3.5 border-2 border-sky-400 ring-4 ring-sky-50 rounded-xl text-sm bg-white outline-hidden font-sans leading-relaxed focus:ring-sky-100"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={handleCancelEdit}
-                              className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700 font-semibold cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              onClick={() => handleSaveText(post.id)}
-                              className="bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs px-4 py-1.5 rounded-lg cursor-pointer transition-colors"
-                            >
-                              Save Tweak
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div
-                          onClick={() => handleStartEdit(post)}
-                          className="p-3.5 bg-slate-50 hover:bg-slate-100/50 border border-slate-100 hover:border-slate-200 rounded-xl cursor-pointer transition-all min-h-[140px] whitespace-pre-wrap text-sm text-slate-800 leading-relaxed font-sans"
-                        >
-                          {post.text}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* AI curation toolbox */}
-                    <div className="border-t border-slate-100 pt-4 mt-2">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                        <Sparkles className="w-3.5 h-3.5 text-sky-500 animate-bounce" />
-                        AI Curation Toolkit
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                        {/* Rephrase Tone */}
-                        <div className="flex gap-1.5 items-center">
-                          <select
-                            value={activeTone}
-                            onChange={(e) => setActiveTone(e.target.value)}
-                            className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 font-semibold focus:border-sky-500 outline-hidden font-sans"
-                          >
-                            {tones.map((t) => (
-                              <option key={t} value={t}>{t}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleAiAction(post.id, currentText, "rephrase", activeTone)}
-                            disabled={!!isPostAiLoading}
-                            className="inline-flex flex-1 justify-center items-center gap-1 bg-gradient-to-tr from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-semibold text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-all shadow-sm"
-                          >
-                            {isPostAiLoading && aiLoadingId?.includes("rephrase") ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3 h-3" />
-                            )}
-                            Rephrase Tone
-                          </button>
-                        </div>
-
-                        {/* Translate */}
-                        <div className="flex gap-1.5 items-center">
-                          <select
-                            value={activeLang}
-                            onChange={(e) => setActiveLang(e.target.value)}
-                            className="bg-white border border-slate-200 rounded-lg text-xs py-1.5 px-2.5 font-semibold focus:border-sky-500 outline-hidden font-sans"
-                          >
-                            {languages.map((l) => (
-                              <option key={l} value={l}>{l}</option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => handleAiAction(post.id, currentText, "translate", activeLang)}
-                            disabled={!!isPostAiLoading}
-                            className="inline-flex flex-1 justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 font-semibold text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors"
-                          >
-                            {isPostAiLoading && aiLoadingId?.includes("translate") ? (
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                            ) : (
-                              <Languages className="w-3.5 h-3.5" />
-                            )}
-                            Translate
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2 mt-2">
-                        {/* Auto Hashtags */}
-                        <button
-                          onClick={() => handleAiAction(post.id, currentText, "hashtags")}
-                          disabled={!!isPostAiLoading}
-                          className="inline-flex flex-1 justify-center items-center gap-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors"
-                        >
-                          {isPostAiLoading && aiLoadingId?.includes("hashtags") ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Hash className="w-3.5 h-3.5 text-indigo-500" />
-                          )}
-                          Auto Hashtags
-                        </button>
-
-                        {/* Summarize */}
-                        <button
-                          onClick={() => handleAiAction(post.id, currentText, "summarize")}
-                          disabled={!!isPostAiLoading}
-                          className="inline-flex flex-1 justify-center items-center gap-1.5 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs py-1.5 px-3 rounded-lg cursor-pointer transition-colors"
-                        >
-                          {isPostAiLoading && aiLoadingId?.includes("summarize") ? (
-                            <RefreshCw className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <BookOpen className="w-3.5 h-3.5 text-sky-500" />
-                          )}
-                          Summarize Post
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Active Targets Indicator */}
-                    {targets && targets.filter(t => t.enabled).length > 0 && (
-                      <div className="flex flex-wrap items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-xl px-3.5 py-2 mt-4">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1 shrink-0">
-                          <Radio className="w-3.5 h-3.5 text-indigo-500 animate-pulse" /> Publish destinations:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {targets.filter(t => t.enabled).map(t => (
-                            <span key={t.id} className="inline-flex items-center gap-1 text-[11px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md">
-                              {t.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Action buttons footer */}
-                    <div className="border-t border-slate-100 pt-4 mt-4 flex flex-wrap gap-2 justify-between items-center">
-                      <div className="flex gap-1.5">
-                        <button
-                          onClick={() => handleCopyToClipboard(post.id, currentText)}
-                          className="inline-flex items-center justify-center gap-1 p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors cursor-pointer text-xs font-semibold"
-                          title="Copy curated text"
-                        >
-                          {copiedId === post.id ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
-                          <span>{copiedId === post.id ? "Copied" : "Copy"}</span>
-                        </button>
-
-                        {post.status !== "pending" && (
-                          <button
-                            onClick={() => onUpdatePost(post.id, { status: "pending" })}
-                            className="inline-flex items-center justify-center gap-1 p-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 rounded-lg transition-colors cursor-pointer text-xs font-semibold"
-                          >
-                            <Clock className="w-4 h-4" /> Move to Inbox
-                          </button>
-                        )}
-
-                        {post.status !== "approved" && post.status !== "posted" && (
-                          <button
-                            onClick={() => onUpdatePost(post.id, { status: "approved" })}
-                            className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-indigo-700 rounded-lg transition-colors cursor-pointer text-xs font-bold"
-                          >
-                            Approve
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2">
-                        {post.status !== "archived" && (
-                          <button
-                            onClick={() => onUpdatePost(post.id, { status: "archived" })}
-                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer text-xs font-semibold"
-                            title="Send to Archive"
-                          >
-                            <Archive className="w-4 h-4" />
-                            Archive
-                          </button>
-                        )}
-
-                        {post.status === "archived" && (
-                          <button
-                            onClick={() => onUpdatePost(post.id, { status: "pending" })}
-                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sky-600 hover:bg-sky-50 rounded-lg transition-all cursor-pointer text-xs font-semibold"
-                          >
-                            Restore
-                          </button>
-                        )}
-
-                        {post.status !== "posted" && (
-                          <button
-                            onClick={() => handlePublish(post.id, currentText, post.photoUrl)}
-                            disabled={isPostPublishing}
-                            className="inline-flex items-center justify-center gap-1.5 bg-sky-600 hover:bg-sky-700 disabled:bg-slate-200 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition-colors shadow-xs"
-                          >
-                            {isPostPublishing ? (
-                              <>
-                                <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Publishing...
-                              </>
-                            ) : (
-                              <>
-                                <Send className="w-3.5 h-3.5 transform -rotate-12" /> Publish Now
-                              </>
-                            )}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Display Error Message from posting */}
-                    {post.errorMessage && (
-                      <div className="mt-3 p-3 bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-lg flex gap-2">
-                        <AlertCircle className="w-4.5 h-4.5 text-rose-500 shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-semibold">Last Publishing Error:</p>
-                          <p className="mt-0.5">{post.errorMessage}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+        <>
+          <section className="hidden h-[calc(100vh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs xl:grid">
+            <aside className="flex min-h-0 flex-col border-r border-slate-200" aria-label="Post queue">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
+                <div><h2 className="font-display text-lg font-bold text-slate-950">Post queue</h2><p className="text-xs text-slate-500">{filteredPosts.length} {tabLabels[activeTab].toLowerCase()}</p></div>
               </div>
-            );
-          })}
-        </div>
+              <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
+                {filteredPosts.map((post) => (
+                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`flex w-full gap-3 px-4 py-4 text-left transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-sky-700">@{post.channelUsername}</span><span className="shrink-0 text-xs text-slate-400">{formatDate(post.date)}</span></span>
+                      <span className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600">{post.originalText || "Media post"}</span>
+                      <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${statusClasses(post.status)}`}>{tabLabels[post.status]}</span>
+                    </span>
+                    {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-slate-100 object-cover" /> : null}
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            {selectedPost ? <OriginalPostPanel post={selectedPost} /> : null}
+
+            {selectedPost ? (
+              <section className="flex min-h-0 flex-col border-l border-slate-200 bg-slate-50/40" aria-label="Curated post editor">
+                <div className="min-h-0 flex-1 overflow-y-auto p-5">{renderEditor()}</div>
+                <div className="border-t border-slate-200 bg-white p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0"><p className="text-sm font-bold text-slate-900">Publishing to {enabledTargets.length} destination{enabledTargets.length === 1 ? "" : "s"}</p><p className="truncate text-xs text-slate-500">{enabledTargets.length ? enabledTargets.map((target) => target.name).join(", ") : "Configure a Telegram destination to publish"}</p></div>
+                    <button type="button" onClick={archivePost} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600"><Archive className="h-4 w-4" aria-hidden="true" /> {selectedPost.status === "archived" ? "Restore" : "Archive"}</button>
+                  </div>
+                  {renderActions()}
+                </div>
+              </section>
+            ) : null}
+          </section>
+
+          <section className="space-y-3 xl:hidden" aria-label="Mobile post list">
+            {filteredPosts.map((post) => (
+              <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-left shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
+                <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-base font-bold text-slate-900">@{post.channelUsername}</span><span className="shrink-0 text-sm text-slate-400">{formatDate(post.date)}</span></span><span className="mt-2 line-clamp-3 text-[15px] leading-6 text-slate-600">{post.originalText || "Media post"}</span><span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClasses(post.status)}`}>{tabLabels[post.status]}</span></span>
+                {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
+              </button>
+            ))}
+          </section>
+        </>
       )}
+
+      {mobileReviewOpen && selectedPost ? (
+        <div role="dialog" aria-modal="true" aria-label="Review post" className="fixed inset-0 z-[80] flex flex-col bg-slate-50 xl:hidden">
+          <header className="flex min-h-16 items-center justify-between border-b border-slate-200 bg-white px-3 pt-[env(safe-area-inset-top)]">
+            <button type="button" autoFocus onClick={() => setMobileReviewOpen(false)} aria-label="Back to post list" className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" aria-hidden="true" /></button>
+            <div className="text-center"><h1 className="font-display text-lg font-bold text-slate-950">Review post</h1><p className="text-xs font-semibold text-slate-500">{filteredPosts.findIndex((post) => post.id === selectedPost.id) + 1} of {filteredPosts.length}</p></div>
+            <span className="h-11 w-11" aria-hidden="true" />
+          </header>
+
+          <div className="border-b border-slate-200 bg-white px-4 py-3">
+            <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-2 text-center">
+              <div><span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-sky-600 text-sm font-bold text-white">1</span><p className="mt-1 text-xs font-bold text-sky-600">Review</p></div><div className="h-px w-full bg-slate-200" /><div><span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-500">2</span><p className="mt-1 text-xs font-semibold text-slate-500">Approve</p></div><div className="h-px w-full bg-slate-200" /><div><span className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-500">3</span><p className="mt-1 text-xs font-semibold text-slate-500">Publish</p></div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 rounded-xl border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Review mode">
+              {(["original", "edit", "preview"] as MobileReviewView[]).map((view) => <button type="button" key={view} role="tab" aria-selected={mobileReviewView === view} onClick={() => setMobileReviewView(view)} className={`min-h-11 rounded-lg text-sm font-bold capitalize ${mobileReviewView === view ? "bg-white text-sky-700 shadow-xs" : "text-slate-500"}`}>{view}</button>)}
+            </div>
+          </div>
+
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-8">
+            <div className="mx-auto max-w-2xl space-y-4">
+              <section className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(selectedPost.channelUsername)}</span><div className="min-w-0 flex-1"><p className="truncate text-base font-bold text-slate-900">@{selectedPost.channelUsername}</p><p className="text-sm text-slate-500">{formatDate(selectedPost.date)}</p></div><a href={selectedPost.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-sky-600">Open original <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
+              </section>
+
+              {mobileReviewView === "original" ? <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><OriginalPostPanel post={selectedPost} /></div> : null}
+              {mobileReviewView === "edit" ? (
+                <>
+                  <details className="group rounded-2xl border border-slate-200 bg-white p-4"><summary className="flex cursor-pointer list-none items-center gap-3"><FileText className="h-5 w-5 text-slate-600" aria-hidden="true" /><span className="min-w-0 flex-1"><span className="block text-sm font-bold text-slate-900">Original content summary</span><span className="block text-xs text-slate-500">{selectedPost.originalText.length.toLocaleString()} characters{selectedPost.photoUrl || selectedPost.videoUrl ? " · media attached" : ""}</span></span><ChevronDown className="h-5 w-5 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" /></summary><p className="mt-4 whitespace-pre-wrap border-t border-slate-100 pt-4 text-[15px] leading-7 text-slate-600">{selectedPost.originalText}</p></details>
+                  {renderEditor(false)}
+                  {renderDestinationSummary()}
+                </>
+              ) : null}
+              {mobileReviewView === "preview" ? <div className="space-y-4"><div><h2 className="mb-2 font-display text-lg font-bold text-slate-950">Telegram preview</h2><TelegramPreview post={selectedPost} text={draftText} /></div>{renderDestinationSummary()}{feedback ? <div className={`rounded-xl border p-3 text-sm ${feedback.type === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>{feedback.message}</div> : null}</div> : null}
+            </div>
+          </main>
+
+          <footer className="border-t border-slate-200 bg-white px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)]"><div className="mx-auto max-w-2xl">{renderActions(true)}</div></footer>
+        </div>
+      ) : null}
     </div>
   );
 }

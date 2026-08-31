@@ -1,19 +1,8 @@
 import { useState, useEffect } from "react";
-import {
-  Send,
-  Radio,
-  Filter,
-  Bot,
-  MessageSquare,
-  RefreshCw,
-  AlertTriangle,
-  Sparkles,
-  Info,
-  LogOut,
-  Database,
-  Users
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import Header from "./components/Header";
+import AppShell, { type WorkspaceView } from "./components/AppShell";
+import Dashboard from "./components/Dashboard";
 import SourceChannelsConfig from "./components/SourceChannelsConfig";
 import FilterConfig from "./components/FilterConfig";
 import DestinationConfig from "./components/DestinationConfig";
@@ -22,8 +11,16 @@ import DatabaseConfig from "./components/DatabaseConfig";
 import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
-import { SourceChannel, FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
+import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
+
+const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "destination", "ai", "team", "database"]);
+
+function initialWorkspaceView(): WorkspaceView {
+  const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
+  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database"];
+  return stored && validViews.includes(stored) ? stored : "dashboard";
+}
 
 export default function App() {
   const [settings, setSettings] = useState<CuratorSettings>({
@@ -43,7 +40,7 @@ export default function App() {
     users: []
   });
 
-  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<"feed" | "channels" | "filters" | "destination" | "database" | "ai" | "team">("feed");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceView>(initialWorkspaceView);
   const [isLoading, setIsLoading] = useState(true);
   const [isScraping, setIsScraping] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -62,6 +59,13 @@ export default function App() {
   const [currentUsername, setCurrentUsername] = useState<string | null>(
     localStorage.getItem("curator_username") || null
   );
+
+  useEffect(() => {
+    if (currentUserRole === "admin" && superAdminViews.has(activeWorkspaceTab)) {
+      setActiveWorkspaceTab("dashboard");
+      sessionStorage.setItem("tgreposter-active-view", "dashboard");
+    }
+  }, [activeWorkspaceTab, currentUserRole]);
 
   // Authentication validation helper
   const checkAuth = async (tokenToCheck: string | null) => {
@@ -294,6 +298,20 @@ export default function App() {
     }
   };
 
+  const handleNavigate = (view: WorkspaceView) => {
+    if (view === "promotion") {
+      window.location.hash = "promotion";
+      return;
+    }
+    if (currentUserRole !== "super-admin" && superAdminViews.has(view)) {
+      setActiveWorkspaceTab("dashboard");
+      sessionStorage.setItem("tgreposter-active-view", "dashboard");
+      return;
+    }
+    setActiveWorkspaceTab(view);
+    sessionStorage.setItem("tgreposter-active-view", view);
+  };
+
   // 1. Channel actions
   const handleAddChannel = async (username: string) => {
     const cleanUsername = username.trim().toLowerCase();
@@ -480,12 +498,12 @@ export default function App() {
 
   if (authChecking) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center py-12">
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xl max-w-sm text-center">
-          <RefreshCw className="w-10 h-10 text-sky-500 animate-spin mx-auto mb-4" />
-          <h2 className="font-display font-bold text-slate-800 text-lg">Verifying Access Gatekeeper</h2>
-          <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-            Please wait while we verify security policies and authenticate your session credentials...
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+          <RefreshCw className="mx-auto mb-4 h-10 w-10 animate-spin text-sky-500" aria-hidden="true" />
+          <h2 className="font-display text-lg font-bold text-slate-800">Checking your session</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            TGReposter is securely verifying your access.
           </p>
         </div>
       </div>
@@ -499,10 +517,10 @@ export default function App() {
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <Login passwordSet={!!passwordSet} onSuccess={handleLoginSuccess} />
         </main>
-        <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
+        <footer className="mt-8 border-t border-slate-200 bg-white py-5 text-center text-sm text-slate-500">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-            <p>© 2026 Telegram Content Curator. Powered by server-side AI.</p>
-            <p className="font-mono text-[10px]">Secure, localized server storage • V1.0.0</p>
+            <p>© 2026 TGReposter</p>
+            <p>Secure Telegram content operations</p>
           </div>
         </footer>
       </div>
@@ -511,12 +529,12 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center py-12">
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-xl max-w-sm text-center">
-          <RefreshCw className="w-10 h-10 text-sky-500 animate-spin mx-auto mb-4" />
-          <h2 className="font-display font-bold text-slate-800 text-lg">Initializing Curator Workspace</h2>
-          <p className="text-slate-500 text-xs mt-1 leading-relaxed">
-            Please wait while we boot up the background scraping server and establish initial configurations...
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
+          <RefreshCw className="mx-auto mb-4 h-10 w-10 animate-spin text-sky-500" aria-hidden="true" />
+          <h2 className="font-display text-lg font-bold text-slate-800">Opening your workspace</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Loading sources, posts, destinations, and publishing status.
           </p>
         </div>
       </div>
@@ -526,226 +544,89 @@ export default function App() {
   const isBotConfigured = !!settings.destination.botToken && (!!settings.destination.targets?.some(t => t.enabled) || !!settings.destination.channelId);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header connected={settings.destination.connected} channelId={settings.destination.channelId} targets={settings.destination.targets} onLogout={handleLogout} supabaseActive={settings.supabaseActive} currentUsername={currentUsername} currentUserRole={currentUserRole} />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        
-        {/* Toast / Banner Messages */}
+    <AppShell
+      activeView={activeWorkspaceTab}
+      connected={settings.destination.connected}
+      currentUsername={currentUsername}
+      currentUserRole={currentUserRole}
+      onLogout={handleLogout}
+      onNavigate={handleNavigate}
+      targets={settings.destination.targets}
+    >
+      <div className="space-y-5">
         {successToast && (
-          <div className="bg-emerald-500 text-white rounded-xl py-3 px-4 shadow-md flex items-center gap-2.5 animate-fadeIn transition-all text-sm font-semibold">
-            <CheckCircleIcon className="w-5 h-5 shrink-0" />
+          <div className="flex items-center gap-2.5 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md" role="status">
+            <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden="true" />
             <span>{successToast}</span>
           </div>
         )}
 
         {errorMessage && (
-          <div className="bg-rose-50 border border-rose-100 text-rose-800 rounded-xl py-3.5 px-4 shadow-sm flex items-start gap-2.5 animate-fadeIn text-sm">
-            <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-800 shadow-sm" role="alert">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" aria-hidden="true" />
             <div>
               <p className="font-bold">Notice</p>
-              <p className="text-xs text-rose-700/90 mt-0.5 leading-relaxed font-sans">{errorMessage}</p>
+              <p className="mt-0.5 leading-relaxed text-rose-700">{errorMessage}</p>
             </div>
           </div>
         )}
 
-        {/* Global Action Tip if bot not set up */}
-        {!isBotConfigured && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3 text-sm text-amber-800 shadow-3xs">
-            <Info className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+        {!isBotConfigured && (activeWorkspaceTab === "dashboard" || activeWorkspaceTab === "feed") ? (
+          <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-xs">
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
             <div>
-              <p className="font-bold">Bot Configuration Required</p>
-              <p className="text-xs text-amber-700 mt-1 leading-relaxed">
-                You haven't configured an active Telegram target yet! You can still scrape source channels and edit posts using AI, but to publish them directly, go to the <b>Destination Bot</b> workspace tab, supply bot credentials, and activate at least one channel or group.
+              <p className="font-bold">Publishing setup required</p>
+              <p className="mt-1 leading-relaxed text-amber-700">
+                Content collection and editing are available. Configure and enable a Telegram destination before publishing.
               </p>
+              {currentUserRole === "super-admin" ? (
+                <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
+                  Configure destinations
+                </button>
+              ) : null}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Workspace Navigation Links */}
-        <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-3xs flex flex-wrap gap-1">
-          <button
-            onClick={() => setActiveWorkspaceTab("feed")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "feed"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            Curation Workspace
-          </button>
+        {activeWorkspaceTab === "dashboard" ? (
+          <Dashboard settings={settings} onNavigate={handleNavigate} onSync={handleFetchAll} isSyncing={isScraping} />
+        ) : null}
 
-          <button
-            onClick={() => setActiveWorkspaceTab("channels")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "channels"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Radio className="w-4 h-4" />
-            Source Feeds
-          </button>
+        {activeWorkspaceTab === "feed" || activeWorkspaceTab === "history" ? (
+          <CurationFeed
+            initialTab={activeWorkspaceTab === "history" ? "posted" : "pending"}
+            posts={settings.posts}
+            onUpdatePost={handleUpdatePost}
+            onPostToTelegram={handlePostToTelegram}
+            isBotConfigured={isBotConfigured}
+            onTriggerScrape={handleFetchAll}
+            isScraping={isScraping}
+            targets={settings.destination.targets}
+          />
+        ) : null}
 
-          <button
-            onClick={() => setActiveWorkspaceTab("filters")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "filters"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            Keyword Filters
-          </button>
+        {activeWorkspaceTab === "channels" && currentUserRole === "super-admin" ? (
+          <SourceChannelsConfig channels={settings.channels} onAddChannel={handleAddChannel} onRemoveChannel={handleRemoveChannel} onFetchChannel={handleFetchChannel} onFetchAll={handleFetchAll} isGlobalFetching={isScraping} />
+        ) : null}
 
-          <button
-            onClick={() => setActiveWorkspaceTab("destination")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "destination"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Bot className="w-4 h-4" />
-            Destination Bot
-          </button>
+        {activeWorkspaceTab === "filters" && currentUserRole === "super-admin" ? (
+          <FilterConfig filters={settings.filters} onUpdateFilters={handleUpdateFilters} />
+        ) : null}
 
-          <button
-            onClick={() => setActiveWorkspaceTab("ai")}
-            className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeWorkspaceTab === "ai"
-                ? "bg-slate-900 text-white shadow-2xs"
-                : "text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            AI Engine
-          </button>
+        {activeWorkspaceTab === "destination" && currentUserRole === "super-admin" ? (
+          <DestinationConfig destination={settings.destination} onSave={handleSaveDestination} />
+        ) : null}
 
-          {currentUserRole === "super-admin" && (
-            <button
-              onClick={() => setActiveWorkspaceTab("database")}
-              className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeWorkspaceTab === "database"
-                  ? "bg-slate-900 text-white shadow-2xs"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Database className="w-4 h-4" />
-              Supabase Sync
-            </button>
-          )}
+        {activeWorkspaceTab === "ai" && currentUserRole === "super-admin" ? (
+          <AIConfigView aiConfig={settings.aiConfig} onUpdateAI={handleUpdateAI} geminiActive={geminiActive} openrouterActive={openrouterActive} />
+        ) : null}
 
-          {currentUserRole === "super-admin" && (
-            <button
-              onClick={() => setActiveWorkspaceTab("team")}
-              className={`flex-1 min-w-[120px] inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                activeWorkspaceTab === "team"
-                  ? "bg-slate-900 text-white shadow-2xs"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Team Admins
-            </button>
-          )}
-        </div>
+        {activeWorkspaceTab === "database" && currentUserRole === "super-admin" ? <DatabaseConfig /> : null}
 
-        {/* Workspace Panels */}
-        <div className="transition-all duration-300">
-          {currentUserRole !== "super-admin" && activeWorkspaceTab !== "feed" && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-xl p-4 text-xs flex gap-2.5 items-start mb-4 animate-fadeIn">
-              <span className="font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded-sm uppercase text-[9px] shrink-0 mt-0.5">Read-Only</span>
-              <div>
-                <p className="font-bold">System Configuration Locked</p>
-                <p className="text-amber-700 mt-0.5 leading-normal">
-                  You are viewing this screen in read-only mode. Adding, deleting, or editing scrapers, keywords, and bot connections is reserved exclusively for the <b>Super-Admin</b> (System Owner).
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeWorkspaceTab === "feed" && (
-            <CurationFeed
-              posts={settings.posts}
-              onUpdatePost={handleUpdatePost}
-              onPostToTelegram={handlePostToTelegram}
-              isBotConfigured={isBotConfigured}
-              onTriggerScrape={handleFetchAll}
-              isScraping={isScraping}
-              targets={settings.destination.targets}
-            />
-          )}
-
-          {activeWorkspaceTab === "channels" && (
-            <SourceChannelsConfig
-              channels={settings.channels}
-              onAddChannel={handleAddChannel}
-              onRemoveChannel={handleRemoveChannel}
-              onFetchChannel={handleFetchChannel}
-              onFetchAll={handleFetchAll}
-              isGlobalFetching={isScraping}
-              readOnly={currentUserRole !== "super-admin"}
-            />
-          )}
-
-          {activeWorkspaceTab === "filters" && (
-            <FilterConfig
-              filters={settings.filters}
-              onUpdateFilters={handleUpdateFilters}
-              readOnly={currentUserRole !== "super-admin"}
-            />
-          )}
-
-          {activeWorkspaceTab === "destination" && (
-            <DestinationConfig
-              destination={settings.destination}
-              onSave={handleSaveDestination}
-              readOnly={currentUserRole !== "super-admin"}
-            />
-          )}
-
-          {activeWorkspaceTab === "ai" && (
-            <AIConfigView
-              aiConfig={settings.aiConfig}
-              onUpdateAI={handleUpdateAI}
-              geminiActive={geminiActive}
-              openrouterActive={openrouterActive}
-              readOnly={currentUserRole !== "super-admin"}
-            />
-          )}
-
-          {activeWorkspaceTab === "database" && currentUserRole === "super-admin" && (
-            <DatabaseConfig />
-          )}
-
-          {activeWorkspaceTab === "team" && currentUserRole === "super-admin" && (
-            <UserManagement
-              users={settings.users || []}
-              onAddUser={handleAddUser}
-              onDeleteUser={handleDeleteUser}
-              currentUsername={currentUsername}
-            />
-          )}
-        </div>
-      </main>
-
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>© 2026 Telegram Content Curator. Powered by server-side AI.</p>
-          <p className="font-mono text-[10px]">Secure, localized server storage • V1.0.0</p>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-function CheckCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={className}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
+        {activeWorkspaceTab === "team" && currentUserRole === "super-admin" ? (
+          <UserManagement users={settings.users || []} onAddUser={handleAddUser} onDeleteUser={handleDeleteUser} currentUsername={currentUsername} />
+        ) : null}
+      </div>
+    </AppShell>
   );
 }

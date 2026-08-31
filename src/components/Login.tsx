@@ -79,51 +79,51 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
   };
 
   return (
-    <div className="min-h-[80vh] flex flex-col justify-center items-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="w-full max-w-md space-y-8 bg-white border border-slate-200 shadow-2xl rounded-2xl p-8 sm:p-10 transition-all">
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-8 sm:px-6">
+      <div className="w-full max-w-md space-y-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-9">
         
         {/* Branding/Header */}
         <div className="text-center">
-          <div className="mx-auto h-12 w-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-100">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-lg shadow-sky-100">
             {passwordSet ? (
               <Lock className="h-6 w-6" />
             ) : (
-              <Key className="h-6 w-6 animate-bounce" />
+              <Key className="h-6 w-6" />
             )}
           </div>
           <h2 className="mt-6 text-2xl font-display font-bold tracking-tight text-slate-900">
-            {passwordSet ? "Secure Curator Access" : "Configure Super-Admin Account"}
+            {passwordSet ? "Sign in to TGReposter" : "Create the owner account"}
           </h2>
-          <p className="mt-2 text-xs font-sans text-slate-500 leading-relaxed max-w-xs mx-auto">
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
             {passwordSet 
-              ? "Sign in with your administrator account to manage sources, filters, and publishing panels."
-              : "This application is currently unlocked. Set a secure super-admin username and password to establish ownership."}
+              ? "Use your administrator account to review, approve, and publish Telegram content."
+              : "Create the first super-admin account to secure this workspace and establish ownership."}
           </p>
         </div>
 
         {setupSuccess ? (
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 text-center space-y-2">
             <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto animate-pulse" />
-            <h3 className="font-semibold text-emerald-950 text-sm">Security Initialized</h3>
-            <p className="text-emerald-700 text-xs font-sans leading-relaxed">
-              Your super-admin account was configured successfully! Directing to workspace dashboard...
+            <h3 className="text-base font-semibold text-emerald-950">Account created</h3>
+            <p className="text-sm leading-6 text-emerald-700">
+              Your super-admin account is ready. Opening the dashboard…
             </p>
           </div>
         ) : (
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
             {error && (
-              <div className="bg-rose-50 border border-rose-100 text-rose-800 text-xs rounded-lg p-3.5 flex gap-2.5 items-start">
+              <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800" role="alert">
                 <ShieldAlert className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Authentication Notice</p>
-                  <p className="text-[11px] text-rose-600 mt-0.5 leading-normal">{error}</p>
+                  <p className="font-bold">Sign-in problem</p>
+                  <p className="mt-0.5 leading-5 text-rose-700">{error}</p>
                 </div>
               </div>
             )}
 
             <div className="space-y-4">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="mb-1.5 block text-sm font-bold text-slate-700">
                   {passwordSet ? "Username" : "Super-Admin Username"}
                 </label>
                 <input
@@ -132,12 +132,13 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={passwordSet ? "Enter your username" : "e.g. owner"}
-                  className="w-full px-3.5 py-3 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
+                  autoComplete="username"
+                  className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="mb-1.5 block text-sm font-bold text-slate-700">
                   Password
                 </label>
                 <div className="relative">
@@ -147,26 +148,28 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full pl-3.5 pr-10 py-3 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800"
+                    autoComplete={passwordSet ? "current-password" : "new-password"}
+                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-3.5 pr-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-600 transition-colors"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center text-slate-400 transition-colors hover:text-slate-600"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {!passwordSet && (
-                  <p className="text-[10px] text-slate-400 mt-1.5 leading-normal">
-                    Must be at least 4 characters. Keep it secure; this gates all configurations and publishing triggers.
+                  <p className="mt-1.5 text-sm leading-5 text-slate-500">
+                    Use at least 4 characters. This account controls workspace configuration and publishing.
                   </p>
                 )}
               </div>
 
               {!passwordSet && (
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  <label className="mb-1.5 block text-sm font-bold text-slate-700">
                     Confirm Password
                   </label>
                   <input
@@ -175,7 +178,8 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full px-3.5 py-3 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800"
+                    autoComplete="new-password"
+                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                 </div>
               )}
@@ -185,17 +189,17 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3 px-4 border border-transparent rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-slate-900 transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-transparent bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-hidden focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 disabled:bg-slate-300"
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    {passwordSet ? "Verifying..." : "Initializing Security..."}
+                    {passwordSet ? "Signing in…" : "Creating account…"}
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-sky-400" />
-                    {passwordSet ? "Unlock Curator Workspace" : "Establish Access Account"}
+                    {passwordSet ? "Sign in" : "Create owner account"}
                   </>
                 )}
               </button>
@@ -204,8 +208,8 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
         )}
 
         {/* Footer info */}
-        <div className="text-center border-t border-slate-100 pt-5 text-[10px] text-slate-400 leading-relaxed font-sans">
-          Curator Gatekeeper utilizes secure cryptographic hashing to check master tokens locally without leaking credentials.
+        <div className="border-t border-slate-100 pt-5 text-center text-sm leading-6 text-slate-500">
+          Your credentials are verified securely by the TGReposter server.
         </div>
       </div>
     </div>

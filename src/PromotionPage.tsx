@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import Header from "./components/Header";
+import AppShell, { type WorkspaceView } from "./components/AppShell";
 import PromotionCenter from "./components/PromotionCenter";
 import type { CuratorSettings } from "./types";
 import { safeResponseJson } from "./utils/api";
@@ -82,6 +82,12 @@ export default function PromotionPage() {
     window.location.hash = "";
   };
 
+  const handleNavigate = (view: WorkspaceView) => {
+    if (view === "promotion") return;
+    sessionStorage.setItem("tgreposter-active-view", view);
+    window.location.hash = "";
+  };
+
   if (loading || !settings) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans">
@@ -96,43 +102,30 @@ export default function PromotionPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header
-        connected={settings.destination.connected}
-        channelId={settings.destination.channelId}
-        targets={settings.destination.targets}
-        onLogout={handleLogout}
-        supabaseActive={settings.supabaseActive}
-        currentUsername={currentUsername}
-        currentUserRole={currentUserRole}
-      />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-5">
+    <AppShell
+      activeView="promotion"
+      connected={settings.destination.connected}
+      currentUsername={currentUsername}
+      currentUserRole={currentUserRole}
+      onLogout={handleLogout}
+      onNavigate={handleNavigate}
+      targets={settings.destination.targets}
+    >
+      <div className="space-y-5">
         {successToast && (
-          <div className="bg-emerald-500 text-white rounded-xl py-3 px-4 shadow-md text-sm font-semibold">
+          <div className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md" role="status">
             {successToast}
           </div>
         )}
         {errorMessage && (
-          <div className="bg-rose-50 border border-rose-100 text-rose-800 rounded-xl py-3.5 px-4 shadow-sm text-sm">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-800 shadow-sm" role="alert">
             <p className="font-bold">Notice</p>
-            <p className="text-xs text-rose-700 mt-0.5">{errorMessage}</p>
+            <p className="mt-0.5 text-rose-700">{errorMessage}</p>
           </div>
         )}
 
-        <PromotionCenter
-          posts={settings.posts || []}
-          currentUserRole={currentUserRole}
-          onToast={showToast}
-        />
-      </main>
-
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-slate-400 text-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
-          <p>© 2026 Telegram Content Curator. Promotion campaigns use server-owned Telegram credentials and AI provider keys.</p>
-          <p className="font-mono text-[10px]">AI output requires human review before campaign publishing</p>
-        </div>
-      </footer>
-    </div>
+        <PromotionCenter posts={settings.posts || []} currentUserRole={currentUserRole} onToast={showToast} />
+      </div>
+    </AppShell>
   );
 }

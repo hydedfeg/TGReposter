@@ -1,128 +1,63 @@
-import { Send, Sparkles, CheckCircle2, AlertCircle, LogOut, Database, Megaphone, LayoutDashboard } from "lucide-react";
-import { DestinationTarget } from "../types";
+import { CheckCircle2, LogOut, Megaphone, Send, ShieldCheck } from "lucide-react";
+import type { DestinationTarget } from "../types";
 
 interface HeaderProps {
-  connected: boolean;
   channelId?: string;
-  targets?: DestinationTarget[];
+  connected: boolean;
+  currentUsername?: string | null;
+  currentUserRole?: "super-admin" | "admin" | null;
   onLogout?: () => void;
   supabaseActive?: boolean;
-  currentUsername?: string | null;
-  currentUserRole?: 'super-admin' | 'admin' | null;
+  targets?: DestinationTarget[];
 }
 
-export default function Header({ connected, channelId, targets, onLogout, supabaseActive, currentUsername, currentUserRole }: HeaderProps) {
-  const activeTargetsCount = targets ? targets.filter(t => t.enabled).length : 0;
-  const isPromotionPage = window.location.hash === "#promotion";
-  
-  let statusDetail = "Configure in Destination tab";
-  if (connected) {
-    if (activeTargetsCount > 0) {
-      statusDetail = `${activeTargetsCount} Active Target${activeTargetsCount > 1 ? "s" : ""}`;
-    } else if (channelId) {
-      statusDetail = channelId;
-    } else {
-      statusDetail = "No targets enabled";
-    }
-  }
+export default function Header({ connected, currentUsername, currentUserRole, onLogout, targets }: HeaderProps) {
+  const activeTargets = targets?.filter((target) => target.enabled).length || 0;
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-xs">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-tr from-sky-500 to-blue-600 p-2.5 rounded-xl shadow-md text-white flex items-center justify-center">
-            <Send className="w-6 h-6 transform -rotate-12 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-display font-bold text-2xl tracking-tight text-slate-900">
-                Telegram Content Curator
-              </h1>
-              <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 text-xs px-2.5 py-0.5 rounded-full font-medium font-sans">
-                <Sparkles className="w-3.5 h-3.5" /> AI Powered
-              </span>
-            </div>
-            <p className="text-slate-500 text-sm mt-0.5 font-sans">
-              Scrape public Telegram feeds, filter with precision, and curate with artificial intelligence.
-            </p>
+    <header className="border-b border-slate-200 bg-white">
+      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white shadow-sm">
+            <Send className="h-5 w-5 -rotate-12" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate font-display text-xl font-bold tracking-tight text-slate-950">TGReposter</p>
+            <p className="hidden text-sm text-slate-500 sm:block">AI Powered Telegram content operations</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap justify-center sm:justify-end">
-          {connected ? (
-            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-lg text-emerald-800 text-xs font-medium">
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <div>
-                <p className="font-semibold leading-none">Bot Connected</p>
-                <p className="text-[10px] text-emerald-600 font-mono mt-0.5">{statusDetail}</p>
-              </div>
+        <div className="flex items-center gap-2">
+          {currentUsername ? (
+            <div className="hidden min-h-10 items-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-700 sm:flex">
+              <span>{currentUsername}</span>
+              <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-bold text-white">{currentUserRole === "super-admin" ? "Owner" : "Admin"}</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 px-3 py-1.5 rounded-lg text-amber-800 text-xs font-medium">
-              <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
-              <div>
-                <p className="font-semibold leading-none">Bot Unconfigured</p>
-                <p className="text-[10px] text-amber-600 mt-0.5">{statusDetail}</p>
-              </div>
+            <div className="hidden min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600 sm:flex">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" /> Secure workspace
             </div>
           )}
-
-          {supabaseActive ? (
-            <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-lg text-indigo-800 text-xs font-medium" title="Supabase Cloud PostgreSQL Active">
-              <Database className="w-4 h-4 text-indigo-500 shrink-0" />
-              <div className="hidden sm:block">
-                <p className="font-semibold leading-none">Supabase DB</p>
-                <p className="text-[10px] text-indigo-500 font-mono mt-0.5">Cloud Live</p>
-              </div>
+          {connected && currentUsername ? (
+            <div className="hidden min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 md:flex">
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {activeTargets || 1} target{activeTargets === 1 ? "" : "s"} ready
             </div>
-          ) : (
-            <div className="flex items-center gap-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg text-slate-700 text-xs font-medium" title="Storing data locally in JSON file. Define SUPABASE_URL and SUPABASE_ANON_KEY to connect to Supabase.">
-              <Database className="w-4 h-4 text-slate-400 shrink-0" />
-              <div className="hidden sm:block">
-                <p className="font-semibold leading-none">Local JSON</p>
-                <p className="text-[10px] text-slate-500 font-mono mt-0.5">Server File</p>
-              </div>
-            </div>
-          )}
-
-          {currentUsername && (
-            <>
-              <button
-                type="button"
-                onClick={() => { window.location.hash = isPromotionPage ? "" : "promotion"; }}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs border rounded-lg cursor-pointer transition-colors ${
-                  isPromotionPage
-                    ? "bg-slate-900 border-slate-900 text-white hover:bg-slate-800"
-                    : "bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100"
-                }`}
-                title={isPromotionPage ? "Return to curator workspace" : "Open Promotion Center"}
-              >
-                {isPromotionPage ? <LayoutDashboard className="w-3.5 h-3.5" /> : <Megaphone className="w-3.5 h-3.5" />}
-                <span className="font-semibold">{isPromotionPage ? "Workspace" : "Promotion"}</span>
-              </button>
-
-              <div className="hidden md:flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2.5 py-1.5 rounded-lg text-slate-700 text-xs font-sans">
-                <span className="font-semibold text-slate-800 text-[11px]">{currentUsername}</span>
-                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase ${
-                  currentUserRole === "super-admin" ? "bg-slate-900 text-white" : "bg-sky-100 text-sky-800"
-                }`}>
-                  {currentUserRole === "super-admin" ? "Owner" : "Admin"}
-                </span>
-              </div>
-            </>
-          )}
-
-          {onLogout && (
+          ) : null}
+          {currentUsername ? (
             <button
               type="button"
-              onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-              title="Lock Curator Workspace"
+              onClick={() => { window.location.hash = "promotion"; }}
+              aria-label="Open Promotion Center"
+              className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
             >
-              <LogOut className="w-3.5 h-3.5" />
-              <span className="font-semibold">Lock</span>
+              <Megaphone className="h-5 w-5" aria-hidden="true" />
             </button>
-          )}
+          ) : null}
+          {onLogout ? (
+            <button type="button" onClick={onLogout} aria-label="Sign out" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">
+              <LogOut className="h-5 w-5" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
     </header>
