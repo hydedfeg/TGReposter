@@ -111,6 +111,9 @@ export function rewriteSupabaseDirectConnectionToPooler(
   if (!parsed.searchParams.has("sslmode")) {
     parsed.searchParams.set("sslmode", "require");
   }
+  if (parsed.searchParams.get("sslmode") === "require") {
+    parsed.searchParams.set("uselibpqcompat", "true");
+  }
   return parsed.toString();
 }
 
