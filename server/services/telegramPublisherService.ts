@@ -151,7 +151,7 @@ interface TelegramRequestRateContext {
 async function fetchTelegramWithTimeout(
   input: string | URL | Request,
   init: RequestInit | undefined,
-  rateContext: TelegramRequestRateContext
+  rateContext?: TelegramRequestRateContext
 ): Promise<Response> {
   const requestUrl =
     typeof input === "string"
@@ -162,11 +162,13 @@ async function fetchTelegramWithTimeout(
   const timeoutMs = /\/send(?:Photo|Video)$/.test(requestUrl) ? 90_000 : 30_000;
 
   const performRequest = async () => {
-    await telegramRateLimiter.wait(
-      rateContext.botToken,
-      rateContext.channelId,
-      rateContext.chatType
-    );
+    if (rateContext) {
+      await telegramRateLimiter.wait(
+        rateContext.botToken,
+        rateContext.channelId,
+        rateContext.chatType
+      );
+    }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
@@ -200,7 +202,9 @@ async function fetchTelegramWithTimeout(
     retryAfterSeconds > 0 &&
     retryAfterSeconds <= MAX_AUTOMATIC_FLOOD_RETRY_SECONDS
   ) {
-    telegramRateLimiter.block(rateContext.botToken, rateContext.channelId, retryAfterSeconds);
+    if (rateContext) {
+      telegramRateLimiter.block(rateContext.botToken, rateContext.channelId, retryAfterSeconds);
+    }
     response = await performRequest();
   }
 
