@@ -23,6 +23,7 @@ const PORT = 3000;
 interface SourceChannel {
   username: string;
   name?: string;
+  enabled?: boolean;
   lastFetched?: string;
   status?: 'idle' | 'fetching' | 'success' | 'error';
   errorMessage?: string;
@@ -402,8 +403,6 @@ if (process.env.GEMINI_API_KEY) {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-app.use("/api/channels", channelRoutes);
-
 // Authentication Middleware
 const authMiddleware = async (req: any, res: any, next: any) => {
   try {
@@ -437,6 +436,31 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
   }
   return res.status(403).json({ error: "Forbidden. Super-admin access required." });
 };
+
+function matchesCronSecret(provided?: string): boolean {
+  const expected = process.env.CRON_SECRET?.trim();
+  const candidate = provided?.trim();
+  if (!expected || !candidate) return false;
+
+  const expectedBuffer = Buffer.from(expected);
+  const candidateBuffer = Buffer.from(candidate);
+  if (expectedBuffer.length !== candidateBuffer.length) return false;
+
+  return crypto.timingSafeEqual(expectedBuffer, candidateBuffer);
+}
+
+const authOrCronMiddleware = (req: any, res: any, next: any) => {
+  if (matchesCronSecret(req.get("x-cron-secret"))) {
+    req.user = { username: "system:cron", role: "super-admin" };
+    return next();
+  }
+
+  return authMiddleware(req, res, next);
+};
+
+// Source-channel configuration is infrastructure state and must never be
+// exposed as an unauthenticated database route.
+app.use("/api/channels", authMiddleware, requireSuperAdmin, channelRoutes);
 
 // Promotion configuration is server-owned and mounted only after authentication
 // middleware exists. Bot-account mutations and target configuration are further
@@ -700,9 +724,13 @@ app.post("/api/supabase/setup-table", authMiddleware, requireSuperAdmin, async (
 });
 
 // Scrape target channels and parse posts
-app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
+app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
   const db = await readDb();
-  const usernamesToFetch = req.body.usernames as string[] || db.channels.map(c => c.username);
+  const requestedUsernames = Array.isArray(req.body?.usernames)
+    ? req.body.usernames
+    : null;
+  const usernamesToFetch = requestedUsernames ??
+    db.channels.filter(channel => channel.enabled !== false).map(channel => channel.username);
 
   let newlyFetchedCount = 0;
   const currentPostsMap = new Map(db.posts.map(p => [p.id, p]));
@@ -776,6 +804,16 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
         const dateMatch = block.match(/<time datetime="([^"]+)"/);
         if (dateMatch) {
           date = dateMatch[1];
+        }
+
+        // The Content Inbox is a rolling 24-hour window. Ignore source posts
+        // that are already expired instead of importing them and deleting them later.
+        const sourcePublishedAt = Date.parse(date);
+        if (
+          Number.isFinite(sourcePublishedAt) &&
+          sourcePublishedAt < Date.now() - 24 * 60 * 60 * 1000
+        ) {
+          continue;
         }
 
         // Apply keyword/hashtag rules
@@ -881,11 +919,11 @@ app.post("/api/fetch-posts", authMiddleware, async (req, res) => {
   const updatedPosts = Array.from(currentPostsMap.values());
   updatedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Convert to legacy storage (temporary until migration is complete)
-db.posts = updatedPosts.slice(0, 400);
-await writeDb(db);
+  // Keep the API payload bounded while PostgreSQL remains the durable source.
+  db.posts = updatedPosts.slice(0, 400);
+  await writeDb(db);
 
-// -------- NEW: Save posts into Supabase --------
+// Persist the current inbox snapshot through the dedicated post repository.
 try {
   const postEntities = db.posts.map(post => ({
     id: post.id,
@@ -897,6 +935,8 @@ try {
     video_url: post.videoUrl ?? null,
     telegram_url: post.url,
     published_at: post.date,
+    posted_at: post.postedAt ?? null,
+    error_message: post.errorMessage ?? null,
     status: post.status,
   }));
 
@@ -912,13 +952,15 @@ const latestPosts = (await postService.getRecentPosts(400)).map((p: any) => ({
   id: p.id,
   channelUsername: p.channel_username,
   originalText: p.original_text,
-  text: p.edited_text,
+  text: p.edited_text ?? p.original_text,
   mediaType: p.media_type,
   photoUrl: p.photo_url,
   videoUrl: p.video_url,
   date: p.published_at,
   url: p.telegram_url,
   status: p.status,
+  postedAt: p.posted_at ?? undefined,
+  errorMessage: p.error_message ?? undefined,
 }));
 
 res.json({
