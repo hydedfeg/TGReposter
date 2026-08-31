@@ -23,6 +23,7 @@ test("PostgreSQL URL normalization repairs copied psql wrappers and reserved pas
   assert.equal(parsed.username, "postgres.project");
   assert.equal(decodeURIComponent(parsed.password), "p@ss#word?value");
   assert.equal(parsed.searchParams.get("sslmode"), "require");
+  assert.equal(parsed.searchParams.get("uselibpqcompat"), "true");
 });
 
 test("PostgreSQL URL normalization accepts DATABASE_URL assignment syntax", () => {
@@ -73,6 +74,7 @@ test("Supabase direct connection is rewritten to the IPv4-compatible session poo
   assert.equal(parsed.username, "postgres.biowrbnafkagaafonzws");
   assert.equal(parsed.pathname, "/postgres");
   assert.equal(parsed.searchParams.get("sslmode"), "require");
+  assert.equal(parsed.searchParams.get("uselibpqcompat"), "true");
   assert.equal(decodeURIComponent(parsed.password), "secret");
 });
 
@@ -104,4 +106,18 @@ test("Supabase direct connection fails closed when no pooler routing is configur
       return true;
     }
   );
+});
+
+
+test("Supabase pooler preserves explicit verify-full without weakening certificate verification", () => {
+  const direct =
+    "postgresql://postgres:secret@db.biowrbnafkagaafonzws.supabase.co:5432/postgres?sslmode=verify-full";
+
+  const pooled = rewriteSupabaseDirectConnectionToPooler(direct, {
+    region: "eu-north-1",
+  });
+  const parsed = new URL(pooled);
+
+  assert.equal(parsed.searchParams.get("sslmode"), "verify-full");
+  assert.equal(parsed.searchParams.get("uselibpqcompat"), null);
 });
