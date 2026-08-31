@@ -23,7 +23,6 @@ test("PostgreSQL URL normalization repairs copied psql wrappers and reserved pas
   assert.equal(parsed.username, "postgres.project");
   assert.equal(decodeURIComponent(parsed.password), "p@ss#word?value");
   assert.equal(parsed.searchParams.get("sslmode"), "require");
-  assert.equal(parsed.searchParams.get("uselibpqcompat"), "true");
 });
 
 test("PostgreSQL URL normalization accepts DATABASE_URL assignment syntax", () => {
@@ -92,6 +91,7 @@ test("Supabase pooler host override is supported without exposing credentials", 
   assert.equal(decodeURIComponent(parsed.password), "p@ss");
   assert.equal(parsed.searchParams.get("connect_timeout"), "10");
   assert.equal(parsed.searchParams.get("sslmode"), "require");
+  assert.equal(parsed.searchParams.get("uselibpqcompat"), "true");
 });
 
 test("Supabase direct connection fails closed when no pooler routing is configured", () => {
