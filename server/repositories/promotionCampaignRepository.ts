@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { getPostgresConnectionString } from "../utils/postgresConnection";
 
 export type PromotionCampaignStatus = "draft" | "ready" | "running" | "completed" | "partial" | "failed" | "cancelled";
 export type PromotionContentMode = "original" | "teaser" | "ai" | "custom";
@@ -135,10 +136,7 @@ export interface UpdateCampaignPostInput {
 let pool: Pool | null = null;
 
 function getPool(): Pool {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    throw new Error("Promotion database access is not configured. DATABASE_URL is missing.");
-  }
+  const connectionString = getPostgresConnectionString();
   if (!pool) pool = new Pool({ connectionString, max: 5 });
   return pool;
 }
