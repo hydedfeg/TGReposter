@@ -2,6 +2,7 @@ import mediaService from "./server/services/mediaService";
 import postService from "./server/services/postService";
 import telegramPublisherService from "./server/services/telegramPublisherService";
 import channelRoutes from "./server/routes/channels";
+import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
@@ -19,6 +20,7 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+const channelRepository = new ChannelRepository();
 
 // Shared interfaces match src/types.ts
 interface SourceChannel {
