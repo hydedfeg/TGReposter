@@ -762,6 +762,37 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       // Skip the first split element as it is the page header
       messageBlocks.shift();
 
+      // readDb() intentionally returns only the newest 400 posts for the UI.
+      // Before classifying scraped Telegram posts as new, hydrate any matching
+      // persisted rows that fell outside that UI window. This preserves edits,
+      // moderation state, and publish history while preventing false "new" counts.
+      const scrapedPostIds = Array.from(new Set(
+        messageBlocks
+          .map(block => block.match(/data-post="([^"]+)"/)?.[1])
+          .filter((postId): postId is string => !!postId)
+      ));
+      const missingPersistedIds = scrapedPostIds.filter(postId => !currentPostsMap.has(postId));
+
+      if (missingPersistedIds.length > 0) {
+        const persistedPosts = await postService.getPostsByIds(missingPersistedIds);
+        for (const persisted of persistedPosts as any[]) {
+          currentPostsMap.set(persisted.id, {
+            id: persisted.id,
+            channelUsername: persisted.channel_username,
+            originalText: persisted.original_text,
+            text: persisted.edited_text ?? persisted.original_text,
+            mediaType: persisted.media_type ?? undefined,
+            photoUrl: persisted.photo_url ?? undefined,
+            videoUrl: persisted.video_url ?? undefined,
+            date: persisted.published_at,
+            url: persisted.telegram_url,
+            status: persisted.status as CuratedPost['status'],
+            postedAt: persisted.posted_at ?? undefined,
+            errorMessage: persisted.error_message ?? undefined,
+          });
+        }
+      }
+
       let parsedCount = 0;
 
       for (const block of messageBlocks) {

@@ -75,6 +75,22 @@ export class PostRepository {
     return rows;
   }
 
+  async getByIds(ids: string[]) {
+    if (!ids.length) return [];
+
+    const pool = getPostgresPool();
+    const { rows } = await pool.query(
+      `
+        select *
+        from public.posts
+        where id = any($1::text[])
+      `,
+      [ids]
+    );
+
+    return rows;
+  }
+
   async getRecent(limit = 400) {
     const pool = getPostgresPool();
     const { rows } = await pool.query(

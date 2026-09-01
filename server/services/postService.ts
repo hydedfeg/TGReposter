@@ -7,6 +7,10 @@ export class PostService {
     return await postRepository.upsertMany(posts);
   }
 
+  async getPostsByIds(ids: string[]) {
+    return await postRepository.getByIds(ids);
+  }
+
   async getRecentPosts(limit = 400) {
     return await postRepository.getRecent(limit);
   }
