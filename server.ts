@@ -7,6 +7,7 @@ import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
+import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -703,12 +704,17 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
 
 // Check table existence and configuration status
 app.get("/api/supabase/status", authMiddleware, async (req, res) => {
-  const status = await checkTableExists();
+  const [legacyStatus, health] = await Promise.all([
+    checkTableExists(),
+    getDatabaseHealth(),
+  ]);
+
   res.json({
     configured: isSupabaseConfigured,
     hasDirectDbUrl: !!process.env.DATABASE_URL,
     supabaseUrl: process.env.SUPABASE_URL || "",
-    ...status
+    legacyCompatibility: legacyStatus,
+    ...health,
   });
 });
 

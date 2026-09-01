@@ -1,44 +1,137 @@
-import React, { useState, useEffect } from "react";
-import { Database, CheckCircle2, AlertTriangle, Copy, RefreshCw, PlayCircle, Terminal, ArrowRight, Check } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Database,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  Table2,
+} from "lucide-react";
 import { safeResponseJson } from "../utils/api";
+
+interface RuntimeTableStatus {
+  name: string;
+  ready: boolean;
+}
+
+interface CronJobStatus {
+  name: string;
+  schedule: string;
+  active: boolean;
+  lastStatus?: string;
+  lastRunAt?: string;
+  lastReturnMessage?: string;
+}
 
 interface DatabaseStatus {
   configured: boolean;
   hasDirectDbUrl: boolean;
   supabaseUrl: string;
-  exists: boolean;
+  backendMode: "normalized-postgres" | "unavailable";
+  runtime: {
+    ready: boolean;
+    readyCount: number;
+    requiredCount: number;
+    tables: RuntimeTableStatus[];
+  };
+  counts: {
+    sourceChannels: number;
+    destinationTargets: number;
+    inboxPosts: number;
+    postedPosts: number;
+  };
+  automation: {
+    ready: boolean;
+    pgCronInstalled: boolean;
+    pgNetInstalled: boolean;
+    jobs: CronJobStatus[];
+  };
+  security: {
+    ready: boolean;
+    protectedCount: number;
+    expectedCount: number;
+  };
   error?: string;
-  methodUsed: string;
+}
+
+const tableLabels: Record<string, string> = {
+  source_channels: "Source Channels",
+  filters: "Filters",
+  destination_targets: "Destinations",
+  ai_settings: "AI Settings",
+  posts: "Posts",
+  curator_settings: "Compatibility Settings",
+};
+
+function formatSchedule(schedule: string) {
+  if (schedule === "*/5 * * * *") return "Every 5 minutes";
+  if (schedule === "0 * * * *") return "Every hour";
+  return schedule;
+}
+
+function formatJobName(name: string) {
+  if (name === "tgreposter-inbox-import") return "Inbox Import";
+  if (name === "tgreposter-inbox-cleanup") return "24h Cleanup";
+  return name;
+}
+
+function formatLastRun(value?: string) {
+  if (!value) return "No run recorded";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function HealthBadge({
+  healthy,
+  healthyText,
+  unhealthyText,
+}: {
+  healthy: boolean;
+  healthyText: string;
+  unhealthyText: string;
+}) {
+  return healthy ? (
+    <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+      <span>{healthyText}</span>
+    </div>
+  ) : (
+    <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
+      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+      <span>{unhealthyText}</span>
+    </div>
+  );
 }
 
 export default function DatabaseConfig() {
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [actionMessage, setActionMessage] = useState<{ success: boolean; text: string } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const fetchStatus = async () => {
     setLoading(true);
     setError(null);
+
     try {
       const response = await fetch("/api/supabase/status", {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("curator_token") || ""}`
-        }
+          Authorization: `Bearer ${localStorage.getItem("curator_token") || ""}`,
+        },
       });
-      if (response.ok) {
-        const data = await safeResponseJson(response);
-        setStatus(data);
-      } else {
-        const errText = await response.text();
-        setError(errText || "Failed to fetch database status");
-        console.error("Failed to fetch database status");
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Failed to fetch database status");
       }
+
+      const data = await safeResponseJson(response);
+      setStatus(data);
     } catch (err: any) {
-      setError(err.message || "Error fetching database status");
-      console.error("Error fetching database status:", err);
+      setError(err?.message || "Database health check failed");
     } finally {
       setLoading(false);
     }
@@ -48,308 +141,250 @@ export default function DatabaseConfig() {
     fetchStatus();
   }, []);
 
-  const handleAutoCreate = async () => {
-    setActionLoading(true);
-    setActionMessage(null);
-    try {
-      const response = await fetch("/api/supabase/setup-table", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("curator_token") || ""}`
-        }
-      });
-      const data = await safeResponseJson(response);
-      if (data.success) {
-        setActionMessage({ success: true, text: data.message });
-        await fetchStatus();
-      } else {
-        setActionMessage({ success: false, text: data.message });
-      }
-    } catch (err: any) {
-      setActionMessage({ success: false, text: err.message || "An unexpected error occurred" });
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const sqlSchema = `create table if not exists curator_settings (
-  id text primary key default 'default',
-  data jsonb not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
-);`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(sqlSchema);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   if (loading && !status) {
     return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-8 flex flex-col justify-center items-center">
-        <RefreshCw className="w-8 h-8 text-sky-500 animate-spin mb-3" />
-        <p className="text-slate-500 text-sm">Querying database status...</p>
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-8">
+        <RefreshCw className="mb-3 h-8 w-8 animate-spin text-sky-500" />
+        <p className="text-sm text-slate-500">Checking backend database health...</p>
       </div>
     );
   }
 
   if (error && !status) {
     return (
-      <div className="bg-white border border-slate-200 rounded-2xl p-8 flex flex-col justify-center items-center text-center space-y-4">
-        <AlertTriangle className="w-10 h-10 text-amber-500" />
+      <div className="flex flex-col items-center justify-center space-y-4 rounded-2xl border border-slate-200 bg-white p-8 text-center">
+        <AlertTriangle className="h-10 w-10 text-amber-500" />
         <div>
-          <h3 className="font-display font-bold text-slate-800 text-base">Connection Status Unavailable</h3>
-          <p className="text-slate-500 text-xs max-w-md mt-1">{error}</p>
+          <h3 className="font-display text-base font-bold text-slate-800">Database health unavailable</h3>
+          <p className="mt-1 max-w-md text-xs text-slate-500">{error}</p>
         </div>
         <button
           onClick={fetchStatus}
-          className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-semibold text-xs px-4 py-2 rounded-lg transition"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Retry Connection Check</span>
+          <RefreshCw className="h-3.5 w-3.5" />
+          Retry
         </button>
       </div>
     );
   }
 
+  const health = status!;
+
+  const overviewCards = [
+    {
+      label: "Backend Runtime",
+      title: "Normalized PostgreSQL",
+      icon: Server,
+      healthy: health.configured && health.hasDirectDbUrl && health.backendMode === "normalized-postgres",
+      healthyText: "Direct DB active",
+      unhealthyText: "Backend unavailable",
+    },
+    {
+      label: "Schema Health",
+      title: "Runtime Tables",
+      icon: Table2,
+      healthy: health.runtime.ready,
+      healthyText: `${health.runtime.readyCount}/${health.runtime.requiredCount} ready`,
+      unhealthyText: `${health.runtime.readyCount}/${health.runtime.requiredCount} ready`,
+    },
+    {
+      label: "Automation",
+      title: "Inbox Jobs",
+      icon: Clock3,
+      healthy: health.automation.ready,
+      healthyText: "2 jobs active",
+      unhealthyText: "Automation incomplete",
+    },
+    {
+      label: "Security",
+      title: "Backend-Owned Tables",
+      icon: ShieldCheck,
+      healthy: health.security.ready,
+      healthyText: `${health.security.protectedCount}/${health.security.expectedCount} protected`,
+      unhealthyText: "Protection incomplete",
+    },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Overview Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
-        <div className="border-b border-slate-100 bg-slate-50/50 p-5 flex items-center justify-between">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 p-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
-              <Database className="w-5 h-5" />
+            <div className="rounded-lg bg-indigo-50 p-2 text-indigo-600">
+              <Database className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display font-bold text-slate-800 text-base">Supabase PostgreSQL Connection</h3>
-              <p className="text-slate-500 text-xs">Manage cloud persistence tables and synchronization rules.</p>
+              <h3 className="font-display text-base font-bold text-slate-800">Database & Backend Health</h3>
+              <p className="text-xs text-slate-500">Live status from the normalized Supabase PostgreSQL runtime.</p>
             </div>
           </div>
           <button
             onClick={fetchStatus}
             disabled={loading}
-            className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-700 transition"
+            className="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
             title="Refresh database status"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Connection Config Status */}
-            <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between">
+        <div className="space-y-6 p-6">
+          {(health.error || error) && (
+            <div className="flex gap-2.5 rounded-xl border border-amber-100 bg-amber-50 p-4 text-amber-900">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
               <div>
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Environment Setup</p>
-                <h4 className="font-bold text-slate-700 text-sm mt-1">Credentials Declared</h4>
-              </div>
-              <div className="mt-4">
-                {status?.configured ? (
-                  <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Configured</span>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 text-xs px-2.5 py-1 rounded-full font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Using Local Storage</span>
-                  </div>
-                )}
+                <p className="text-sm font-bold">Health check notice</p>
+                <p className="mt-0.5 text-xs leading-relaxed">{health.error || error}</p>
               </div>
             </div>
+          )}
 
-            {/* Direct Connect DB URL Status */}
-            <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Automation Mode</p>
-                <h4 className="font-bold text-slate-700 text-sm mt-1">Direct Connection</h4>
-              </div>
-              <div className="mt-4">
-                {status?.hasDirectDbUrl ? (
-                  <div className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 text-xs px-2.5 py-1 rounded-full font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />
-                    <span>DATABASE_URL Active</span>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {overviewCards.map(card => {
+              const Icon = card.icon;
+              return (
+                <div key={card.label} className="flex flex-col justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+                  <div>
+                    <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-600 shadow-sm ring-1 ring-slate-100">
+                      <Icon className="h-4.5 w-4.5" />
+                    </div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{card.label}</p>
+                    <h4 className="mt-1 text-sm font-bold text-slate-700">{card.title}</h4>
                   </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-600 text-xs px-2.5 py-1 rounded-full font-medium">
-                    <span>No DATABASE_URL</span>
+                  <div className="mt-4">
+                    <HealthBadge
+                      healthy={card.healthy}
+                      healthyText={card.healthyText}
+                      unhealthyText={card.unhealthyText}
+                    />
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              );
+            })}
+          </div>
 
-            {/* Table Existence Status */}
-            <div className="border border-slate-100 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between">
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+            <div className="flex gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
               <div>
-                <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Table Verification</p>
-                <h4 className="font-bold text-slate-700 text-sm mt-1">curator_settings Table</h4>
-              </div>
-              <div className="mt-4">
-                {status?.exists ? (
-                  <div className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-semibold">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    <span>Table Ready</span>
-                  </div>
-                ) : status?.configured ? (
-                  <div className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-800 text-xs px-2.5 py-1 rounded-full font-semibold animate-pulse">
-                    <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />
-                    <span>Table Missing</span>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-500 text-xs px-2.5 py-1 rounded-full font-medium">
-                    <span>Not Checked</span>
-                  </div>
-                )}
+                <h4 className="text-sm font-bold text-emerald-900">Migration-managed database</h4>
+                <p className="mt-1 text-xs leading-relaxed text-emerald-800/90">
+                  Runtime configuration now lives in normalized PostgreSQL tables and is accessed through the backend.
+                  Schema changes are managed by versioned Supabase migrations. The legacy <code>curator_settings</code> row remains only as a compatibility layer for data not migrated yet.
+                </p>
               </div>
             </div>
           </div>
 
-          {/* Setup Action Message */}
-          {actionMessage && (
-            <div className={`p-4 rounded-xl border text-sm flex gap-2.5 ${
-              actionMessage.success 
-                ? "bg-emerald-50 border-emerald-100 text-emerald-800" 
-                : "bg-rose-50 border-rose-100 text-rose-800"
-            }`}>
-              {actionMessage.success ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <p className="font-bold">{actionMessage.success ? "Success" : "Execution Notice"}</p>
-                <p className="text-xs mt-0.5 leading-relaxed">{actionMessage.text}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Actions Panel */}
-          {status?.configured && !status.exists && (
-            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-5 space-y-4">
-              <div className="flex gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-bold text-amber-900 text-sm">Table Setup Required</h4>
-                  <p className="text-xs text-amber-800/90 mt-1 leading-relaxed">
-                    To store configuration securely and enable real-time cloud sync, the <code>curator_settings</code> table must exist in your Supabase project. You can generate this automatically or manually.
-                  </p>
-                </div>
-              </div>
-
-              {status?.hasDirectDbUrl ? (
-                <div className="pt-2 border-t border-amber-200/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <p className="text-xs text-amber-800">
-                    We detected direct PostgreSQL connection details in your workspace variables.
-                  </p>
-                  <button
-                    onClick={handleAutoCreate}
-                    disabled={actionLoading}
-                    className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2 rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer shrink-0"
-                  >
-                    {actionLoading ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <PlayCircle className="w-3.5 h-3.5" />
-                    )}
-                    <span>Auto-Bootstrap Table</span>
-                  </button>
-                </div>
-              ) : (
-                <p className="text-xs text-amber-800 italic pt-2 border-t border-amber-200/50">
-                  Tip: Declare <code>DATABASE_URL</code> in your secrets/variables panel to enable one-click automatic schema setup!
-                </p>
-              )}
-            </div>
-          )}
-
-          {status?.configured && status.exists && (
-            <div className="bg-emerald-50/30 border border-emerald-100 rounded-xl p-4 flex gap-3">
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-              <div>
-                <h4 className="font-bold text-emerald-900 text-sm">Database Sync is Active!</h4>
-                <p className="text-xs text-emerald-800/90 mt-1 leading-relaxed">
-                  Your server is fully synchronized with your live Supabase cloud PostgreSQL. All scrape jobs, curated items, credentials, and settings will persist indefinitely across restarts.
-                </p>
-              </div>
-            </div>
-          )}
+          <div className="text-[11px] text-slate-400">
+            Supabase project endpoint: <span className="font-medium text-slate-500">{health.supabaseUrl || "Not configured"}</span>
+          </div>
         </div>
       </div>
 
-      {/* Manual SQL Instruction Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
-        <div className="border-b border-slate-100 bg-slate-50/50 p-5 flex items-center justify-between">
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+        <div className="border-b border-slate-100 bg-slate-50/50 p-5">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-slate-100 text-slate-700 rounded-lg">
-              <Terminal className="w-5 h-5" />
+            <div className="rounded-lg bg-sky-50 p-2 text-sky-600">
+              <Activity className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="font-display font-bold text-slate-800 text-base">Manual SQL Editor Setup</h3>
-              <p className="text-slate-500 text-xs">Execute direct query commands in your Supabase Studio Dashboard.</p>
+              <h3 className="font-display text-base font-bold text-slate-800">Runtime Data</h3>
+              <p className="text-xs text-slate-500">Current backend-owned records and the rolling inbox window.</p>
             </div>
           </div>
-          <button
-            onClick={handleCopy}
-            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-semibold text-xs px-3 py-1.5 rounded-lg transition"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-emerald-600 font-semibold">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy SQL Code</span>
-              </>
-            )}
-          </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Steps */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                <span className="bg-slate-100 w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-800 text-[10px]">1</span>
-                <span>Open Supabase Studio</span>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed pl-7">
-                Log in to your Supabase project dashboard and navigate to the <b>SQL Editor</b> using the sidebar navigation tab.
-              </p>
+        <div className="grid grid-cols-2 gap-px bg-slate-100 md:grid-cols-4">
+          {[
+            ["Source Channels", health.counts.sourceChannels],
+            ["Destinations", health.counts.destinationTargets],
+            ["Inbox · 24h", health.counts.inboxPosts],
+            ["Published", health.counts.postedPosts],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="bg-white p-5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+              <p className="mt-2 text-2xl font-bold text-slate-800">{value}</p>
             </div>
+          ))}
+        </div>
+      </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                <span className="bg-slate-100 w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-800 text-[10px]">2</span>
-                <span>Paste & Run Schema</span>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+          <div className="border-b border-slate-100 bg-slate-50/50 p-5">
+            <h3 className="font-display text-base font-bold text-slate-800">Runtime Tables</h3>
+            <p className="mt-0.5 text-xs text-slate-500">Required backend tables for collection, filtering, AI, destinations, and compatibility.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
+            {health.runtime.tables.map(table => (
+              <div key={table.name} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 px-4 py-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">{tableLabels[table.name] || table.name}</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-slate-400">{table.name}</p>
+                </div>
+                {table.ready ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                )}
               </div>
-              <p className="text-xs text-slate-500 leading-relaxed pl-7">
-                Click <b>"New query"</b>, paste the copyable schema code shown below, and press the blue <b>Run</b> button.
-              </p>
-            </div>
+            ))}
+          </div>
+        </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-slate-700 font-bold text-xs">
-                <span className="bg-slate-100 w-5 h-5 rounded-full inline-flex items-center justify-center text-slate-800 text-[10px]">3</span>
-                <span>Verify Status</span>
-              </div>
-              <p className="text-xs text-slate-500 leading-relaxed pl-7">
-                Return to this workspace, click the <b>Refresh</b> button in the top-right corner to verify live cloud storage connection.
-              </p>
-            </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+          <div className="border-b border-slate-100 bg-slate-50/50 p-5">
+            <h3 className="font-display text-base font-bold text-slate-800">Inbox Automation</h3>
+            <p className="mt-0.5 text-xs text-slate-500">Supabase Cron and pg_net jobs managed by backend migrations.</p>
           </div>
 
-          {/* SQL Editor Block */}
-          <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-900 shadow-inner font-mono text-xs text-slate-300">
-            <div className="flex items-center justify-between bg-slate-950 px-4 py-2 border-b border-slate-800 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
-              <span>Postgres DDL Schema</span>
-              <span className="text-[9px] text-sky-400 bg-sky-950/50 px-2 py-0.5 rounded border border-sky-900/40">JSONB Enabled</span>
+          <div className="space-y-3 p-5">
+            <div className="flex flex-wrap gap-2">
+              <HealthBadge
+                healthy={health.automation.pgCronInstalled}
+                healthyText="pg_cron installed"
+                unhealthyText="pg_cron missing"
+              />
+              <HealthBadge
+                healthy={health.automation.pgNetInstalled}
+                healthyText="pg_net installed"
+                unhealthyText="pg_net missing"
+              />
             </div>
-            <pre className="p-4 overflow-x-auto whitespace-pre leading-relaxed select-all">
-              {sqlSchema}
-            </pre>
+
+            {health.automation.jobs.length === 0 ? (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs text-amber-800">
+                No TGReposter inbox jobs were found.
+              </div>
+            ) : (
+              health.automation.jobs.map(job => (
+                <div key={job.name} className="rounded-xl border border-slate-100 bg-slate-50/50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">{formatJobName(job.name)}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">{formatSchedule(job.schedule)}</p>
+                    </div>
+                    <HealthBadge
+                      healthy={job.active && job.lastStatus !== "failed"}
+                      healthyText={job.lastStatus === "succeeded" ? "Succeeded" : "Active"}
+                      unhealthyText={job.active ? "Last run failed" : "Disabled"}
+                    />
+                  </div>
+                  <div className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+                    Last run: <span className="font-medium text-slate-600">{formatLastRun(job.lastRunAt)}</span>
+                    {job.lastReturnMessage && (
+                      <span className="ml-2 text-slate-400">· {job.lastReturnMessage}</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+
+            <div className="rounded-xl border border-slate-100 bg-white p-4 text-xs leading-relaxed text-slate-500">
+              Browser roles have no direct DML access to the six backend-owned runtime tables. All sensitive writes remain server-side.
+            </div>
           </div>
         </div>
       </div>
