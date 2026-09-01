@@ -10,7 +10,9 @@ interface DestinationConfigProps {
 }
 
 export default function DestinationConfig({ destination, onSave, readOnly = false }: DestinationConfigProps) {
-  const [botToken, setBotToken] = useState(destination.botToken || "");
+  // Stored credentials never come back from the backend. This state holds only
+  // a newly-entered token until it is sent once to the Vault endpoint.
+  const [botToken, setBotToken] = useState("");
   const [showToken, setShowToken] = useState(false);
   
   // List of targets in state for direct editing
@@ -48,7 +50,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     setNewTargetChannelId("");
     
     // Auto-save changes
-    onSave(botToken.trim(), updatedTargets);
+    onSave("", updatedTargets);
   };
 
   const handleRemoveTarget = (id: string) => {
@@ -58,7 +60,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       setTestResult(null);
     }
     // Auto-save changes
-    onSave(botToken.trim(), updatedTargets);
+    onSave("", updatedTargets);
   };
 
   const handleToggleTarget = (id: string) => {
@@ -66,14 +68,14 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       t.id === id ? { ...t, enabled: !t.enabled } : t
     );
     setTargets(updatedTargets);
-    onSave(botToken.trim(), updatedTargets);
+    onSave("", updatedTargets);
   };
 
   const handleTestTarget = async (target: DestinationTarget) => {
-    if (!botToken.trim()) {
+    if (!destination.botTokenConfigured) {
       setTestResult({
         success: false,
-        message: "Please specify your Telegram Bot Token first.",
+        message: "Save the Telegram Bot Token securely before testing a destination.",
         targetId: target.id
       });
       return;
@@ -91,7 +93,6 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
           ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {})
         },
         body: JSON.stringify({
-          botToken: botToken.trim(),
           channelId: target.channelId
         })
       });
@@ -116,7 +117,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       });
 
       // Save verified status
-      onSave(botToken.trim(), updatedTargets);
+      onSave("", updatedTargets);
 
     } catch (err: any) {
       setTestResult({
@@ -130,14 +131,27 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
   };
 
   const handleSaveBotTokenOnly = async () => {
+    const token = botToken.trim();
+    if (!token) {
+      setTestResult({
+        success: false,
+        message: "Enter a Telegram Bot Token before saving."
+      });
+      return;
+    }
+
     setIsSaving(true);
-    await onSave(botToken.trim(), targets);
+    const success = await onSave(token, targets);
     setIsSaving(false);
-    setTestResult({
-      success: true,
-      message: "Bot Token successfully updated."
-    });
-    setTimeout(() => setTestResult(null), 3000);
+
+    if (success) {
+      setBotToken("");
+      setTestResult({
+        success: true,
+        message: "Bot Token stored securely in Supabase Vault."
+      });
+      setTimeout(() => setTestResult(null), 3000);
+    }
   };
 
   return (
@@ -152,7 +166,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
             1. Telegram Bot Token Configuration
           </h2>
           <p className="text-slate-500 text-xs mb-5 font-sans leading-relaxed">
-            All destination channels and groups utilize the same Telegram bot. Please paste your secure bot token.
+            All destination channels and groups use one backend-owned Telegram bot credential. Stored tokens are never returned to this browser.
           </p>
 
           <div className="space-y-4">
@@ -164,7 +178,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                 <div className="relative flex-1">
                   <input
                     type={showToken ? "text" : "password"}
-                    placeholder="123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
+                    placeholder={destination.botTokenConfigured ? "Enter a new token to replace the stored credential" : "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"}
                     value={botToken}
                     disabled={readOnly}
                     onChange={(e) => setBotToken(e.target.value)}
@@ -189,9 +203,22 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   </button>
                 )}
               </div>
-              <p className="text-[10px] text-slate-400 mt-1.5">
-                Acquire this token by sending <code>/newbot</code> to <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline inline-flex items-center gap-0.5">@BotFather</a>.
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {destination.botTokenConfigured ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
+                    <Check className="h-3 w-3" />
+                    Stored securely
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
+                    <AlertCircle className="h-3 w-3" />
+                    Token not configured
+                  </span>
+                )}
+                <p className="text-[10px] text-slate-400">
+                  Acquire a token from <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">@BotFather</a>. Saving replaces the credential in Supabase Vault.
+                </p>
+              </div>
             </div>
           </div>
         </div>
