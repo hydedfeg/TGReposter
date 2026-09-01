@@ -729,6 +729,7 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
 
   let newlyFetchedCount = 0;
   const currentPostsMap = new Map(db.posts.map(p => [p.id, p]));
+  const dirtyPostsMap = new Map<string, CuratedPost>();
 
   for (const username of usernamesToFetch) {
     const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
@@ -742,7 +743,14 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
     } else {
       db.channels[channelIdx].status = "fetching";
     }
-    await writeDb(db);
+
+    await channelRepository.saveScanState({
+      username: cleanUsername,
+      display_name: db.channels[channelIdx].name,
+      enabled: db.channels[channelIdx].enabled !== false,
+      status: "fetching",
+      error_message: null,
+    });
 
     try {
       const url = `https://t.me/s/${cleanUsername}`;
@@ -903,22 +911,40 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
             status: initialStatus
           };
           currentPostsMap.set(postId, newPost);
+          dirtyPostsMap.set(postId, newPost);
           newlyFetchedCount++;
         } else if (videoUrl) {
           // Existing video posts created before video support often stored the thumbnail
           // as photoUrl. Keep edits/status intact while attaching the authoritative video.
-          existingPost.videoUrl = videoUrl;
-          existingPost.mediaType = 'video';
-          if (!photoUrl) {
+          let mediaChanged = false;
+          if (existingPost.videoUrl !== videoUrl) {
+            existingPost.videoUrl = videoUrl;
+            mediaChanged = true;
+          }
+          if (existingPost.mediaType !== 'video') {
+            existingPost.mediaType = 'video';
+            mediaChanged = true;
+          }
+          if (!photoUrl && existingPost.photoUrl) {
             existingPost.photoUrl = undefined;
+            mediaChanged = true;
+          }
+          if (mediaChanged) {
+            dirtyPostsMap.set(postId, existingPost);
           }
         } else {
+          let mediaChanged = false;
           const repairedPhotoUrl = repairLegacyPhotoUrl(existingPost.photoUrl, photoUrl);
           if (repairedPhotoUrl !== existingPost.photoUrl) {
             existingPost.photoUrl = repairedPhotoUrl;
+            mediaChanged = true;
           }
-          if (repairedPhotoUrl) {
+          if (repairedPhotoUrl && existingPost.mediaType !== 'photo') {
             existingPost.mediaType = 'photo';
+            mediaChanged = true;
+          }
+          if (mediaChanged) {
+            dirtyPostsMap.set(postId, existingPost);
           }
         }
         parsedCount++;
@@ -934,45 +960,56 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
         db.channels[channelIdx].name = titleMatch[1];
       }
 
+      await channelRepository.saveScanState({
+        username: cleanUsername,
+        display_name: db.channels[channelIdx].name,
+        enabled: db.channels[channelIdx].enabled !== false,
+        last_scan_at: db.channels[channelIdx].lastFetched,
+        status: "success",
+        error_message: null,
+      });
     } catch (err: any) {
       console.error(`Error fetching channel @${username}:`, err);
       db.channels[channelIdx].status = "error";
+      db.channels[channelIdx].lastFetched = new Date().toISOString();
       db.channels[channelIdx].errorMessage = err.message || "Failed to scrape channel";
+
+      await channelRepository.saveScanState({
+        username: cleanUsername,
+        display_name: db.channels[channelIdx].name,
+        enabled: db.channels[channelIdx].enabled !== false,
+        last_scan_at: db.channels[channelIdx].lastFetched,
+        status: "error",
+        error_message: db.channels[channelIdx].errorMessage,
+      });
     }
   }
 
-  // Convert map back to array, sort by date descending
-  const updatedPosts = Array.from(currentPostsMap.values());
-  updatedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // Persist only posts that are genuinely new or whose authoritative media
+  // metadata was repaired during this scan. PostgreSQL remains the durable source;
+  // unchanged inbox rows should not receive a fresh updated_at every five minutes.
+  try {
+    const dirtyPosts = Array.from(dirtyPostsMap.values());
+    const postEntities = dirtyPosts.map(post => ({
+      id: post.id,
+      channel_username: post.channelUsername,
+      original_text: post.originalText,
+      edited_text: post.text,
+      media_type: post.mediaType ?? null,
+      photo_url: post.photoUrl ?? null,
+      video_url: post.videoUrl ?? null,
+      telegram_url: post.url,
+      published_at: post.date,
+      posted_at: post.postedAt ?? null,
+      error_message: post.errorMessage ?? null,
+      status: post.status,
+    }));
 
-  // Keep the API payload bounded while PostgreSQL remains the durable source.
-  db.posts = updatedPosts.slice(0, 400);
-  await writeDb(db);
-
-// Persist the current inbox snapshot through the dedicated post repository.
-try {
-  const postEntities = db.posts.map(post => ({
-    id: post.id,
-    channel_username: post.channelUsername,
-    original_text: post.originalText,
-    edited_text: post.text,
-    media_type: post.mediaType ?? null,
-    photo_url: post.photoUrl ?? null,
-    video_url: post.videoUrl ?? null,
-    telegram_url: post.url,
-    published_at: post.date,
-    posted_at: post.postedAt ?? null,
-    error_message: post.errorMessage ?? null,
-    status: post.status,
-  }));
-
-  await postService.savePosts(postEntities);
-
-  console.log(`Saved ${postEntities.length} posts to Supabase.`);
-} catch (err) {
-  console.error("Failed saving posts to Supabase:", err);
-}
-// -----------------------------------------------
+    await postService.savePosts(postEntities);
+    console.log(`Persisted ${postEntities.length} changed inbox posts.`);
+  } catch (err) {
+    console.error("Failed saving changed inbox posts:", err);
+  }
 
 const latestPosts = (await postService.getRecentPosts(400)).map((p: any) => ({
   id: p.id,
