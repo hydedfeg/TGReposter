@@ -8,6 +8,7 @@ import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPromp
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
+import { getMainTelegramBotToken, saveMainTelegramBotToken } from "./server/services/telegramCredentialService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -66,6 +67,7 @@ interface DestinationTarget {
 
 interface DestinationConfig {
   botToken: string;
+  botTokenConfigured?: boolean;
   channelId?: string; // Kept for backwards compatibility
   targets: DestinationTarget[];
   connected: boolean;
@@ -1076,10 +1078,29 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
 app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   const { postId, text, targetIds } = req.body;
   const db = await readDb();
-  const { botToken, targets, channelId } = db.destination;
+  const { targets, channelId } = db.destination;
+
+  let botToken = "";
+  try {
+    botToken = await getMainTelegramBotToken();
+  } catch {
+    if (process.env.DATABASE_URL) {
+      console.error("Failed resolving Telegram bot credential.");
+      return res.status(500).json({ error: "Telegram bot credential could not be loaded." });
+    }
+  }
+
+  // Local development and integration tests intentionally run without DATABASE_URL.
+  // Production never uses this path because its settings repository does not
+  // return a stored token and DATABASE_URL is required.
+  if (!botToken && !process.env.DATABASE_URL) {
+    botToken = typeof db.destination.botToken === "string"
+      ? db.destination.botToken.trim()
+      : "";
+  }
 
   if (!botToken) {
-    return res.status(400).json({ error: "Bot Token is missing in configuration." });
+    return res.status(400).json({ error: "Telegram bot token is not configured." });
   }
 
   const configuredTargets = Array.isArray(targets) ? targets : [];
@@ -1224,20 +1245,68 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     summary: publishResult.summary,
     post: db.posts[postIdx],
     results: publishResult.results,
-    destination: db.destination
+    destination: {
+      ...db.destination,
+      botToken: "",
+      botTokenConfigured: true,
+    }
   });
 });
 
+app.post("/api/destination/bot-token", authMiddleware, requireSuperAdmin, async (req, res) => {
+  try {
+    await saveMainTelegramBotToken(req.body?.botToken);
+    return res.json({
+      success: true,
+      configured: true,
+      message: "Telegram bot token stored securely.",
+    });
+  } catch (error: any) {
+    return res.status(400).json({
+      success: false,
+      configured: false,
+      error: error?.message || "Telegram bot token could not be stored.",
+    });
+  }
+});
+
 // Test bot connectivity in stages so configuration errors are easy to diagnose.
-app.post("/api/test-bot", authMiddleware, async (req, res) => {
-  const botToken = typeof req.body?.botToken === "string" ? req.body.botToken.trim() : "";
+app.post("/api/test-bot", authMiddleware, requireSuperAdmin, async (req, res) => {
   const channelId = typeof req.body?.channelId === "string" ? req.body.channelId.trim() : "";
 
-  if (!botToken || !channelId) {
+  if (!channelId) {
     return res.status(400).json({
       success: false,
       stage: "input",
-      error: "Bot Token and Channel ID are required."
+      error: "Channel ID is required."
+    });
+  }
+
+  let botToken = "";
+  try {
+    botToken = await getMainTelegramBotToken();
+  } catch {
+    if (process.env.DATABASE_URL) {
+      return res.status(500).json({
+        success: false,
+        stage: "credential",
+        error: "Telegram bot credential could not be loaded."
+      });
+    }
+  }
+
+  if (!botToken && !process.env.DATABASE_URL) {
+    const localDb = await readDb();
+    botToken = typeof localDb.destination.botToken === "string"
+      ? localDb.destination.botToken.trim()
+      : "";
+  }
+
+  if (!botToken) {
+    return res.status(400).json({
+      success: false,
+      stage: "credential",
+      error: "Save the Telegram bot token before testing a destination."
     });
   }
 

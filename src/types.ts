@@ -38,7 +38,9 @@ export interface DestinationTarget {
 }
 
 export interface DestinationConfig {
+  // Kept as an empty compatibility field while the primary credential lives in Vault.
   botToken: string;
+  botTokenConfigured?: boolean;
   channelId?: string; // Kept for backwards compatibility
   targets: DestinationTarget[];
   connected: boolean;

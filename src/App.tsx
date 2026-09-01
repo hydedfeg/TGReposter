@@ -16,6 +16,16 @@ import { safeResponseJson } from "./utils/api";
 
 const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "destination", "ai", "team", "database"]);
 
+function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
+  return {
+    ...settings,
+    destination: {
+      ...settings.destination,
+      botToken: "",
+    },
+  };
+}
+
 function initialWorkspaceView(): WorkspaceView {
   const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
   const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database"];
@@ -125,7 +135,9 @@ export default function App() {
         throw new Error("Failed to load settings from server");
       }
       const data = await safeResponseJson(response);
-      setSettings(data);
+      const safeData = sanitizeClientSettings(data);
+      setSettings(safeData);
+      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -138,7 +150,9 @@ export default function App() {
       const local = localStorage.getItem("telegram-curator-settings");
       if (local) {
         try {
-          setSettings(JSON.parse(local));
+          const safeLocal = sanitizeClientSettings(JSON.parse(local));
+          setSettings(safeLocal);
+          localStorage.setItem("telegram-curator-settings", JSON.stringify(safeLocal));
         } catch (_) {}
       }
       setErrorMessage("Unable to fetch settings from server. Reverting to local cache.");
@@ -192,20 +206,24 @@ export default function App() {
 
   // Save settings helper
   const saveSettingsToServer = async (updated: CuratorSettings) => {
-    // Back up in localStorage
-    localStorage.setItem("telegram-curator-settings", JSON.stringify(updated));
-    setSettings(updated);
+    const safeUpdated = sanitizeClientSettings(updated);
+
+    // Keep a token-free local fallback only.
+    localStorage.setItem("telegram-curator-settings", JSON.stringify(safeUpdated));
+    setSettings(safeUpdated);
 
     try {
       const response = await fetchWithAuth("/api/settings", {
         method: "POST",
-        body: JSON.stringify(updated)
+        body: JSON.stringify(safeUpdated)
       });
       if (!response.ok) {
         throw new Error("Failed to save settings on server");
       }
       const data = await safeResponseJson(response);
-      setSettings(data);
+      const safeData = sanitizeClientSettings(data);
+      setSettings(safeData);
+      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -339,15 +357,40 @@ export default function App() {
 
   // 3. Destination configuration actions
   const handleSaveDestination = async (botToken: string, targets: DestinationTarget[]): Promise<boolean> => {
+    let botTokenConfigured = !!settings.destination.botTokenConfigured;
+
+    if (botToken.trim()) {
+      try {
+        const tokenResponse = await fetchWithAuth("/api/destination/bot-token", {
+          method: "POST",
+          body: JSON.stringify({ botToken: botToken.trim() }),
+        });
+        const tokenResult = await safeResponseJson(tokenResponse);
+
+        if (!tokenResponse.ok || !tokenResult.success) {
+          throw new Error(tokenResult.error || "Unable to store Telegram bot token.");
+        }
+
+        botTokenConfigured = true;
+      } catch (err: any) {
+        showToast(err?.message || "Unable to store Telegram bot token.", "error");
+        return false;
+      }
+    }
+
     const updatedDestination: IDestinationConfig = {
       ...settings.destination,
-      botToken,
+      botToken: "",
+      botTokenConfigured,
       targets,
-      connected: true
+      connected:
+        settings.destination.connected ||
+        targets.some(target => target.status === "success"),
     };
+
     const updated = { ...settings, destination: updatedDestination };
     await saveSettingsToServer(updated);
-    showToast("Telegram Destination Bot and targets updated.");
+    showToast(botToken.trim() ? "Telegram bot token stored securely and destinations updated." : "Telegram destinations updated.");
     return true;
   };
 
@@ -541,7 +584,7 @@ export default function App() {
     );
   }
 
-  const isBotConfigured = !!settings.destination.botToken && (!!settings.destination.targets?.some(t => t.enabled) || !!settings.destination.channelId);
+  const isBotConfigured = !!settings.destination.botTokenConfigured && (!!settings.destination.targets?.some(t => t.enabled) || !!settings.destination.channelId);
 
   return (
     <AppShell

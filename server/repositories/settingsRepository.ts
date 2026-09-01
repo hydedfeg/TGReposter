@@ -24,7 +24,7 @@ export class RuntimeSettingsRepository {
   async read(): Promise<any | null> {
     const pool = getPostgresPool();
 
-    const [legacyResult, channelsResult, filtersResult, aiResult, targetsResult, postsResult] =
+    const [legacyResult, channelsResult, filtersResult, aiResult, targetsResult, postsResult, vaultBotResult] =
       await Promise.all([
         pool.query(`
           select data
@@ -64,6 +64,13 @@ export class RuntimeSettingsRepository {
           order by published_at desc nulls last, created_at desc
           limit 400
         `, [INBOX_WINDOW_HOURS]),
+        pool.query(`
+          select exists (
+            select 1
+            from vault.secrets
+            where name = 'tgreposter_main_bot_token'
+          ) as configured
+        `),
       ]);
 
     const legacy = legacyResult.rows[0]?.data ?? {};
@@ -95,7 +102,12 @@ export class RuntimeSettingsRepository {
             caseSensitive: false,
           },
       destination: {
-        botToken: legacyDestination.botToken ?? "",
+        // Stored Telegram credentials never leave the backend. The empty field is
+        // retained temporarily for backwards-compatible client types.
+        botToken: "",
+        botTokenConfigured:
+          vaultBotResult.rows[0]?.configured === true ||
+          (typeof legacyDestination.botToken === "string" && legacyDestination.botToken.trim().length > 0),
         channelId: legacyDestination.channelId ?? "",
         connected:
           typeof legacyDestination.connected === "boolean"
@@ -158,10 +170,10 @@ export class RuntimeSettingsRepository {
         users: Array.isArray(settings?.users) ? settings.users : currentLegacy.users ?? [],
         destination: {
           ...currentDestination,
-          botToken:
-            typeof incomingDestination.botToken === "string"
-              ? incomingDestination.botToken
-              : currentDestination.botToken ?? "",
+          // Ignore browser-supplied bot tokens in generic settings writes.
+          // During the rollout, preserve the existing legacy value server-side
+          // until it has been copied into Supabase Vault.
+          botToken: currentDestination.botToken ?? "",
           channelId:
             typeof incomingDestination.channelId === "string"
               ? incomingDestination.channelId
