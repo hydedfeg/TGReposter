@@ -1083,9 +1083,20 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   let botToken = "";
   try {
     botToken = await getMainTelegramBotToken();
-  } catch (error) {
-    console.error("Failed resolving Telegram bot credential.");
-    return res.status(500).json({ error: "Telegram bot credential could not be loaded." });
+  } catch {
+    if (process.env.DATABASE_URL) {
+      console.error("Failed resolving Telegram bot credential.");
+      return res.status(500).json({ error: "Telegram bot credential could not be loaded." });
+    }
+  }
+
+  // Local development and integration tests intentionally run without DATABASE_URL.
+  // Production never uses this path because its settings repository does not
+  // return a stored token and DATABASE_URL is required.
+  if (!botToken && !process.env.DATABASE_URL) {
+    botToken = typeof db.destination.botToken === "string"
+      ? db.destination.botToken.trim()
+      : "";
   }
 
   if (!botToken) {
@@ -1275,11 +1286,20 @@ app.post("/api/test-bot", authMiddleware, requireSuperAdmin, async (req, res) =>
   try {
     botToken = await getMainTelegramBotToken();
   } catch {
-    return res.status(500).json({
-      success: false,
-      stage: "credential",
-      error: "Telegram bot credential could not be loaded."
-    });
+    if (process.env.DATABASE_URL) {
+      return res.status(500).json({
+        success: false,
+        stage: "credential",
+        error: "Telegram bot credential could not be loaded."
+      });
+    }
+  }
+
+  if (!botToken && !process.env.DATABASE_URL) {
+    const localDb = await readDb();
+    botToken = typeof localDb.destination.botToken === "string"
+      ? localDb.destination.botToken.trim()
+      : "";
   }
 
   if (!botToken) {
