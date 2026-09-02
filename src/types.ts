@@ -149,8 +149,12 @@ export interface AIConfig {
 }
 
 export interface CuratorUser {
+  id?: string;
   username: string;
+  email?: string;
   role: 'super-admin' | 'admin';
+  isActive?: boolean;
+  authProvider?: 'supabase' | 'legacy';
   createdAt: string;
 }
 
