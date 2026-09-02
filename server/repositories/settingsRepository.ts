@@ -52,6 +52,7 @@ export class RuntimeSettingsRepository {
         pool.query(`
           select id, client_id, name, channel_id, enabled, status, error_message
           from public.destination_targets
+          where owner_principal is null
           order by created_at asc, id asc
         `),
         pool.query(`
@@ -320,7 +321,8 @@ export class RuntimeSettingsRepository {
       await client.query(
         `
           delete from public.destination_targets
-          where coalesce(client_id, id::text) not in (
+          where owner_principal is null
+            and coalesce(client_id, id::text) not in (
             select coalesce(x.client_id, '')
             from jsonb_to_recordset($1::jsonb) as x(client_id text)
           )
@@ -335,7 +337,9 @@ export class RuntimeSettingsRepository {
               insert into public.destination_targets
                 (client_id, name, channel_id, enabled, status, error_message, created_at, updated_at)
               values ($1, $2, $3, $4, $5, $6, now(), now())
-              on conflict (client_id) where client_id is not null do update
+              on conflict (client_id)
+                where owner_principal is null and client_id is not null
+              do update
               set name = excluded.name,
                   channel_id = excluded.channel_id,
                   enabled = excluded.enabled,
