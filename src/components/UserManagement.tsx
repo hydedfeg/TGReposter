@@ -1,256 +1,433 @@
-import React, { useState } from "react";
-import { Users, UserPlus, Trash2, ShieldCheck, UserCheck, Calendar, Lock, AlertCircle, Sparkles, Key } from "lucide-react";
-import { CuratorUser } from "../types";
+import React, { useMemo, useState } from "react";
+import {
+  AlertCircle,
+  Bot,
+  Calendar,
+  CheckCircle2,
+  Database,
+  Inbox,
+  KeyRound,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  UserPlus,
+  Users,
+} from "lucide-react";
+import type { CuratorUser } from "../types";
 
 interface UserManagementProps {
   users: CuratorUser[];
-  onAddUser: (username: string, password: string, role: "super-admin" | "admin") => Promise<boolean>;
+  onAddUser: (
+    username: string,
+    password: string,
+    role: "super-admin" | "admin"
+  ) => Promise<boolean>;
   onDeleteUser: (username: string) => Promise<boolean>;
   currentUsername: string | null;
 }
 
-export default function UserManagement({ users, onAddUser, onDeleteUser, currentUsername }: UserManagementProps) {
-  const [username, setUsername] = useState("");
+function isCurrentUser(user: CuratorUser, currentUsername: string | null) {
+  const current = (currentUsername || "").trim().toLowerCase();
+  if (!current) return false;
+
+  return (
+    user.username.trim().toLowerCase() === current ||
+    (user.email || "").trim().toLowerCase() === current
+  );
+}
+
+export default function UserManagement({
+  users,
+  onAddUser,
+  onDeleteUser,
+  currentUsername,
+}: UserManagementProps) {
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"super-admin" | "admin">("admin");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const activeUsers = useMemo(
+    () => users.filter((user) => user.isActive !== false),
+    [users]
+  );
+  const legacyUsers = useMemo(
+    () => users.filter((user) => user.authProvider !== "supabase"),
+    [users]
+  );
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
     setError("");
     setSuccess("");
 
-    if (!username.trim() || username.trim().length < 3) {
-      setError("Username or email must be at least 3 characters.");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Enter a valid email address. New workspace members use Supabase Auth.");
       return;
     }
 
-    const isSupabaseAccount = username.includes("@");
-    const minimumPasswordLength = isSupabaseAccount ? 8 : 4;
-    if (!password || password.length < minimumPasswordLength) {
-      setError(
-        isSupabaseAccount
-          ? "Supabase Auth passwords must be at least 8 characters."
-          : "Legacy passwords must be at least 4 characters."
-      );
+    if (!password || password.length < 8) {
+      setError("Temporary passwords must be at least 8 characters.");
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const ok = await onAddUser(username.trim(), password, role);
+      const ok = await onAddUser(cleanEmail, password, role);
       if (ok) {
-        setSuccess(`User "${username.trim().toLowerCase()}" has been successfully added.`);
-        setUsername("");
+        setSuccess(
+          `Workspace member "${cleanEmail}" was provisioned with a private Content Inbox and Destinations workspace.`
+        );
+        setEmail("");
         setPassword("");
         setRole("admin");
       } else {
-        setError("Failed to add user. Username might already exist.");
+        setError("Unable to provision this workspace member.");
       }
     } catch (err: any) {
-      setError(err.message || "An error occurred.");
+      setError(err?.message || "Unable to provision this workspace member.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (targetUsername: string) => {
-    if (window.confirm(`Are you sure you want to permanently revoke access for user "${targetUsername}"?`)) {
-      setError("");
-      setSuccess("");
-      try {
-        const ok = await onDeleteUser(targetUsername);
-        if (ok) {
-          setSuccess(`User "${targetUsername}" revoked successfully.`);
-        } else {
-          setError("Failed to revoke access. Ensure you are not deleting the final remaining Super-Admin.");
-        }
-      } catch (err: any) {
-        setError(err.message || "An error occurred during deletion.");
+  const handleDelete = async (identity: string) => {
+    const confirmed = window.confirm(
+      `Revoke access for "${identity}"? Their personal Content Inbox and Destinations data will be retained for audit/recovery, but they will no longer be able to sign in.`
+    );
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+
+    try {
+      const ok = await onDeleteUser(identity);
+      if (ok) {
+        setSuccess(
+          `Access for "${identity}" was revoked. Personal workspace data was retained.`
+        );
+      } else {
+        setError(
+          "Unable to revoke access. Make sure you are not revoking yourself or the final Super-Admin."
+        );
       }
+    } catch (err: any) {
+      setError(err?.message || "Unable to revoke this account.");
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Overview Block */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 sm:p-8 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
             <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-600" />
-              <h2 className="font-display font-bold text-slate-900 text-lg">Team & Access Directory</h2>
+              <Users className="h-5 w-5 text-indigo-600" aria-hidden="true" />
+              <h2 className="font-display text-lg font-bold text-slate-950">
+                Team & Workspace Access
+              </h2>
             </div>
-            <p className="text-slate-500 text-xs font-sans max-w-2xl leading-relaxed">
-              Define the security structure for your Telegram curator system. You can establish high-privilege <b>Super-Admins</b> who manage APIs and scrapers, and <b>Admins</b> who focus purely on reviewing, editing, and publishing content.
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Every member has an isolated publishing workspace: their own Content Inbox,
+              review status, publishing history, Telegram bot credential, and Destinations.
+              Sources, Filters, AI Configuration, Team, and System Settings remain shared
+              system controls managed by Super-Admins.
             </p>
           </div>
-          <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-indigo-950 font-sans text-xs self-start md:self-center flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-            <span>Currently logged in as <b>{currentUsername}</b> (Super-Admin)</span>
+
+          <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+            <ShieldCheck className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
+            <div>
+              <p className="font-bold">{currentUsername || "Super-Admin"}</p>
+              <p className="text-xs text-indigo-700">Current system administrator</p>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Creation Form */}
-        <div className="lg:col-span-1 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs h-fit">
-          <div className="flex items-center gap-2 mb-4">
-            <UserPlus className="w-4 h-4 text-slate-800" />
-            <h3 className="font-display font-bold text-slate-900 text-sm">Add Team Administrator</h3>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <article className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
+            <div className="flex items-center gap-2">
+              <Inbox className="h-4 w-4 text-sky-600" aria-hidden="true" />
+              <h3 className="text-sm font-bold text-slate-900">Private Content Inbox</h3>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              Edits, approvals, archives, publish results, and history belong only to that member.
+            </p>
+          </article>
+
+          <article className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+              <h3 className="text-sm font-bold text-slate-900">Private Destinations</h3>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              Each member owns a separate Telegram bot credential and destination list.
+            </p>
+          </article>
+
+          <article className="rounded-xl border border-violet-100 bg-violet-50/70 p-4">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-violet-600" aria-hidden="true" />
+              <h3 className="text-sm font-bold text-slate-900">Shared System Setup</h3>
+            </div>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              Super-Admins control shared sources, filters, AI provider settings, and platform configuration.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <div className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+        <section className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+          <div className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-slate-700" aria-hidden="true" />
+            <div>
+              <h3 className="font-display text-base font-bold text-slate-950">
+                Add Workspace Member
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                New accounts use Supabase Auth and get a separate personal workspace.
+              </p>
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
-              <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 flex gap-2 text-rose-800 text-[11px] leading-normal font-sans">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+          <form onSubmit={handleSubmit} className="mt-5 space-y-4">
+            {error ? (
+              <div className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" aria-hidden="true" />
                 <span>{error}</span>
               </div>
-            )}
-            {success && (
-              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 flex gap-2 text-emerald-800 text-[11px] leading-normal font-sans">
-                <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+            ) : null}
+
+            {success ? (
+              <div className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
                 <span>{success}</span>
               </div>
-            )}
+            ) : null}
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Username or Email
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                Email address
               </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin@example.com or content_manager"
-                className="w-full px-3 py-2 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
-              />
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="member@example.com"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                />
+              </div>
+              <p className="mt-1.5 text-xs leading-5 text-slate-400">
+                Email becomes the durable Supabase identity used to isolate personal data.
+              </p>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Temporary Password
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                Temporary password
               </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="w-full px-3 py-2 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
-              />
+              <div className="relative">
+                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <input
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="Minimum 8 characters"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                />
+              </div>
             </div>
 
             <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Access Role
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                Access role
               </label>
               <select
                 value={role}
-                onChange={(e) => setRole(e.target.value as "super-admin" | "admin")}
-                className="w-full px-3 py-2 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
+                onChange={(event) =>
+                  setRole(event.target.value as "super-admin" | "admin")
+                }
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
               >
-                <option value="admin">Admin (Curation & Publishing Only)</option>
-                <option value="super-admin">Super-Admin (Full System Controls)</option>
+                <option value="admin">
+                  Admin — Personal curation & publishing
+                </option>
+                <option value="super-admin">
+                  Super-Admin — Personal workspace + system administration
+                </option>
               </select>
             </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full py-2.5 px-4 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 flex items-center justify-center gap-2 cursor-pointer transition-all"
-              >
-                <Key className="w-3.5 h-3.5 text-sky-400" />
-                {isSubmitting ? "Creating User..." : "Provision Access Account"}
-              </button>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-bold text-slate-700">
+                {role === "super-admin" ? "Super-Admin access" : "Admin access"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {role === "super-admin"
+                  ? "Gets a private Inbox and Destinations plus permission to manage shared sources, filters, AI, team members, and system settings."
+                  : "Gets a private Inbox and Destinations and can review, edit, approve, archive, and publish content. Shared system configuration stays read-only/unavailable."}
+              </p>
             </div>
-          </form>
-        </div>
 
-        {/* User Accounts List */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-bold text-slate-900 text-sm">Active Administrator Accounts</h3>
-            <span className="text-slate-400 text-xs font-sans">{users.length} configured</span>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-400"
+            >
+              <KeyRound className="h-4 w-4 text-sky-400" aria-hidden="true" />
+              {isSubmitting ? "Provisioning member..." : "Provision workspace member"}
+            </button>
+          </form>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-xs">
+          <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-display text-base font-bold text-slate-950">
+                Workspace Members
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {activeUsers.length} active · {users.length} total
+                {legacyUsers.length ? ` · ${legacyUsers.length} legacy` : ""}
+              </p>
+            </div>
+            <div className="inline-flex items-center gap-2 self-start rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Personal workspace isolation enabled
+            </div>
           </div>
 
-          <div className="divide-y divide-slate-100">
+          {legacyUsers.length > 0 ? (
+            <div className="mx-5 mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+              <div>
+                <p className="font-bold">Legacy accounts still exist</p>
+                <p className="mt-0.5 text-amber-700">
+                  They remain compatible and use a normalized username as their personal workspace key.
+                  New members should be created with email so ownership is tied to an immutable Supabase user ID.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="divide-y divide-slate-100 px-5">
             {users.map((user) => {
-              const isSelf =
-                user.username === currentUsername ||
-                (!!user.email && user.email === currentUsername);
+              const self = isCurrentUser(user, currentUsername);
               const isSuper = user.role === "super-admin";
+              const isSupabase = user.authProvider === "supabase";
+              const active = user.isActive !== false;
+              const identity = user.email || user.username;
 
               return (
-                <div key={user.username} className="py-4 flex items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-display font-semibold text-slate-900 text-sm">
+                <article
+                  key={user.id || `${user.authProvider || "legacy"}:${identity}`}
+                  className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-bold text-slate-950">
                         {user.username}
-                      </span>
-                      {isSelf && (
-                        <span className="bg-indigo-50 text-indigo-700 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                      </p>
+                      {self ? (
+                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700">
                           You
                         </span>
-                      )}
-                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 ${
-                        isSuper 
-                          ? "bg-slate-100 text-slate-800 border border-slate-200" 
-                          : "bg-sky-50 text-sky-700 border border-sky-100"
-                      }`}>
-                        {isSuper ? <ShieldCheck className="w-3 h-3 text-slate-600" /> : <UserCheck className="w-3 h-3 text-sky-600" />}
+                      ) : null}
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-bold ${
+                          isSuper
+                            ? "border-slate-200 bg-slate-100 text-slate-800"
+                            : "border-sky-100 bg-sky-50 text-sky-700"
+                        }`}
+                      >
+                        {isSuper ? (
+                          <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+                        ) : (
+                          <UserCheck className="h-3 w-3" aria-hidden="true" />
+                        )}
                         {isSuper ? "Super-Admin" : "Admin"}
                       </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${
+                          active
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {active ? "Active" : "Revoked"}
+                      </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 text-slate-400 text-[10px]">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>Added on {new Date(user.createdAt || Date.now()).toLocaleDateString(undefined, {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                      })}</span>
+
+                    {user.email ? (
+                      <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                        {user.email}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
+                      <span className="inline-flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                        Added{" "}
+                        {new Date(user.createdAt || Date.now()).toLocaleDateString(
+                          undefined,
+                          { year: "numeric", month: "short", day: "numeric" }
+                        )}
+                      </span>
                       <span>·</span>
-                      <span>{user.authProvider === "supabase" ? "Supabase Auth" : "Legacy session"}</span>
-                      {user.email ? (
-                        <>
-                          <span>·</span>
-                          <span>{user.email}</span>
-                        </>
-                      ) : null}
-                      {user.authProvider === "supabase" && user.isActive === false ? (
-                        <>
-                          <span>·</span>
-                          <span className="font-semibold text-amber-600">Revoked</span>
-                        </>
-                      ) : null}
+                      <span className="font-semibold">
+                        {isSupabase ? "Supabase Auth" : "Legacy identity"}
+                      </span>
+                      <span>·</span>
+                      <span>Private Inbox + Destinations</span>
                     </div>
+
+                    {!isSupabase ? (
+                      <p className="mt-2 text-xs font-medium text-amber-600">
+                        Legacy workspace ownership is username-based. Prefer an email/Supabase account for new members.
+                      </p>
+                    ) : null}
                   </div>
 
-                  {!isSelf && (
+                  {!self && active ? (
                     <button
-                      onClick={() => handleDelete(user.email || user.username)}
-                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                      title="Revoke access"
+                      type="button"
+                      onClick={() => handleDelete(identity)}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 sm:self-center"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      Revoke access
                     </button>
-                  )}
-                </div>
+                  ) : null}
+                </article>
               );
             })}
 
-            {users.length === 0 && (
-              <div className="text-center py-8 space-y-2">
-                <Users className="w-8 h-8 text-slate-300 mx-auto" />
-                <p className="text-slate-400 text-xs">No user accounts found. Database requires synchronizing.</p>
+            {users.length === 0 ? (
+              <div className="py-12 text-center">
+                <Users className="mx-auto h-9 w-9 text-slate-300" aria-hidden="true" />
+                <p className="mt-3 text-sm font-bold text-slate-700">
+                  No workspace members found
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Provision the first account from the form on the left.
+                </p>
               </div>
-            )}
+            ) : null}
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
