@@ -14,7 +14,7 @@ import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 
-const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "destination", "ai", "team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "ai", "team", "database"]);
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
@@ -24,6 +24,11 @@ function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
       botToken: "",
     },
   };
+}
+
+function settingsCacheKey() {
+  const username = localStorage.getItem("curator_username")?.trim().toLowerCase();
+  return `telegram-curator-settings:${username || "anonymous"}`;
 }
 
 function initialWorkspaceView(): WorkspaceView {
@@ -137,7 +142,7 @@ export default function App() {
       const data = await safeResponseJson(response);
       const safeData = sanitizeClientSettings(data);
       setSettings(safeData);
-      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
+      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -147,12 +152,12 @@ export default function App() {
     } catch (err: any) {
       console.error("Error loading configuration:", err);
       // Fallback to client localStorage if server is temporarily unreachable
-      const local = localStorage.getItem("telegram-curator-settings");
+      const local = localStorage.getItem(settingsCacheKey());
       if (local) {
         try {
           const safeLocal = sanitizeClientSettings(JSON.parse(local));
           setSettings(safeLocal);
-          localStorage.setItem("telegram-curator-settings", JSON.stringify(safeLocal));
+          localStorage.setItem(settingsCacheKey(), JSON.stringify(safeLocal));
         } catch (_) {}
       }
       setErrorMessage("Unable to fetch settings from server. Reverting to local cache.");
@@ -209,7 +214,7 @@ export default function App() {
     const safeUpdated = sanitizeClientSettings(updated);
 
     // Keep a token-free local fallback only.
-    localStorage.setItem("telegram-curator-settings", JSON.stringify(safeUpdated));
+    localStorage.setItem(settingsCacheKey(), JSON.stringify(safeUpdated));
     setSettings(safeUpdated);
 
     try {
@@ -223,7 +228,7 @@ export default function App() {
       const data = await safeResponseJson(response);
       const safeData = sanitizeClientSettings(data);
       setSettings(safeData);
-      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
+      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -441,7 +446,7 @@ export default function App() {
   }));
 
   localStorage.setItem(
-    "telegram-curator-settings",
+    settingsCacheKey(),
     JSON.stringify({
       ...settings,
       channels: data.channels,
@@ -485,7 +490,7 @@ export default function App() {
       }));
 
       // Persist latest state
-      localStorage.setItem("telegram-curator-settings", JSON.stringify({
+      localStorage.setItem(settingsCacheKey(), JSON.stringify({
         ...settings,
         channels: data.channels,
         posts: data.posts
@@ -622,11 +627,9 @@ export default function App() {
               <p className="mt-1 leading-relaxed text-amber-700">
                 Content collection and editing are available. Configure and enable a Telegram destination before publishing.
               </p>
-              {currentUserRole === "super-admin" ? (
-                <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
-                  Configure destinations
-                </button>
-              ) : null}
+              <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
+                Configure my destinations
+              </button>
             </div>
           </div>
         ) : null}
@@ -656,7 +659,7 @@ export default function App() {
           <FilterConfig filters={settings.filters} onUpdateFilters={handleUpdateFilters} />
         ) : null}
 
-        {activeWorkspaceTab === "destination" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "destination" ? (
           <DestinationConfig destination={settings.destination} onSave={handleSaveDestination} />
         ) : null}
 
