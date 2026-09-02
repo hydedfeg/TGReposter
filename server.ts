@@ -1006,7 +1006,7 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
 // --- Supabase Database Management Endpoints ---
 
 // Check table existence and configuration status
-app.get("/api/supabase/status", authMiddleware, async (req, res) => {
+app.get("/api/supabase/status", authMiddleware, requireSuperAdmin, async (req, res) => {
   const [legacyStatus, health] = await Promise.all([
     checkTableExists(),
     getDatabaseHealth(),
