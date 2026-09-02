@@ -8,7 +8,8 @@ import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPromp
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
-import { getMainTelegramBotToken, saveMainTelegramBotToken } from "./server/services/telegramCredentialService";
+import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
+import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
@@ -838,20 +839,26 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
-  if (!isSuper && safeDb.destination) {
-    // Mask botToken for normal admins
-    if (safeDb.destination.botToken) {
-      const len = safeDb.destination.botToken.length;
-      if (len > 8) {
-        safeDb.destination.botToken = "•".repeat(12) + safeDb.destination.botToken.slice(-4);
-      } else {
-        safeDb.destination.botToken = "••••••••••••";
-      }
+  let destination = safeDb.destination;
+  if (process.env.DATABASE_URL && req.user) {
+    try {
+      destination = await getUserDestinationConfig(req.user);
+    } catch (error) {
+      console.error("Failed loading user-scoped destinations:", error);
+      return res.status(500).json({
+        error: "Your Telegram destinations could not be loaded.",
+      });
     }
+  } else if (destination) {
+    destination = {
+      ...destination,
+      botToken: "",
+    };
   }
 
   res.json({
     ...safeDb,
+    destination,
     passwordSet:
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
@@ -867,19 +874,47 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const incoming = req.body as Partial<CuratorSettings>;
   const db = await readDb();
   const isSuper = req.user.role === "super-admin";
+  const usesUserScopedDestinations = !!process.env.DATABASE_URL && !!req.user;
 
-  // Admins can only update posts, they are forbidden from modifying infrastructure config!
+  // Sources, filters, and AI remain system-wide super-admin configuration.
+  // Destinations are personal publishing configuration for every authenticated user.
   if (!isSuper) {
-    if (incoming.channels || incoming.filters || incoming.destination || incoming.aiConfig) {
-      return res.status(403).json({ error: "Forbidden. Admins can only edit or approve posts. System configurations are locked." });
+    if (incoming.channels || incoming.filters || incoming.aiConfig) {
+      return res.status(403).json({
+        error: "Forbidden. Admins can edit posts and manage only their own Telegram destinations.",
+      });
     }
   }
 
   if (incoming.channels && isSuper) db.channels = incoming.channels;
   if (incoming.filters && isSuper) db.filters = incoming.filters;
-  if (incoming.destination && isSuper) db.destination = incoming.destination;
   if (incoming.aiConfig && isSuper) db.aiConfig = incoming.aiConfig;
   if (incoming.posts) db.posts = incoming.posts;
+
+  let savedDestination: any = null;
+  if (incoming.destination) {
+    if (usesUserScopedDestinations) {
+      try {
+        savedDestination = await saveUserDestinationTargets(
+          req.user,
+          incoming.destination.targets ?? []
+        );
+      } catch (error: any) {
+        console.error("Failed saving user-scoped destinations:", error);
+        return res.status(400).json({
+          error: error?.message || "Your Telegram destinations could not be saved.",
+        });
+      }
+    } else if (isSuper) {
+      // Local-development compatibility when the normalized PostgreSQL backend
+      // is not configured.
+      db.destination = incoming.destination;
+    } else {
+      return res.status(403).json({
+        error: "Personal destinations require the production database backend.",
+      });
+    }
+  }
 
   await writeDb(db);
 
@@ -893,19 +928,26 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
-  if (!isSuper && safeDb.destination) {
-    if (safeDb.destination.botToken) {
-      const len = safeDb.destination.botToken.length;
-      if (len > 8) {
-        safeDb.destination.botToken = "•".repeat(12) + safeDb.destination.botToken.slice(-4);
-      } else {
-        safeDb.destination.botToken = "••••••••••••";
-      }
+  let destination = safeDb.destination;
+  if (usesUserScopedDestinations) {
+    try {
+      destination = savedDestination ?? await getUserDestinationConfig(req.user);
+    } catch (error) {
+      console.error("Failed reloading user-scoped destinations:", error);
+      return res.status(500).json({
+        error: "Your Telegram destinations were saved but could not be reloaded.",
+      });
     }
+  } else if (destination) {
+    destination = {
+      ...destination,
+      botToken: "",
+    };
   }
 
   res.json({
     ...safeDb,
+    destination,
     passwordSet:
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
@@ -1289,14 +1331,33 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
 });
 
 // Post curated text directly to target Telegram channels via the shared publisher service.
-app.post("/api/post-telegram", authMiddleware, async (req, res) => {
+app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   const { postId, text, targetIds } = req.body;
   const db = await readDb();
-  const { targets, channelId } = db.destination;
+  const usesUserScopedDestinations = !!process.env.DATABASE_URL && !!req.user;
+
+  let destination = db.destination;
+  if (usesUserScopedDestinations) {
+    try {
+      destination = await getUserDestinationConfig(req.user);
+    } catch (error) {
+      console.error("Failed resolving user-scoped destinations:", error);
+      return res.status(500).json({
+        error: "Your Telegram destinations could not be loaded.",
+      });
+    }
+  }
+
+  const { targets, channelId } = destination;
 
   let botToken = "";
   try {
-    botToken = await getMainTelegramBotToken();
+    if (usesUserScopedDestinations) {
+      const ownerPrincipal = destinationOwnerPrincipalForUser(req.user);
+      botToken = await getUserTelegramBotToken(ownerPrincipal);
+    } else {
+      botToken = await getMainTelegramBotToken();
+    }
   } catch {
     if (process.env.DATABASE_URL) {
       console.error("Failed resolving Telegram bot credential.");
@@ -1305,16 +1366,14 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
   }
 
   // Local development and integration tests intentionally run without DATABASE_URL.
-  // Production never uses this path because its settings repository does not
-  // return a stored token and DATABASE_URL is required.
   if (!botToken && !process.env.DATABASE_URL) {
-    botToken = typeof db.destination.botToken === "string"
-      ? db.destination.botToken.trim()
+    botToken = typeof destination.botToken === "string"
+      ? destination.botToken.trim()
       : "";
   }
 
   if (!botToken) {
-    return res.status(400).json({ error: "Telegram bot token is not configured." });
+    return res.status(400).json({ error: "Telegram bot token is not configured for your account." });
   }
 
   const configuredTargets = Array.isArray(targets) ? targets : [];
@@ -1420,18 +1479,36 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     text: formattedText
   });
 
-  // Persist per-target status exactly as the legacy route did, while the reusable
-  // publisher remains independent from TGReposter's settings/database model.
-  for (const result of publishResult.results) {
-    const dbTargetIdx = db.destination.targets?.findIndex(target => target.id === result.targetId);
-    if (dbTargetIdx === undefined || dbTargetIdx === -1) continue;
+  let responseDestination = destination;
 
-    if (result.success) {
-      db.destination.targets[dbTargetIdx].status = "success";
-      db.destination.targets[dbTargetIdx].errorMessage = undefined;
-    } else {
-      db.destination.targets[dbTargetIdx].status = "error";
-      db.destination.targets[dbTargetIdx].errorMessage = result.error;
+  if (usesUserScopedDestinations) {
+    try {
+      responseDestination = await updateUserDestinationStatuses(
+        req.user,
+        publishResult.results.map(result => ({
+          targetId: result.targetId,
+          success: result.success,
+          error: result.error,
+        }))
+      );
+    } catch (error) {
+      // Telegram delivery already happened. Do not turn a successful send into a
+      // failed HTTP response only because readiness metadata could not be saved.
+      console.error("Failed persisting user destination status:", error);
+    }
+  } else {
+    // Local-development compatibility for the legacy global destination model.
+    for (const result of publishResult.results) {
+      const dbTargetIdx = db.destination.targets?.findIndex(target => target.id === result.targetId);
+      if (dbTargetIdx === undefined || dbTargetIdx === -1) continue;
+
+      if (result.success) {
+        db.destination.targets[dbTargetIdx].status = "success";
+        db.destination.targets[dbTargetIdx].errorMessage = undefined;
+      } else {
+        db.destination.targets[dbTargetIdx].status = "error";
+        db.destination.targets[dbTargetIdx].errorMessage = result.error;
+      }
     }
   }
 
@@ -1450,7 +1527,10 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     db.posts[postIdx].errorMessage = `Failed to publish to all selected targets. Errors: ${publishResult.results.map(result => `${result.name}: ${result.error}`).join("; ")}`;
   }
 
-  db.destination.connected = publishResult.success || db.destination.connected;
+  if (!usesUserScopedDestinations) {
+    db.destination.connected = publishResult.success || db.destination.connected;
+    responseDestination = db.destination;
+  }
 
   await writeDb(db);
   return res.json({
@@ -1460,20 +1540,33 @@ app.post("/api/post-telegram", authMiddleware, async (req, res) => {
     post: db.posts[postIdx],
     results: publishResult.results,
     destination: {
-      ...db.destination,
+      ...responseDestination,
       botToken: "",
       botTokenConfigured: true,
     }
   });
 });
 
-app.post("/api/destination/bot-token", authMiddleware, requireSuperAdmin, async (req, res) => {
+app.post("/api/destination/bot-token", authMiddleware, async (req: any, res) => {
   try {
-    await saveMainTelegramBotToken(req.body?.botToken);
+    if (process.env.DATABASE_URL && req.user) {
+      const ownerPrincipal = destinationOwnerPrincipalForUser(req.user);
+      await saveUserTelegramBotToken(ownerPrincipal, req.body?.botToken);
+    } else {
+      if (req.user?.role !== "super-admin") {
+        return res.status(403).json({
+          success: false,
+          configured: false,
+          error: "Personal destination credentials require the production database backend.",
+        });
+      }
+      await saveMainTelegramBotToken(req.body?.botToken);
+    }
+
     return res.json({
       success: true,
       configured: true,
-      message: "Telegram bot token stored securely.",
+      message: "Telegram bot token stored securely for your account.",
     });
   } catch (error: any) {
     return res.status(400).json({
@@ -1485,7 +1578,7 @@ app.post("/api/destination/bot-token", authMiddleware, requireSuperAdmin, async 
 });
 
 // Test bot connectivity in stages so configuration errors are easy to diagnose.
-app.post("/api/test-bot", authMiddleware, requireSuperAdmin, async (req, res) => {
+app.post("/api/test-bot", authMiddleware, async (req: any, res) => {
   const channelId = typeof req.body?.channelId === "string" ? req.body.channelId.trim() : "";
 
   if (!channelId) {
@@ -1498,13 +1591,31 @@ app.post("/api/test-bot", authMiddleware, requireSuperAdmin, async (req, res) =>
 
   let botToken = "";
   try {
-    botToken = await getMainTelegramBotToken();
+    if (process.env.DATABASE_URL && req.user) {
+      const userDestination = await getUserDestinationConfig(req.user);
+      const ownsTarget = userDestination.targets.some(
+        target => target.channelId.trim() === channelId
+      );
+
+      if (!ownsTarget) {
+        return res.status(404).json({
+          success: false,
+          stage: "target",
+          error: "This destination does not belong to your account."
+        });
+      }
+
+      const ownerPrincipal = destinationOwnerPrincipalForUser(req.user);
+      botToken = await getUserTelegramBotToken(ownerPrincipal);
+    } else {
+      botToken = await getMainTelegramBotToken();
+    }
   } catch {
     if (process.env.DATABASE_URL) {
       return res.status(500).json({
         success: false,
         stage: "credential",
-        error: "Telegram bot credential could not be loaded."
+        error: "Your Telegram bot credential could not be loaded."
       });
     }
   }
@@ -1520,7 +1631,7 @@ app.post("/api/test-bot", authMiddleware, requireSuperAdmin, async (req, res) =>
     return res.status(400).json({
       success: false,
       stage: "credential",
-      error: "Save the Telegram bot token before testing a destination."
+      error: "Save your Telegram bot token before testing a destination."
     });
   }
 
