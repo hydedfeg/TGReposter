@@ -41,7 +41,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     }
 
     const newTarget: DestinationTarget = {
-      id: `target-${Date.now()}`,
+      id: `target-${crypto.randomUUID()}`,
       name: newTargetName.trim(),
       channelId: cleanChannelId,
       enabled: true,
@@ -97,6 +97,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
           ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {})
         },
         body: JSON.stringify({
+          targetId: target.id,
           channelId: target.channelId
         })
       });
