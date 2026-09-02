@@ -15,8 +15,10 @@ function mapRow(row: UserInboxPostRow) {
     mediaType: row.media_type ?? undefined,
     photoUrl: row.photo_url ?? undefined,
     videoUrl: row.video_url ?? undefined,
-    date: row.published_at,
-    url: row.telegram_url,
+    date: row.published_at
+      ? new Date(row.published_at).toISOString()
+      : new Date().toISOString(),
+    url: row.telegram_url ?? "",
     status: row.status,
     postedAt: row.posted_at ?? undefined,
     errorMessage: row.error_message ?? undefined,
