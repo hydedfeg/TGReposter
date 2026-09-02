@@ -70,8 +70,11 @@ begin
 end
 $$;
 
-drop index if exists public.destination_targets_client_id_key;
-
+-- Keep the pre-existing global client_id unique index during this rollout so
+-- the currently deployed backend can continue writing safely between the schema
+-- migration and application deployment. New target IDs are UUID-based, making
+-- accidental cross-user collisions practically impossible. A later cleanup
+-- migration may remove the compatibility index after the cutover is complete.
 create unique index if not exists destination_targets_owner_client_id_key
   on public.destination_targets (owner_principal, client_id)
   where owner_principal is not null
