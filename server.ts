@@ -613,7 +613,9 @@ app.post("/api/auth/login", async (req, res) => {
 
   // Legacy usernames remain valid during the migration window.
   const checkUser = identity.toLowerCase();
-  const user = db.users?.find(u => u.username === checkUser);
+  const user = db.users?.find(
+    u => u.username === checkUser && u.isActive !== false
+  );
 
   if (!user) {
     return res.status(401).json({ error: "Invalid username/email or password." });
@@ -660,15 +662,21 @@ app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) =
   const role = req.body?.role;
 
   if (!identity || identity.length < 3) {
-    return res.status(400).json({ error: "Username or email must be at least 3 characters." });
+    return res.status(400).json({ error: "Email address is required." });
   }
 
   if (role !== "super-admin" && role !== "admin") {
     return res.status(400).json({ error: "Invalid role. Must be 'super-admin' or 'admin'." });
   }
 
-  // New email-based accounts are provisioned in Supabase Auth. Legacy username
-  // creation remains available only during the migration window.
+  // Production members must use Supabase Auth so personal Content Inbox and
+  // Destinations ownership is anchored to an immutable auth user ID.
+  if (process.env.DATABASE_URL && !identity.includes("@")) {
+    return res.status(400).json({
+      error: "New production workspace members require an email-based Supabase Auth account.",
+    });
+  }
+
   if (identity.includes("@")) {
     try {
       const created = await createSupabaseAppUser({
@@ -698,6 +706,8 @@ app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) =
     }
   }
 
+  // Legacy username creation is retained only for local-development compatibility
+  // when the normalized production database is not configured.
   if (!password || password.length < 4) {
     return res.status(400).json({ error: "Legacy passwords must be at least 4 characters long." });
   }
@@ -757,7 +767,9 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 
     if (supabaseUser.role === "super-admin" && supabaseUser.is_active === true) {
       const db = await readDb();
-      const legacySuperAdmins = (db.users ?? []).filter(user => user.role === "super-admin").length;
+      const legacySuperAdmins = (db.users ?? []).filter(
+        user => user.role === "super-admin" && user.isActive !== false
+      ).length;
       const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
 
       if (legacySuperAdmins + supabaseSuperAdmins <= 1) {
@@ -776,7 +788,7 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 
     return res.json({
       success: true,
-      message: `Access revoked for '${supabaseUser.email}'.`,
+      message: `Access revoked for '${supabaseUser.email}'. Personal workspace data was retained.`,
       users: [...supabaseUsers, ...legacyUsers],
     });
   }
@@ -796,18 +808,23 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
     return res.status(400).json({ error: "You cannot delete your own account." });
   }
 
-  if (userToDelete.role === "super-admin") {
+  if (userToDelete.role === "super-admin" && userToDelete.isActive !== false) {
     const remainingLegacySuperAdmins = (db.users ?? []).filter(
-      user => user.role === "super-admin" && user.username !== targetUsername
+      user =>
+        user.role === "super-admin" &&
+        user.username !== targetUsername &&
+        user.isActive !== false
     ).length;
     const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
 
     if (remainingLegacySuperAdmins + supabaseSuperAdmins <= 0) {
-      return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+      return res.status(400).json({ error: "Cannot revoke the only remaining super-admin." });
     }
   }
 
-  db.users = db.users?.filter(user => user.username !== targetUsername);
+  // Keep the identity record so the personal Inbox/Destinations ownership key
+  // remains attributable for audit/recovery. Authentication ignores revoked users.
+  userToDelete.isActive = false;
   await writeDb(db);
 
   const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
@@ -818,7 +835,7 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 
   return res.json({
     success: true,
-    message: `User '${targetUsername}' revoked successfully.`,
+    message: `Access revoked for '${targetUsername}'. Personal workspace data was retained.`,
     users: [...supabaseUsers, ...legacyUsers],
   });
 });
