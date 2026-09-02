@@ -410,14 +410,21 @@ export default function App() {
 
   // 4. Manual Post Tweaks or status changes
   const handleUpdatePost = async (postId: string, updatedFields: Partial<CuratedPost>) => {
+    let changedPost: CuratedPost | null = null;
     const updatedPosts = settings.posts.map(post => {
       if (post.id === postId) {
-        return { ...post, ...updatedFields };
+        changedPost = { ...post, ...updatedFields };
+        return changedPost;
       }
       return post;
     });
+
+    if (!changedPost) return;
+
     const updated = { ...settings, posts: updatedPosts };
-    await saveSettingsToServer(updated, { posts: updatedPosts });
+    // Persist only this user's changed inbox row. The backend never accepts
+    // user-owned review state as a mutation of the canonical source post.
+    await saveSettingsToServer(updated, { posts: [changedPost] });
   };
 
   // 5. Scraper triggers
