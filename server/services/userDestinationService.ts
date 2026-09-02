@@ -4,30 +4,15 @@ import userDestinationRepository, {
 } from "../repositories/userDestinationRepository";
 import { isUserTelegramBotTokenConfigured } from "./telegramCredentialService";
 
-export interface DestinationAuthenticatedUser {
-  id?: string;
-  username?: string;
-  authProvider?: "supabase" | "legacy" | string;
-}
+import {
+  ownerPrincipalForUser,
+  type AuthenticatedUserIdentity,
+} from "./userPrincipalService";
 
-export function destinationOwnerPrincipalForUser(
-  user: DestinationAuthenticatedUser | null | undefined
-): string {
-  if (user?.authProvider === "supabase" && user.id) {
-    return `supabase:${String(user.id).trim().toLowerCase()}`;
-  }
+export type DestinationAuthenticatedUser = AuthenticatedUserIdentity;
 
-  const username =
-    typeof user?.username === "string"
-      ? user.username.trim().toLowerCase()
-      : "";
-
-  if (username) {
-    return `legacy:${username}`;
-  }
-
-  throw new Error("Authenticated user identity is required for destinations.");
-}
+// Backwards-compatible alias used by existing destination code/tests.
+export const destinationOwnerPrincipalForUser = ownerPrincipalForUser;
 
 export async function getUserDestinationConfig(
   user: DestinationAuthenticatedUser
