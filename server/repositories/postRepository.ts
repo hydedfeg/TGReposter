@@ -13,6 +13,7 @@ export interface PostEntity {
   posted_at?: string | null;
   error_message?: string | null;
   status: string;
+  inbox_default_status?: "pending" | "archived";
 }
 
 export class PostRepository {
@@ -25,7 +26,7 @@ export class PostRepository {
         insert into public.posts
           (id, channel_username, original_text, edited_text, media_type,
            photo_url, video_url, telegram_url, published_at, posted_at,
-           error_message, status, updated_at)
+           error_message, status, inbox_default_status, updated_at)
         select
           x.id,
           x.channel_username,
@@ -39,6 +40,7 @@ export class PostRepository {
           x.posted_at,
           x.error_message,
           x.status,
+          coalesce(x.inbox_default_status, 'pending'),
           now()
         from jsonb_to_recordset($1::jsonb) as x(
           id text,
@@ -52,7 +54,8 @@ export class PostRepository {
           published_at timestamptz,
           posted_at timestamptz,
           error_message text,
-          status text
+          status text,
+          inbox_default_status text
         )
         on conflict (id) do update
         set channel_username = excluded.channel_username,
@@ -66,6 +69,7 @@ export class PostRepository {
             posted_at = excluded.posted_at,
             error_message = excluded.error_message,
             status = excluded.status,
+            inbox_default_status = excluded.inbox_default_status,
             updated_at = now()
         returning *
       `,
@@ -97,8 +101,7 @@ export class PostRepository {
       `
         select *
         from public.posts
-        where status in ('posted', 'approved')
-           or coalesce(published_at, created_at) >= now() - interval '24 hours'
+        where coalesce(published_at, created_at) >= now() - interval '24 hours'
         order by published_at desc nulls last, created_at desc
         limit $1
       `,
