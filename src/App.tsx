@@ -210,7 +210,10 @@ export default function App() {
   };
 
   // Save settings helper
-  const saveSettingsToServer = async (updated: CuratorSettings) => {
+  const saveSettingsToServer = async (
+    updated: CuratorSettings,
+    serverPatch: Partial<CuratorSettings> = updated
+  ) => {
     const safeUpdated = sanitizeClientSettings(updated);
 
     // Keep a token-free local fallback only.
@@ -220,7 +223,7 @@ export default function App() {
     try {
       const response = await fetchWithAuth("/api/settings", {
         method: "POST",
-        body: JSON.stringify(safeUpdated)
+        body: JSON.stringify(serverPatch)
       });
       if (!response.ok) {
         throw new Error("Failed to save settings on server");
@@ -340,7 +343,7 @@ export default function App() {
     const cleanUsername = username.trim().toLowerCase();
     const updatedChannels = [...settings.channels, { username: cleanUsername, status: "idle" as const }];
     const updated = { ...settings, channels: updatedChannels };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { channels: updatedChannels });
     showToast(`Added channel @${cleanUsername}! Automatically fetching posts...`);
     // Auto fetch the newly added channel
     handleFetchChannel(cleanUsername);
@@ -349,14 +352,14 @@ export default function App() {
   const handleRemoveChannel = async (username: string) => {
     const updatedChannels = settings.channels.filter(c => c.username !== username);
     const updated = { ...settings, channels: updatedChannels };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { channels: updatedChannels });
     showToast(`Removed channel @${username}`);
   };
 
   // 2. Filter actions
   const handleUpdateFilters = async (updatedFilters: IFilterConfig) => {
     const updated = { ...settings, filters: updatedFilters };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { filters: updatedFilters });
     showToast("Filtering criteria updated successfully.");
   };
 
@@ -394,14 +397,14 @@ export default function App() {
     };
 
     const updated = { ...settings, destination: updatedDestination };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { destination: updatedDestination });
     showToast(botToken.trim() ? "Telegram bot token stored securely and destinations updated." : "Telegram destinations updated.");
     return true;
   };
 
   const handleUpdateAI = async (updatedAI: IAIConfig) => {
     const updated = { ...settings, aiConfig: updatedAI };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { aiConfig: updatedAI });
     showToast("AI configuration updated successfully.");
   };
 
@@ -414,7 +417,7 @@ export default function App() {
       return post;
     });
     const updated = { ...settings, posts: updatedPosts };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { posts: updatedPosts });
   };
 
   // 5. Scraper triggers
