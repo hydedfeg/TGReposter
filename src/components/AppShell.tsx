@@ -79,7 +79,7 @@ const titles: Record<WorkspaceView, string> = {
   promotion: "Promotions",
   channels: "Source Channels",
   filters: "Content Filters",
-  destination: "Destinations",
+  destination: "My Destinations",
   ai: "AI Configuration",
   team: "Team",
   database: "System Settings",
