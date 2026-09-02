@@ -9,6 +9,7 @@ import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, saveMainTelegramBotToken } from "./server/services/telegramCredentialService";
+import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -412,23 +413,46 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Authentication Middleware
 const authMiddleware = async (req: any, res: any, next: any) => {
   try {
-    const db = await readDb();
-    const usersExist = db.users && db.users.length > 0;
-    if (!usersExist) {
-      // No users configured yet, allow access to set up initial super-admin
-      return next();
-    }
-    const authHeader = req.headers.authorization;
-
-const token = authHeader && authHeader.split(" ")[1];
-
-    if (token) {
-      const session = activeSessions.get(token);
-      if (session) {
-        req.user = session; // Attach user/role details
+    // Local-only bootstrap compatibility for the existing integration harness.
+    // Production Railway always has DATABASE_URL + SUPABASE_URL, so this path
+    // cannot make deployed routes public.
+    if (!process.env.DATABASE_URL && !process.env.SUPABASE_URL) {
+      const localDb = await readDb();
+      if (!localDb.users || localDb.users.length === 0) {
         return next();
       }
     }
+
+    const authHeader = req.headers.authorization;
+    const token =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length).trim()
+        : "";
+
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized. Please log in." });
+    }
+
+    // Supabase-issued JWTs are the preferred session source. RBAC comes from
+    // public.profiles, never from client-provided role metadata.
+    try {
+      const supabaseUser = await validateSupabaseAccessToken(token);
+      if (supabaseUser) {
+        req.user = supabaseUser;
+        return next();
+      }
+    } catch (error) {
+      console.error("Supabase session validation failed:", error);
+    }
+
+    // Transitional compatibility for existing in-memory sessions. This can be
+    // removed after legacy accounts have been migrated.
+    const legacySession = activeSessions.get(token);
+    if (legacySession) {
+      req.user = { ...legacySession, authProvider: "legacy" };
+      return next();
+    }
+
     return res.status(401).json({ error: "Unauthorized. Please log in." });
   } catch (err) {
     console.error("Auth middleware error:", err);
@@ -474,14 +498,36 @@ app.use("/api/promotion", createPromotionRouter({
 // Check authentication status
 app.post("/api/auth/status", async (req, res) => {
   const db = await readDb();
-  const usersExist = db.users && db.users.length > 0;
-  const { token } = req.body;
-  const session = token ? activeSessions.get(token) : null;
+  const legacyUsersExist = !!(db.users && db.users.length > 0);
+  const supabaseUsersExist = (await countActiveSupabaseAppUsers()) > 0;
+  const token =
+    typeof req.body?.token === "string"
+      ? req.body.token.trim()
+      : "";
+
+  let session: any = null;
+
+  if (token) {
+    try {
+      session = await validateSupabaseAccessToken(token);
+    } catch (error) {
+      console.error("Supabase auth status validation failed:", error);
+    }
+
+    if (!session) {
+      const legacy = activeSessions.get(token);
+      if (legacy) {
+        session = { ...legacy, authProvider: "legacy" };
+      }
+    }
+  }
+
   res.json({
-    passwordSet: usersExist,
+    passwordSet: legacyUsersExist || supabaseUsersExist,
     authenticated: !!session,
-    role: session ? session.role : null,
-    username: session ? session.username : null
+    role: session?.role ?? null,
+    username: session?.username ?? null,
+    authProvider: session?.authProvider ?? null,
   });
 });
 
@@ -520,32 +566,72 @@ app.post("/api/auth/setup", async (req, res) => {
 // Login endpoint
 app.post("/api/auth/login", async (req, res) => {
   const db = await readDb();
-  const usersExist = db.users && db.users.length > 0;
-  if (!usersExist) {
+  const legacyUsersExist = !!(db.users && db.users.length > 0);
+  const supabaseUsersExist = (await countActiveSupabaseAppUsers()) > 0;
+
+  if (!legacyUsersExist && !supabaseUsersExist) {
     return res.status(400).json({ error: "No accounts configured. Please set up owner credentials." });
   }
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password are required." });
+
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+  const password =
+    typeof req.body?.password === "string"
+      ? req.body.password
+      : "";
+
+  if (!identity || !password) {
+    return res.status(400).json({ error: "Username/email and password are required." });
   }
 
-  const checkUser = username.trim().toLowerCase();
+  // Email identities authenticate directly with Supabase Auth.
+  if (identity.includes("@")) {
+    try {
+      const result = await signInWithSupabasePassword(identity, password);
+      if (result) {
+        return res.json({
+          success: true,
+          token: result.token,
+          refreshToken: result.refreshToken,
+          expiresIn: result.expiresIn,
+          role: result.user.role,
+          username: result.user.username,
+          email: result.user.email,
+          authProvider: "supabase",
+        });
+      }
+    } catch (error: any) {
+      return res.status(401).json({
+        error: error?.message || "Invalid email or password.",
+      });
+    }
+  }
+
+  // Legacy usernames remain valid during the migration window.
+  const checkUser = identity.toLowerCase();
   const user = db.users?.find(u => u.username === checkUser);
 
   if (!user) {
-    return res.status(401).json({ error: "Invalid username or password." });
+    return res.status(401).json({ error: "Invalid username/email or password." });
   }
 
   const hash = hashPassword(password);
-  if (hash === user.passwordHash) {
-    const token = crypto.randomBytes(32).toString("hex");
-    activeSessions.set(token, { username: user.username, role: user.role });
-    
-
-    return res.json({ success: true, token, role: user.role, username: user.username });
-  } else {
-    return res.status(401).json({ error: "Invalid username or password." });
+  if (hash !== user.passwordHash) {
+    return res.status(401).json({ error: "Invalid username/email or password." });
   }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  activeSessions.set(token, { username: user.username, role: user.role });
+
+  return res.json({
+    success: true,
+    token,
+    role: user.role,
+    username: user.username,
+    authProvider: "legacy",
+  });
 });
 
 // Logout endpoint
@@ -561,19 +647,61 @@ app.post("/api/auth/logout", (req, res) => {
 
 // Add user (admin/super-admin)
 app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) => {
-  const { username, password, role } = req.body;
-  if (!username || username.trim().length < 3) {
-    return res.status(400).json({ error: "Username must be at least 3 characters." });
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+  const password =
+    typeof req.body?.password === "string"
+      ? req.body.password
+      : "";
+  const role = req.body?.role;
+
+  if (!identity || identity.length < 3) {
+    return res.status(400).json({ error: "Username or email must be at least 3 characters." });
   }
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters long." });
-  }
+
   if (role !== "super-admin" && role !== "admin") {
     return res.status(400).json({ error: "Invalid role. Must be 'super-admin' or 'admin'." });
   }
 
+  // New email-based accounts are provisioned in Supabase Auth. Legacy username
+  // creation remains available only during the migration window.
+  if (identity.includes("@")) {
+    try {
+      const created = await createSupabaseAppUser({
+        email: identity,
+        password,
+        role,
+      });
+      const db = await readDb();
+      const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+        ...user,
+        authProvider: "legacy",
+      }));
+      const supabaseUsers = await listSupabaseAppUsers();
+
+      return res.json({
+        success: true,
+        message: created.confirmationRequired
+          ? `Account '${created.email}' created. Email confirmation is required before first sign-in.`
+          : `Account '${created.email}' created successfully.`,
+        users: [...supabaseUsers, ...legacyUsers],
+        confirmationRequired: created.confirmationRequired,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        error: error?.message || "Unable to create Supabase Auth account.",
+      });
+    }
+  }
+
+  if (!password || password.length < 4) {
+    return res.status(400).json({ error: "Legacy passwords must be at least 4 characters long." });
+  }
+
   const db = await readDb();
-  const newUsername = username.trim().toLowerCase();
+  const newUsername = identity.toLowerCase();
 
   if (db.users?.some(u => u.username === newUsername)) {
     return res.status(400).json({ error: `User '${newUsername}' already exists.` });
@@ -590,39 +718,107 @@ app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) =
   db.users.push(newUser);
   await writeDb(db);
 
-  const safeUsers = db.users.map(({ passwordHash, ...u }) => u);
-  res.json({ success: true, message: `User '${newUsername}' added successfully.`, users: safeUsers });
+  const legacyUsers = db.users.map(({ passwordHash, ...user }) => ({
+    ...user,
+    authProvider: "legacy",
+  }));
+  const supabaseUsers = await listSupabaseAppUsers();
+
+  return res.json({
+    success: true,
+    message: `Legacy user '${newUsername}' added successfully.`,
+    users: [...supabaseUsers, ...legacyUsers],
+  });
 });
 
-// Delete user
+// Revoke user access. Supabase identities are deactivated at the profile layer
+// because Railway intentionally does not hold a Supabase service-role key.
 app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any, res: any) => {
-  const { username } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: "Username is required." });
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+
+  if (!identity) {
+    return res.status(400).json({ error: "Username or email is required." });
+  }
+
+  const supabaseUser = await findSupabaseAppUser(identity);
+
+  if (supabaseUser) {
+    if (
+      req.user?.authProvider === "supabase" &&
+      (req.user.id === supabaseUser.id || req.user.email?.toLowerCase() === String(supabaseUser.email).toLowerCase())
+    ) {
+      return res.status(400).json({ error: "You cannot revoke your own account." });
+    }
+
+    if (supabaseUser.role === "super-admin" && supabaseUser.is_active === true) {
+      const db = await readDb();
+      const legacySuperAdmins = (db.users ?? []).filter(user => user.role === "super-admin").length;
+      const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
+
+      if (legacySuperAdmins + supabaseSuperAdmins <= 1) {
+        return res.status(400).json({ error: "Cannot revoke the only remaining super-admin." });
+      }
+    }
+
+    await revokeSupabaseAppUser(identity);
+
+    const db = await readDb();
+    const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+      ...user,
+      authProvider: "legacy",
+    }));
+    const supabaseUsers = await listSupabaseAppUsers();
+
+    return res.json({
+      success: true,
+      message: `Access revoked for '${supabaseUser.email}'.`,
+      users: [...supabaseUsers, ...legacyUsers],
+    });
   }
 
   const db = await readDb();
-  const targetUsername = username.trim().toLowerCase();
+  const targetUsername = identity.toLowerCase();
+  const userToDelete = db.users?.find(user => user.username === targetUsername);
 
-  const userToDelete = db.users?.find(u => u.username === targetUsername);
   if (!userToDelete) {
     return res.status(404).json({ error: "User not found." });
   }
 
-  if (userToDelete.username === req.user.username) {
+  if (
+    req.user?.authProvider !== "supabase" &&
+    userToDelete.username === req.user?.username
+  ) {
     return res.status(400).json({ error: "You cannot delete your own account." });
   }
 
-  const superAdminsLeft = db.users?.filter(u => u.role === "super-admin" && u.username !== targetUsername);
-  if (userToDelete.role === "super-admin" && (!superAdminsLeft || superAdminsLeft.length === 0)) {
-    return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+  if (userToDelete.role === "super-admin") {
+    const remainingLegacySuperAdmins = (db.users ?? []).filter(
+      user => user.role === "super-admin" && user.username !== targetUsername
+    ).length;
+    const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
+
+    if (remainingLegacySuperAdmins + supabaseSuperAdmins <= 0) {
+      return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+    }
   }
 
-  db.users = db.users?.filter(u => u.username !== targetUsername);
+  db.users = db.users?.filter(user => user.username !== targetUsername);
   await writeDb(db);
 
-  const safeUsers = db.users?.map(({ passwordHash, ...u }) => u) || [];
-  res.json({ success: true, message: `User '${targetUsername}' deleted successfully.`, users: safeUsers });
+  const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+    ...user,
+    authProvider: "legacy",
+  }));
+  const supabaseUsers = await listSupabaseAppUsers();
+
+  return res.json({
+    success: true,
+    message: `User '${targetUsername}' revoked successfully.`,
+    users: [...supabaseUsers, ...legacyUsers],
+  });
 });
 
 // --- API Endpoints ---
@@ -633,7 +829,14 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const isSuper = req.user?.role === "super-admin";
   
   const { passwordHash, users, ...safeDb } = db as any;
-  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+  const legacyUsers = users
+    ? users.map(({ passwordHash, ...user }: any) => ({
+        ...user,
+        authProvider: "legacy",
+      }))
+    : [];
+  const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
+  const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   if (!isSuper && safeDb.destination) {
     // Mask botToken for normal admins
@@ -649,7 +852,9 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
-    passwordSet: !!(users && users.length > 0),
+    passwordSet:
+      !!(users && users.length > 0) ||
+      (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
     openrouterActive: !!process.env.OPENROUTER_API_KEY,
@@ -679,7 +884,14 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   await writeDb(db);
 
   const { passwordHash, users, ...safeDb } = db as any;
-  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+  const legacyUsers = users
+    ? users.map(({ passwordHash, ...user }: any) => ({
+        ...user,
+        authProvider: "legacy",
+      }))
+    : [];
+  const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
+  const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   if (!isSuper && safeDb.destination) {
     if (safeDb.destination.botToken) {
@@ -694,7 +906,9 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
-    passwordSet: !!(users && users.length > 0),
+    passwordSet:
+      !!(users && users.length > 0) ||
+      (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
     openrouterActive: !!process.env.OPENROUTER_API_KEY,

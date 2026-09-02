@@ -19,7 +19,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setError("Username cannot be empty.");
+      setError("Username or email cannot be empty.");
       return;
     }
     if (!password.trim()) {
@@ -96,7 +96,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
             {passwordSet 
-              ? "Use your administrator account to review, approve, and publish Telegram content."
+              ? "Use your legacy username or Supabase Auth email to access TGReposter."
               : "Create the first super-admin account to secure this workspace and establish ownership."}
           </p>
         </div>
@@ -124,14 +124,14 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             <div className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-bold text-slate-700">
-                  {passwordSet ? "Username" : "Super-Admin Username"}
+                  {passwordSet ? "Username or Email" : "Super-Admin Username"}
                 </label>
                 <input
                   type="text"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={passwordSet ? "Enter your username" : "e.g. owner"}
+                  placeholder={passwordSet ? "Enter legacy username or Supabase email" : "e.g. owner"}
                   autoComplete="username"
                   className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />
@@ -209,7 +209,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
 
         {/* Footer info */}
         <div className="border-t border-slate-100 pt-5 text-center text-sm leading-6 text-slate-500">
-          Your credentials are verified securely by the TGReposter server.
+          Supabase Auth sessions are validated server-side against the profiles RBAC table; legacy usernames remain available during migration.
         </div>
       </div>
     </div>

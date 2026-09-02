@@ -23,11 +23,18 @@ export default function UserManagement({ users, onAddUser, onDeleteUser, current
     setSuccess("");
 
     if (!username.trim() || username.trim().length < 3) {
-      setError("Username must be at least 3 characters.");
+      setError("Username or email must be at least 3 characters.");
       return;
     }
-    if (!password || password.length < 4) {
-      setError("Password must be at least 4 characters long.");
+
+    const isSupabaseAccount = username.includes("@");
+    const minimumPasswordLength = isSupabaseAccount ? 8 : 4;
+    if (!password || password.length < minimumPasswordLength) {
+      setError(
+        isSupabaseAccount
+          ? "Supabase Auth passwords must be at least 8 characters."
+          : "Legacy passwords must be at least 4 characters."
+      );
       return;
     }
 
@@ -111,14 +118,14 @@ export default function UserManagement({ users, onAddUser, onDeleteUser, current
 
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Username
+                Username or Email
               </label>
               <input
                 type="text"
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. content_manager"
+                placeholder="admin@example.com or content_manager"
                 className="w-full px-3 py-2 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-xl text-xs bg-slate-50/50 outline-hidden text-slate-800"
               />
             </div>
@@ -173,7 +180,9 @@ export default function UserManagement({ users, onAddUser, onDeleteUser, current
 
           <div className="divide-y divide-slate-100">
             {users.map((user) => {
-              const isSelf = user.username === currentUsername;
+              const isSelf =
+                user.username === currentUsername ||
+                (!!user.email && user.email === currentUsername);
               const isSuper = user.role === "super-admin";
 
               return (
@@ -197,19 +206,33 @@ export default function UserManagement({ users, onAddUser, onDeleteUser, current
                         {isSuper ? "Super-Admin" : "Admin"}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-slate-400 text-[10px]">
+                    <div className="flex flex-wrap items-center gap-2 text-slate-400 text-[10px]">
                       <Calendar className="w-3.5 h-3.5" />
                       <span>Added on {new Date(user.createdAt || Date.now()).toLocaleDateString(undefined, {
                         year: 'numeric',
                         month: 'short',
                         day: 'numeric'
                       })}</span>
+                      <span>·</span>
+                      <span>{user.authProvider === "supabase" ? "Supabase Auth" : "Legacy session"}</span>
+                      {user.email ? (
+                        <>
+                          <span>·</span>
+                          <span>{user.email}</span>
+                        </>
+                      ) : null}
+                      {user.authProvider === "supabase" && user.isActive === false ? (
+                        <>
+                          <span>·</span>
+                          <span className="font-semibold text-amber-600">Revoked</span>
+                        </>
+                      ) : null}
                     </div>
                   </div>
 
                   {!isSelf && (
                     <button
-                      onClick={() => handleDelete(user.username)}
+                      onClick={() => handleDelete(user.email || user.username)}
                       className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                       title="Revoke access"
                     >
