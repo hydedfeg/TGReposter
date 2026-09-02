@@ -819,7 +819,14 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const isSuper = req.user?.role === "super-admin";
   
   const { passwordHash, users, ...safeDb } = db as any;
-  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+  const legacyUsers = users
+    ? users.map(({ passwordHash, ...user }: any) => ({
+        ...user,
+        authProvider: "legacy",
+      }))
+    : [];
+  const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
+  const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   if (!isSuper && safeDb.destination) {
     // Mask botToken for normal admins
@@ -835,7 +842,9 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
-    passwordSet: !!(users && users.length > 0),
+    passwordSet:
+      !!(users && users.length > 0) ||
+      (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
     openrouterActive: !!process.env.OPENROUTER_API_KEY,
@@ -865,7 +874,14 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   await writeDb(db);
 
   const { passwordHash, users, ...safeDb } = db as any;
-  const safeUsers = users ? users.map(({ passwordHash, ...u }: any) => u) : [];
+  const legacyUsers = users
+    ? users.map(({ passwordHash, ...user }: any) => ({
+        ...user,
+        authProvider: "legacy",
+      }))
+    : [];
+  const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
+  const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   if (!isSuper && safeDb.destination) {
     if (safeDb.destination.botToken) {
@@ -880,7 +896,9 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
-    passwordSet: !!(users && users.length > 0),
+    passwordSet:
+      !!(users && users.length > 0) ||
+      (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
     geminiActive: !!process.env.GEMINI_API_KEY,
     openrouterActive: !!process.env.OPENROUTER_API_KEY,
