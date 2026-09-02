@@ -9,6 +9,7 @@ import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, saveMainTelegramBotToken } from "./server/services/telegramCredentialService";
+import { countActiveSupabaseAppUsers, listSupabaseAppUsers, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -412,23 +413,36 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 // Authentication Middleware
 const authMiddleware = async (req: any, res: any, next: any) => {
   try {
-    const db = await readDb();
-    const usersExist = db.users && db.users.length > 0;
-    if (!usersExist) {
-      // No users configured yet, allow access to set up initial super-admin
-      return next();
-    }
     const authHeader = req.headers.authorization;
+    const token =
+      typeof authHeader === "string" && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length).trim()
+        : "";
 
-const token = authHeader && authHeader.split(" ")[1];
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized. Please log in." });
+    }
 
-    if (token) {
-      const session = activeSessions.get(token);
-      if (session) {
-        req.user = session; // Attach user/role details
+    // Supabase-issued JWTs are the preferred session source. RBAC comes from
+    // public.profiles, never from client-provided role metadata.
+    try {
+      const supabaseUser = await validateSupabaseAccessToken(token);
+      if (supabaseUser) {
+        req.user = supabaseUser;
         return next();
       }
+    } catch (error) {
+      console.error("Supabase session validation failed:", error);
     }
+
+    // Transitional compatibility for existing in-memory sessions. This can be
+    // removed after legacy accounts have been migrated.
+    const legacySession = activeSessions.get(token);
+    if (legacySession) {
+      req.user = { ...legacySession, authProvider: "legacy" };
+      return next();
+    }
+
     return res.status(401).json({ error: "Unauthorized. Please log in." });
   } catch (err) {
     console.error("Auth middleware error:", err);
@@ -474,14 +488,36 @@ app.use("/api/promotion", createPromotionRouter({
 // Check authentication status
 app.post("/api/auth/status", async (req, res) => {
   const db = await readDb();
-  const usersExist = db.users && db.users.length > 0;
-  const { token } = req.body;
-  const session = token ? activeSessions.get(token) : null;
+  const legacyUsersExist = !!(db.users && db.users.length > 0);
+  const supabaseUsersExist = (await countActiveSupabaseAppUsers()) > 0;
+  const token =
+    typeof req.body?.token === "string"
+      ? req.body.token.trim()
+      : "";
+
+  let session: any = null;
+
+  if (token) {
+    try {
+      session = await validateSupabaseAccessToken(token);
+    } catch (error) {
+      console.error("Supabase auth status validation failed:", error);
+    }
+
+    if (!session) {
+      const legacy = activeSessions.get(token);
+      if (legacy) {
+        session = { ...legacy, authProvider: "legacy" };
+      }
+    }
+  }
+
   res.json({
-    passwordSet: usersExist,
+    passwordSet: legacyUsersExist || supabaseUsersExist,
     authenticated: !!session,
-    role: session ? session.role : null,
-    username: session ? session.username : null
+    role: session?.role ?? null,
+    username: session?.username ?? null,
+    authProvider: session?.authProvider ?? null,
   });
 });
 
@@ -520,32 +556,72 @@ app.post("/api/auth/setup", async (req, res) => {
 // Login endpoint
 app.post("/api/auth/login", async (req, res) => {
   const db = await readDb();
-  const usersExist = db.users && db.users.length > 0;
-  if (!usersExist) {
+  const legacyUsersExist = !!(db.users && db.users.length > 0);
+  const supabaseUsersExist = (await countActiveSupabaseAppUsers()) > 0;
+
+  if (!legacyUsersExist && !supabaseUsersExist) {
     return res.status(400).json({ error: "No accounts configured. Please set up owner credentials." });
   }
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: "Username and password are required." });
+
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+  const password =
+    typeof req.body?.password === "string"
+      ? req.body.password
+      : "";
+
+  if (!identity || !password) {
+    return res.status(400).json({ error: "Username/email and password are required." });
   }
 
-  const checkUser = username.trim().toLowerCase();
+  // Email identities authenticate directly with Supabase Auth.
+  if (identity.includes("@")) {
+    try {
+      const result = await signInWithSupabasePassword(identity, password);
+      if (result) {
+        return res.json({
+          success: true,
+          token: result.token,
+          refreshToken: result.refreshToken,
+          expiresIn: result.expiresIn,
+          role: result.user.role,
+          username: result.user.username,
+          email: result.user.email,
+          authProvider: "supabase",
+        });
+      }
+    } catch (error: any) {
+      return res.status(401).json({
+        error: error?.message || "Invalid email or password.",
+      });
+    }
+  }
+
+  // Legacy usernames remain valid during the migration window.
+  const checkUser = identity.toLowerCase();
   const user = db.users?.find(u => u.username === checkUser);
 
   if (!user) {
-    return res.status(401).json({ error: "Invalid username or password." });
+    return res.status(401).json({ error: "Invalid username/email or password." });
   }
 
   const hash = hashPassword(password);
-  if (hash === user.passwordHash) {
-    const token = crypto.randomBytes(32).toString("hex");
-    activeSessions.set(token, { username: user.username, role: user.role });
-    
-
-    return res.json({ success: true, token, role: user.role, username: user.username });
-  } else {
-    return res.status(401).json({ error: "Invalid username or password." });
+  if (hash !== user.passwordHash) {
+    return res.status(401).json({ error: "Invalid username/email or password." });
   }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  activeSessions.set(token, { username: user.username, role: user.role });
+
+  return res.json({
+    success: true,
+    token,
+    role: user.role,
+    username: user.username,
+    authProvider: "legacy",
+  });
 });
 
 // Logout endpoint
