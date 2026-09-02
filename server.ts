@@ -9,7 +9,7 @@ import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, saveMainTelegramBotToken } from "./server/services/telegramCredentialService";
-import { countActiveSupabaseAppUsers, listSupabaseAppUsers, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
+import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -637,19 +637,61 @@ app.post("/api/auth/logout", (req, res) => {
 
 // Add user (admin/super-admin)
 app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) => {
-  const { username, password, role } = req.body;
-  if (!username || username.trim().length < 3) {
-    return res.status(400).json({ error: "Username must be at least 3 characters." });
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+  const password =
+    typeof req.body?.password === "string"
+      ? req.body.password
+      : "";
+  const role = req.body?.role;
+
+  if (!identity || identity.length < 3) {
+    return res.status(400).json({ error: "Username or email must be at least 3 characters." });
   }
-  if (!password || password.length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters long." });
-  }
+
   if (role !== "super-admin" && role !== "admin") {
     return res.status(400).json({ error: "Invalid role. Must be 'super-admin' or 'admin'." });
   }
 
+  // New email-based accounts are provisioned in Supabase Auth. Legacy username
+  // creation remains available only during the migration window.
+  if (identity.includes("@")) {
+    try {
+      const created = await createSupabaseAppUser({
+        email: identity,
+        password,
+        role,
+      });
+      const db = await readDb();
+      const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+        ...user,
+        authProvider: "legacy",
+      }));
+      const supabaseUsers = await listSupabaseAppUsers();
+
+      return res.json({
+        success: true,
+        message: created.confirmationRequired
+          ? `Account '${created.email}' created. Email confirmation is required before first sign-in.`
+          : `Account '${created.email}' created successfully.`,
+        users: [...supabaseUsers, ...legacyUsers],
+        confirmationRequired: created.confirmationRequired,
+      });
+    } catch (error: any) {
+      return res.status(400).json({
+        error: error?.message || "Unable to create Supabase Auth account.",
+      });
+    }
+  }
+
+  if (!password || password.length < 4) {
+    return res.status(400).json({ error: "Legacy passwords must be at least 4 characters long." });
+  }
+
   const db = await readDb();
-  const newUsername = username.trim().toLowerCase();
+  const newUsername = identity.toLowerCase();
 
   if (db.users?.some(u => u.username === newUsername)) {
     return res.status(400).json({ error: `User '${newUsername}' already exists.` });
@@ -666,39 +708,107 @@ app.post("/api/users/add", authMiddleware, requireSuperAdmin, async (req, res) =
   db.users.push(newUser);
   await writeDb(db);
 
-  const safeUsers = db.users.map(({ passwordHash, ...u }) => u);
-  res.json({ success: true, message: `User '${newUsername}' added successfully.`, users: safeUsers });
+  const legacyUsers = db.users.map(({ passwordHash, ...user }) => ({
+    ...user,
+    authProvider: "legacy",
+  }));
+  const supabaseUsers = await listSupabaseAppUsers();
+
+  return res.json({
+    success: true,
+    message: `Legacy user '${newUsername}' added successfully.`,
+    users: [...supabaseUsers, ...legacyUsers],
+  });
 });
 
-// Delete user
+// Revoke user access. Supabase identities are deactivated at the profile layer
+// because Railway intentionally does not hold a Supabase service-role key.
 app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any, res: any) => {
-  const { username } = req.body;
-  if (!username) {
-    return res.status(400).json({ error: "Username is required." });
+  const identity =
+    typeof req.body?.username === "string"
+      ? req.body.username.trim()
+      : "";
+
+  if (!identity) {
+    return res.status(400).json({ error: "Username or email is required." });
+  }
+
+  const supabaseUser = await findSupabaseAppUser(identity);
+
+  if (supabaseUser) {
+    if (
+      req.user?.authProvider === "supabase" &&
+      (req.user.id === supabaseUser.id || req.user.email?.toLowerCase() === String(supabaseUser.email).toLowerCase())
+    ) {
+      return res.status(400).json({ error: "You cannot revoke your own account." });
+    }
+
+    if (supabaseUser.role === "super-admin" && supabaseUser.is_active === true) {
+      const db = await readDb();
+      const legacySuperAdmins = (db.users ?? []).filter(user => user.role === "super-admin").length;
+      const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
+
+      if (legacySuperAdmins + supabaseSuperAdmins <= 1) {
+        return res.status(400).json({ error: "Cannot revoke the only remaining super-admin." });
+      }
+    }
+
+    await revokeSupabaseAppUser(identity);
+
+    const db = await readDb();
+    const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+      ...user,
+      authProvider: "legacy",
+    }));
+    const supabaseUsers = await listSupabaseAppUsers();
+
+    return res.json({
+      success: true,
+      message: `Access revoked for '${supabaseUser.email}'.`,
+      users: [...supabaseUsers, ...legacyUsers],
+    });
   }
 
   const db = await readDb();
-  const targetUsername = username.trim().toLowerCase();
+  const targetUsername = identity.toLowerCase();
+  const userToDelete = db.users?.find(user => user.username === targetUsername);
 
-  const userToDelete = db.users?.find(u => u.username === targetUsername);
   if (!userToDelete) {
     return res.status(404).json({ error: "User not found." });
   }
 
-  if (userToDelete.username === req.user.username) {
+  if (
+    req.user?.authProvider !== "supabase" &&
+    userToDelete.username === req.user?.username
+  ) {
     return res.status(400).json({ error: "You cannot delete your own account." });
   }
 
-  const superAdminsLeft = db.users?.filter(u => u.role === "super-admin" && u.username !== targetUsername);
-  if (userToDelete.role === "super-admin" && (!superAdminsLeft || superAdminsLeft.length === 0)) {
-    return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+  if (userToDelete.role === "super-admin") {
+    const remainingLegacySuperAdmins = (db.users ?? []).filter(
+      user => user.role === "super-admin" && user.username !== targetUsername
+    ).length;
+    const supabaseSuperAdmins = await countActiveSupabaseSuperAdmins();
+
+    if (remainingLegacySuperAdmins + supabaseSuperAdmins <= 0) {
+      return res.status(400).json({ error: "Cannot delete the only remaining super-admin." });
+    }
   }
 
-  db.users = db.users?.filter(u => u.username !== targetUsername);
+  db.users = db.users?.filter(user => user.username !== targetUsername);
   await writeDb(db);
 
-  const safeUsers = db.users?.map(({ passwordHash, ...u }) => u) || [];
-  res.json({ success: true, message: `User '${targetUsername}' deleted successfully.`, users: safeUsers });
+  const legacyUsers = (db.users ?? []).map(({ passwordHash, ...user }) => ({
+    ...user,
+    authProvider: "legacy",
+  }));
+  const supabaseUsers = await listSupabaseAppUsers();
+
+  return res.json({
+    success: true,
+    message: `User '${targetUsername}' revoked successfully.`,
+    users: [...supabaseUsers, ...legacyUsers],
+  });
 });
 
 // --- API Endpoints ---
