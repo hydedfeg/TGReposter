@@ -73,7 +73,9 @@ export async function validateSupabaseAccessToken(
   token: string
 ): Promise<AuthenticatedAppUser | null> {
   const cleanToken = token.trim();
-  if (!cleanToken) return null;
+  if (!cleanToken || !process.env.DATABASE_URL || !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    return null;
+  }
 
   const { url, key } = supabaseAuthConfig();
 
@@ -175,6 +177,8 @@ export async function signInWithSupabasePassword(
 }
 
 export async function listSupabaseAppUsers() {
+  if (!process.env.DATABASE_URL) return [];
+
   const { rows } = await getPostgresPool().query(
     `
       select id, email, full_name, role, is_active, created_at
@@ -197,6 +201,8 @@ export async function listSupabaseAppUsers() {
 }
 
 export async function countActiveSupabaseAppUsers() {
+  if (!process.env.DATABASE_URL) return 0;
+
   const { rows } = await getPostgresPool().query(
     `
       select count(*)::bigint as count
@@ -316,7 +322,7 @@ export async function createSupabaseAppUser(input: {
 
 export async function revokeSupabaseAppUser(identity: string) {
   const cleanIdentity = identity.trim();
-  if (!cleanIdentity) return null;
+  if (!cleanIdentity || !process.env.DATABASE_URL) return null;
 
   const pool = getPostgresPool();
   const result = await pool.query(
@@ -335,6 +341,8 @@ export async function revokeSupabaseAppUser(identity: string) {
 }
 
 export async function countActiveSupabaseSuperAdmins() {
+  if (!process.env.DATABASE_URL) return 0;
+
   const { rows } = await getPostgresPool().query(
     `
       select count(*)::bigint as count
@@ -349,7 +357,7 @@ export async function countActiveSupabaseSuperAdmins() {
 
 export async function findSupabaseAppUser(identity: string) {
   const cleanIdentity = identity.trim();
-  if (!cleanIdentity) return null;
+  if (!cleanIdentity || !process.env.DATABASE_URL) return null;
 
   const { rows } = await getPostgresPool().query(
     `
