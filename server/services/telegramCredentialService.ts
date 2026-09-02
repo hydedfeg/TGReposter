@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { TelegramBotAccountRecord } from "../repositories/promotionRepository";
 import { getPostgresPool } from "../utils/postgresPool";
 
@@ -182,6 +183,129 @@ export async function saveMainTelegramBotToken(rawToken: unknown): Promise<void>
           token,
           MAIN_BOT_SECRET_NAME,
           "Primary Telegram reposting bot token",
+        ]
+      );
+    }
+
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
+function userTelegramBotSecretName(ownerPrincipal: string): string {
+  const cleanOwner = ownerPrincipal.trim().toLowerCase();
+  if (!cleanOwner) {
+    throw new Error("Destination owner principal is required.");
+  }
+
+  const digest = crypto.createHash("sha256").update(cleanOwner).digest("hex");
+  return `tgreposter_destination_bot_${digest}`;
+}
+
+export async function getUserTelegramBotToken(
+  ownerPrincipal: string
+): Promise<string> {
+  const secretName = userTelegramBotSecretName(ownerPrincipal);
+  const result = await getPostgresPool().query(
+    `
+      select decrypted_secret
+      from vault.decrypted_secrets
+      where name = $1
+      order by created_at desc
+      limit 1
+    `,
+    [secretName]
+  );
+
+  return cleanMainBotToken(result.rows[0]?.decrypted_secret);
+}
+
+export async function isUserTelegramBotTokenConfigured(
+  ownerPrincipal: string
+): Promise<boolean> {
+  const secretName = userTelegramBotSecretName(ownerPrincipal);
+  const { rows } = await getPostgresPool().query(
+    `
+      select exists (
+        select 1
+        from vault.secrets
+        where name = $1
+      ) as configured
+    `,
+    [secretName]
+  );
+
+  return rows[0]?.configured === true;
+}
+
+export async function saveUserTelegramBotToken(
+  ownerPrincipal: string,
+  rawToken: unknown
+): Promise<void> {
+  const token = cleanMainBotToken(rawToken);
+  if (!token) {
+    throw new Error("Telegram bot token is required.");
+  }
+
+  if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) {
+    throw new Error("Telegram bot token format is invalid.");
+  }
+
+  const secretName = userTelegramBotSecretName(ownerPrincipal);
+  const pool = getPostgresPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+
+    const existing = await client.query(
+      `
+        select id
+        from vault.secrets
+        where name = $1
+        limit 1
+        for update
+      `,
+      [secretName]
+    );
+
+    if (existing.rows[0]?.id) {
+      await client.query(
+        `
+          select vault.update_secret(
+            $1::uuid,
+            $2,
+            $3,
+            $4,
+            null
+          )
+        `,
+        [
+          existing.rows[0].id,
+          token,
+          secretName,
+          "User-scoped Telegram destination bot token",
+        ]
+      );
+    } else {
+      await client.query(
+        `
+          select vault.create_secret(
+            $1,
+            $2,
+            $3,
+            null
+          )
+        `,
+        [
+          token,
+          secretName,
+          "User-scoped Telegram destination bot token",
         ]
       );
     }
