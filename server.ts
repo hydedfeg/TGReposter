@@ -10,6 +10,7 @@ import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
+import { getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
@@ -840,13 +841,17 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   let destination = safeDb.destination;
+  let posts = safeDb.posts;
   if (process.env.DATABASE_URL && req.user) {
     try {
-      destination = await getUserDestinationConfig(req.user);
+      [destination, posts] = await Promise.all([
+        getUserDestinationConfig(req.user),
+        getUserInboxPosts(req.user),
+      ]);
     } catch (error) {
-      console.error("Failed loading user-scoped destinations:", error);
+      console.error("Failed loading user-scoped workspace data:", error);
       return res.status(500).json({
-        error: "Your Telegram destinations could not be loaded.",
+        error: "Your personal workspace data could not be loaded.",
       });
     }
   } else if (destination) {
@@ -859,6 +864,7 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   res.json({
     ...safeDb,
     destination,
+    posts,
     passwordSet:
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
@@ -874,10 +880,10 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const incoming = req.body as Partial<CuratorSettings>;
   const db = await readDb();
   const isSuper = req.user.role === "super-admin";
-  const usesUserScopedDestinations = !!process.env.DATABASE_URL && !!req.user;
+  const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
 
   // Sources, filters, and AI remain system-wide super-admin configuration.
-  // Destinations are personal publishing configuration for every authenticated user.
+  // Destinations and Content Inbox workflow state are personal to every authenticated user.
   if (!isSuper) {
     if (incoming.channels || incoming.filters || incoming.aiConfig) {
       return res.status(403).json({
@@ -889,11 +895,26 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   if (incoming.channels && isSuper) db.channels = incoming.channels;
   if (incoming.filters && isSuper) db.filters = incoming.filters;
   if (incoming.aiConfig && isSuper) db.aiConfig = incoming.aiConfig;
-  if (incoming.posts) db.posts = incoming.posts;
+
+  if (incoming.posts) {
+    if (usesUserScopedWorkspace) {
+      try {
+        await saveUserInboxPosts(req.user, incoming.posts);
+      } catch (error: any) {
+        console.error("Failed saving user-scoped Content Inbox:", error);
+        return res.status(400).json({
+          error: error?.message || "Your Content Inbox changes could not be saved.",
+        });
+      }
+    } else {
+      // Local-development compatibility keeps the legacy global post state.
+      db.posts = incoming.posts;
+    }
+  }
 
   let savedDestination: any = null;
   if (incoming.destination) {
-    if (usesUserScopedDestinations) {
+    if (usesUserScopedWorkspace) {
       try {
         savedDestination = await saveUserDestinationTargets(
           req.user,
@@ -929,13 +950,19 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
   let destination = safeDb.destination;
-  if (usesUserScopedDestinations) {
+  let posts = safeDb.posts;
+  if (usesUserScopedWorkspace) {
     try {
-      destination = savedDestination ?? await getUserDestinationConfig(req.user);
+      [destination, posts] = await Promise.all([
+        savedDestination
+          ? Promise.resolve(savedDestination)
+          : getUserDestinationConfig(req.user),
+        getUserInboxPosts(req.user),
+      ]);
     } catch (error) {
-      console.error("Failed reloading user-scoped destinations:", error);
+      console.error("Failed reloading user-scoped workspace data:", error);
       return res.status(500).json({
-        error: "Your Telegram destinations were saved but could not be reloaded.",
+        error: "Your personal workspace changes were saved but could not be reloaded.",
       });
     }
   } else if (destination) {
@@ -948,6 +975,7 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   res.json({
     ...safeDb,
     destination,
+    posts,
     passwordSet:
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
@@ -1054,15 +1082,16 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
             id: persisted.id,
             channelUsername: persisted.channel_username,
             originalText: persisted.original_text,
-            text: persisted.edited_text ?? persisted.original_text,
+            text: persisted.original_text,
             mediaType: persisted.media_type ?? undefined,
             photoUrl: persisted.photo_url ?? undefined,
             videoUrl: persisted.video_url ?? undefined,
             date: persisted.published_at,
             url: persisted.telegram_url,
-            status: persisted.status as CuratedPost['status'],
-            postedAt: persisted.posted_at ?? undefined,
-            errorMessage: persisted.error_message ?? undefined,
+            status:
+              persisted.inbox_default_status === "archived"
+                ? "archived"
+                : "pending",
           });
         }
       }
@@ -1258,15 +1287,16 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       id: post.id,
       channel_username: post.channelUsername,
       original_text: post.originalText,
-      edited_text: post.text,
+      edited_text: post.originalText,
       media_type: post.mediaType ?? null,
       photo_url: post.photoUrl ?? null,
       video_url: post.videoUrl ?? null,
       telegram_url: post.url,
       published_at: post.date,
-      posted_at: post.postedAt ?? null,
-      error_message: post.errorMessage ?? null,
-      status: post.status,
+      posted_at: null,
+      error_message: null,
+      status: post.status === "archived" ? "archived" : "pending",
+      inbox_default_status: post.status === "archived" ? "archived" : "pending",
     }));
 
     await postService.savePosts(postEntities);
@@ -1275,20 +1305,22 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
     console.error("Failed saving changed inbox posts:", err);
   }
 
-const latestPosts = (await postService.getRecentPosts(400)).map((p: any) => ({
-  id: p.id,
-  channelUsername: p.channel_username,
-  originalText: p.original_text,
-  text: p.edited_text ?? p.original_text,
-  mediaType: p.media_type,
-  photoUrl: p.photo_url,
-  videoUrl: p.video_url,
-  date: p.published_at,
-  url: p.telegram_url,
-  status: p.status,
-  postedAt: p.posted_at ?? undefined,
-  errorMessage: p.error_message ?? undefined,
-}));
+const isCronActor = req.user?.username === "system:cron";
+const latestPosts =
+  process.env.DATABASE_URL && req.user && !isCronActor
+    ? await getUserInboxPosts(req.user, 400)
+    : (await postService.getRecentPosts(400)).map((p: any) => ({
+        id: p.id,
+        channelUsername: p.channel_username,
+        originalText: p.original_text,
+        text: p.original_text,
+        mediaType: p.media_type,
+        photoUrl: p.photo_url,
+        videoUrl: p.video_url,
+        date: p.published_at,
+        url: p.telegram_url,
+        status: p.inbox_default_status === "archived" ? "archived" : "pending",
+      }));
 
 res.json({
   channels: db.channels,
@@ -1334,10 +1366,10 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
 app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   const { postId, text, targetIds } = req.body;
   const db = await readDb();
-  const usesUserScopedDestinations = !!process.env.DATABASE_URL && !!req.user;
+  const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
 
   let destination = db.destination;
-  if (usesUserScopedDestinations) {
+  if (usesUserScopedWorkspace) {
     try {
       destination = await getUserDestinationConfig(req.user);
     } catch (error) {
@@ -1352,7 +1384,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
 
   let botToken = "";
   try {
-    if (usesUserScopedDestinations) {
+    if (usesUserScopedWorkspace) {
       const ownerPrincipal = destinationOwnerPrincipalForUser(req.user);
       botToken = await getUserTelegramBotToken(ownerPrincipal);
     } else {
@@ -1460,13 +1492,25 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     return res.status(400).json({ error: "No enabled Telegram targets found to publish to." });
   }
 
-  const postIdx = db.posts.findIndex(p => p.id === postId);
-  if (postIdx === -1) {
-    return res.status(404).json({ error: "Curated post not found in database." });
+  const usesUserScopedInbox = !!process.env.DATABASE_URL && !!req.user;
+  let postIdx = -1;
+  let post: CuratedPost | null = null;
+
+  if (usesUserScopedInbox) {
+    post = await getUserInboxPost(req.user, String(postId ?? ""));
+  } else {
+    postIdx = db.posts.findIndex(p => p.id === postId);
+    post = postIdx >= 0 ? db.posts[postIdx] : null;
   }
 
-  const post = db.posts[postIdx];
-  const formattedText = text || post.text;
+  if (!post) {
+    return res.status(404).json({ error: "Post not found in your Content Inbox." });
+  }
+
+  const formattedText =
+    typeof text === "string" && text.length > 0
+      ? text
+      : post.text;
 
   const publishResult = await telegramPublisherService.publish({
     botToken,
@@ -1481,7 +1525,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
 
   let responseDestination = destination;
 
-  if (usesUserScopedDestinations) {
+  if (usesUserScopedWorkspace) {
     try {
       responseDestination = await updateUserDestinationStatuses(
         req.user,
@@ -1512,32 +1556,58 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     }
   }
 
-  if (publishResult.success) {
-    db.posts[postIdx].status = "posted";
-    db.posts[postIdx].text = formattedText;
-    db.posts[postIdx].postedAt = new Date().toISOString();
+  const failures = publishResult.results.filter(result => !result.success);
+  let responsePost: CuratedPost = { ...post };
 
-    const failures = publishResult.results.filter(result => !result.success);
-    if (failures.length > 0) {
-      db.posts[postIdx].errorMessage = `Published to some targets. Failures: ${failures.map(failure => `${failure.name}: ${failure.error}`).join("; ")}`;
-    } else {
-      db.posts[postIdx].errorMessage = undefined;
-    }
+  if (publishResult.success) {
+    responsePost = {
+      ...post,
+      status: "posted",
+      text: formattedText,
+      postedAt: new Date().toISOString(),
+      errorMessage:
+        failures.length > 0
+          ? `Published to some targets. Failures: ${failures.map(failure => `${failure.name}: ${failure.error}`).join("; ")}`
+          : undefined,
+    };
   } else {
-    db.posts[postIdx].errorMessage = `Failed to publish to all selected targets. Errors: ${publishResult.results.map(result => `${result.name}: ${result.error}`).join("; ")}`;
+    responsePost = {
+      ...post,
+      errorMessage: `Failed to publish to all selected targets. Errors: ${publishResult.results.map(result => `${result.name}: ${result.error}`).join("; ")}`,
+    };
   }
 
-  if (!usesUserScopedDestinations) {
+  if (usesUserScopedInbox) {
+    try {
+      await saveUserInboxPosts(req.user, [responsePost]);
+      responsePost =
+        (await getUserInboxPost(req.user, responsePost.id)) ?? responsePost;
+    } catch (error) {
+      console.error("Failed persisting user Content Inbox publishing state:", error);
+      return res.status(500).json({
+        error: "Telegram delivery completed, but your Content Inbox state could not be saved.",
+        outcome: publishResult.outcome,
+        results: publishResult.results,
+      });
+    }
+  } else {
+    db.posts[postIdx] = responsePost;
+  }
+
+  if (!usesUserScopedWorkspace) {
     db.destination.connected = publishResult.success || db.destination.connected;
     responseDestination = db.destination;
   }
 
-  await writeDb(db);
+  if (!usesUserScopedInbox) {
+    await writeDb(db);
+  }
+
   return res.json({
     success: publishResult.success,
     outcome: publishResult.outcome,
     summary: publishResult.summary,
-    post: db.posts[postIdx],
+    post: responsePost,
     results: publishResult.results,
     destination: {
       ...responseDestination,
