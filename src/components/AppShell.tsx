@@ -10,6 +10,8 @@ import {
   LogOut,
   Megaphone,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Radio,
   Send,
   Settings,
@@ -152,6 +154,7 @@ export default function AppShell({
   targets,
 }: AppShellProps) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("tgreposter-sidebar-open") !== "false");
   const activeTargets = targets?.filter((target) => target.enabled).length || 0;
   const isMoreView = ["history", "channels", "filters", "destination", "ai", "team", "database"].includes(activeView);
 
@@ -178,20 +181,40 @@ export default function AppShell({
     setMoreOpen(false);
   };
 
+  const setDesktopSidebarOpen = (open: boolean) => {
+    setSidebarOpen(open);
+    localStorage.setItem("tgreposter-sidebar-open", String(open));
+  };
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-950">
-      <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col bg-slate-950 px-3 py-4 text-white lg:flex">
-        <button
-          type="button"
-          onClick={() => navigate("dashboard")}
-          className="flex min-h-12 items-center gap-3 rounded-xl px-2 text-left"
-          aria-label="Open TGReposter dashboard"
-        >
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500 shadow-lg shadow-sky-950/30">
-            <Send className="h-5 w-5 -rotate-12" aria-hidden="true" />
-          </span>
-          <span className="font-display text-xl font-bold tracking-tight">TGReposter</span>
-        </button>
+      <aside
+        id="desktop-sidebar"
+        className={`fixed inset-y-0 left-0 z-50 w-64 flex-col bg-slate-950 px-3 py-4 text-white ${sidebarOpen ? "hidden lg:flex" : "hidden"}`}
+      >
+        <div className="flex min-h-12 items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("dashboard")}
+            className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-2 text-left"
+            aria-label="Open TGReposter dashboard"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500 shadow-lg shadow-sky-950/30">
+              <Send className="h-5 w-5 -rotate-12" aria-hidden="true" />
+            </span>
+            <span className="truncate font-display text-xl font-bold tracking-tight">TGReposter</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDesktopSidebarOpen(false)}
+            aria-label="Close sidebar"
+            aria-controls="desktop-sidebar"
+            aria-expanded="true"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white"
+          >
+            <PanelLeftClose className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
 
         <nav className="mt-7 flex-1 overflow-y-auto" aria-label="Primary navigation">
           <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Content operations</p>
@@ -239,10 +262,22 @@ export default function AppShell({
         </div>
       </aside>
 
-      <div className="min-h-screen lg:pl-64">
+      <div className={`min-h-screen transition-[padding] duration-200 ${sidebarOpen ? "lg:pl-64" : "lg:pl-0"}`}>
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
             <div className="flex min-w-0 items-center gap-3">
+              {!sidebarOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setDesktopSidebarOpen(true)}
+                  aria-label="Open sidebar"
+                  aria-controls="desktop-sidebar"
+                  aria-expanded="false"
+                  className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 lg:flex"
+                >
+                  <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
+                </button>
+              ) : null}
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white lg:hidden">
                 <Send className="h-4 w-4 -rotate-12" aria-hidden="true" />
               </span>
