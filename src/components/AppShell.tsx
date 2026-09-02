@@ -68,7 +68,7 @@ const setupItems: NavItem[] = [
   { view: "channels", label: "Sources", icon: Radio },
   { view: "filters", label: "Filters", icon: Filter },
   { view: "ai", label: "AI Configuration", icon: Sparkles },
-  { view: "team", label: "Team", icon: Users },
+  { view: "team", label: "Team & Access", icon: Users },
   { view: "database", label: "System Settings", icon: Database },
 ];
 
@@ -81,7 +81,7 @@ const titles: Record<WorkspaceView, string> = {
   filters: "Content Filters",
   destination: "My Destinations",
   ai: "AI Configuration",
-  team: "Team",
+  team: "Team & Access",
   database: "System Settings",
 };
 
@@ -261,7 +261,7 @@ export default function AppShell({
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold">{currentUsername || "Administrator"}</p>
-              <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? "System owner" : "Content admin"}</p>
+              <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? "System owner" : "Personal workspace"}</p>
             </div>
             <button
               type="button"
