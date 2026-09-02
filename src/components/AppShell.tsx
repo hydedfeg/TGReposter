@@ -55,7 +55,7 @@ interface NavItem {
 
 const contentItems: NavItem[] = [
   { view: "dashboard", label: "Dashboard", icon: Home },
-  { view: "feed", label: "Content Inbox", icon: Inbox },
+  { view: "feed", label: "My Content Inbox", icon: Inbox },
   { view: "promotion", label: "Promotions", icon: Megaphone },
   { view: "history", label: "Publishing History", icon: History },
 ];
@@ -74,7 +74,7 @@ const setupItems: NavItem[] = [
 
 const titles: Record<WorkspaceView, string> = {
   dashboard: "Dashboard",
-  feed: "Content Inbox",
+  feed: "My Content Inbox",
   history: "Publishing History",
   promotion: "Promotions",
   channels: "Source Channels",
