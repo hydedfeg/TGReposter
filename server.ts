@@ -1579,13 +1579,16 @@ app.post("/api/destination/bot-token", authMiddleware, async (req: any, res) => 
 
 // Test bot connectivity in stages so configuration errors are easy to diagnose.
 app.post("/api/test-bot", authMiddleware, async (req: any, res) => {
-  const channelId = typeof req.body?.channelId === "string" ? req.body.channelId.trim() : "";
+  const requestedTargetId =
+    typeof req.body?.targetId === "string" ? req.body.targetId.trim() : "";
+  let channelId =
+    typeof req.body?.channelId === "string" ? req.body.channelId.trim() : "";
 
-  if (!channelId) {
+  if (!requestedTargetId && !channelId) {
     return res.status(400).json({
       success: false,
       stage: "input",
-      error: "Channel ID is required."
+      error: "Destination target ID or channel ID is required."
     });
   }
 
@@ -1593,17 +1596,21 @@ app.post("/api/test-bot", authMiddleware, async (req: any, res) => {
   try {
     if (process.env.DATABASE_URL && req.user) {
       const userDestination = await getUserDestinationConfig(req.user);
-      const ownsTarget = userDestination.targets.some(
-        target => target.channelId.trim() === channelId
-      );
+      const ownedTarget = requestedTargetId
+        ? userDestination.targets.find(target => target.id === requestedTargetId)
+        : userDestination.targets.find(target => target.channelId.trim() === channelId);
 
-      if (!ownsTarget) {
+      if (!ownedTarget) {
         return res.status(404).json({
           success: false,
           stage: "target",
           error: "This destination does not belong to your account."
         });
       }
+
+      // Resolve the Telegram chat identifier from backend-owned destination data.
+      // Ignore any conflicting browser-supplied channelId when targetId is present.
+      channelId = ownedTarget.channelId.trim();
 
       const ownerPrincipal = destinationOwnerPrincipalForUser(req.user);
       botToken = await getUserTelegramBotToken(ownerPrincipal);
