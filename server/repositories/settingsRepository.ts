@@ -4,6 +4,7 @@ const INBOX_WINDOW_HOURS = 24;
 const VALID_CHANNEL_STATUSES = new Set(["idle", "fetching", "success", "error"]);
 const VALID_TARGET_STATUSES = new Set(["idle", "success", "error"]);
 const VALID_POST_STATUSES = new Set(["pending", "approved", "posted", "archived"]);
+const VALID_INBOX_DEFAULT_STATUSES = new Set(["pending", "archived"]);
 
 function asIso(value: unknown): string | undefined {
   if (!value) return undefined;
@@ -52,15 +53,15 @@ export class RuntimeSettingsRepository {
         pool.query(`
           select id, client_id, name, channel_id, enabled, status, error_message
           from public.destination_targets
+          where owner_principal is null
           order by created_at asc, id asc
         `),
         pool.query(`
-          select id, channel_username, original_text, edited_text, media_type,
-                 photo_url, video_url, telegram_url, status, published_at,
-                 posted_at, error_message
+          select id, channel_username, original_text, media_type,
+                 photo_url, video_url, telegram_url, inbox_default_status,
+                 published_at
           from public.posts
-          where status in ('posted', 'approved')
-             or coalesce(published_at, created_at) >= now() - make_interval(hours => $1)
+          where coalesce(published_at, created_at) >= now() - make_interval(hours => $1)
           order by published_at desc nulls last, created_at desc
           limit 400
         `, [INBOX_WINDOW_HOURS]),
@@ -131,19 +132,24 @@ export class RuntimeSettingsRepository {
             provider: "gemini",
             model: "gemini-3.5-flash",
           },
+      // Canonical source posts intentionally carry no user-owned edits,
+      // moderation state, publish history, or delivery errors. Authenticated API
+      // responses overlay those fields from public.user_inbox_items.
       posts: postsResult.rows.map(row => ({
         id: row.id,
         channelUsername: row.channel_username,
         originalText: row.original_text,
-        text: row.edited_text ?? row.original_text,
+        text: row.original_text,
         mediaType: row.media_type ?? undefined,
         photoUrl: row.photo_url ?? undefined,
         videoUrl: row.video_url ?? undefined,
         date: asIso(row.published_at) ?? new Date().toISOString(),
         url: row.telegram_url ?? "",
-        status: sanitizeStatus(row.status, VALID_POST_STATUSES, "pending"),
-        postedAt: asIso(row.posted_at),
-        errorMessage: row.error_message ?? undefined,
+        status: sanitizeStatus(
+          row.inbox_default_status,
+          VALID_INBOX_DEFAULT_STATUSES,
+          "pending"
+        ),
       })),
       passwordHash: legacy.passwordHash,
       users: Array.isArray(legacy.users) ? legacy.users : [],
@@ -320,7 +326,8 @@ export class RuntimeSettingsRepository {
       await client.query(
         `
           delete from public.destination_targets
-          where coalesce(client_id, id::text) not in (
+          where owner_principal is null
+            and coalesce(client_id, id::text) not in (
             select coalesce(x.client_id, '')
             from jsonb_to_recordset($1::jsonb) as x(client_id text)
           )
@@ -335,7 +342,9 @@ export class RuntimeSettingsRepository {
               insert into public.destination_targets
                 (client_id, name, channel_id, enabled, status, error_message, created_at, updated_at)
               values ($1, $2, $3, $4, $5, $6, now(), now())
-              on conflict (client_id) where client_id is not null do update
+              on conflict (client_id)
+                where owner_principal is null and client_id is not null
+              do update
               set name = excluded.name,
                   channel_id = excluded.channel_id,
                   enabled = excluded.enabled,
@@ -375,15 +384,24 @@ export class RuntimeSettingsRepository {
             id: String(post.id),
             channel_username: String(post.channelUsername ?? ""),
             original_text: String(post.originalText ?? ""),
-            edited_text: String(post.text ?? post.originalText ?? ""),
+            edited_text: String(post.originalText ?? ""),
             media_type: post.mediaType ?? null,
             photo_url: post.photoUrl ?? null,
             video_url: post.videoUrl ?? null,
             telegram_url: post.url ?? null,
-            status: sanitizeStatus(post.status, VALID_POST_STATUSES, "pending"),
+            status: sanitizeStatus(
+              post.status,
+              VALID_INBOX_DEFAULT_STATUSES,
+              "pending"
+            ),
+            inbox_default_status: sanitizeStatus(
+              post.status,
+              VALID_INBOX_DEFAULT_STATUSES,
+              "pending"
+            ),
             published_at: asIso(post.date) ?? new Date().toISOString(),
-            posted_at: asIso(post.postedAt) ?? null,
-            error_message: post.errorMessage ?? null,
+            posted_at: null,
+            error_message: null,
           }))
         : [];
 
@@ -392,8 +410,8 @@ export class RuntimeSettingsRepository {
           `
             insert into public.posts
               (id, channel_username, original_text, edited_text, media_type,
-               photo_url, video_url, telegram_url, status, published_at,
-               posted_at, error_message, updated_at)
+               photo_url, video_url, telegram_url, status, inbox_default_status,
+               published_at, posted_at, error_message, updated_at)
             select
               x.id,
               x.channel_username,
@@ -404,6 +422,7 @@ export class RuntimeSettingsRepository {
               x.video_url,
               x.telegram_url,
               x.status,
+              x.inbox_default_status,
               x.published_at,
               x.posted_at,
               x.error_message,
@@ -418,6 +437,7 @@ export class RuntimeSettingsRepository {
               video_url text,
               telegram_url text,
               status text,
+              inbox_default_status text,
               published_at timestamptz,
               posted_at timestamptz,
               error_message text
@@ -431,6 +451,7 @@ export class RuntimeSettingsRepository {
                 video_url = excluded.video_url,
                 telegram_url = excluded.telegram_url,
                 status = excluded.status,
+                inbox_default_status = excluded.inbox_default_status,
                 published_at = excluded.published_at,
                 posted_at = excluded.posted_at,
                 error_message = excluded.error_message,

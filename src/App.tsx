@@ -14,7 +14,7 @@ import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 
-const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "destination", "ai", "team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "ai", "team", "database"]);
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
@@ -24,6 +24,11 @@ function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
       botToken: "",
     },
   };
+}
+
+function settingsCacheKey() {
+  const username = localStorage.getItem("curator_username")?.trim().toLowerCase();
+  return `telegram-curator-settings:${username || "anonymous"}`;
 }
 
 function initialWorkspaceView(): WorkspaceView {
@@ -137,7 +142,7 @@ export default function App() {
       const data = await safeResponseJson(response);
       const safeData = sanitizeClientSettings(data);
       setSettings(safeData);
-      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
+      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -147,12 +152,12 @@ export default function App() {
     } catch (err: any) {
       console.error("Error loading configuration:", err);
       // Fallback to client localStorage if server is temporarily unreachable
-      const local = localStorage.getItem("telegram-curator-settings");
+      const local = localStorage.getItem(settingsCacheKey());
       if (local) {
         try {
           const safeLocal = sanitizeClientSettings(JSON.parse(local));
           setSettings(safeLocal);
-          localStorage.setItem("telegram-curator-settings", JSON.stringify(safeLocal));
+          localStorage.setItem(settingsCacheKey(), JSON.stringify(safeLocal));
         } catch (_) {}
       }
       setErrorMessage("Unable to fetch settings from server. Reverting to local cache.");
@@ -205,17 +210,20 @@ export default function App() {
   };
 
   // Save settings helper
-  const saveSettingsToServer = async (updated: CuratorSettings) => {
+  const saveSettingsToServer = async (
+    updated: CuratorSettings,
+    serverPatch: Partial<CuratorSettings> = updated
+  ) => {
     const safeUpdated = sanitizeClientSettings(updated);
 
     // Keep a token-free local fallback only.
-    localStorage.setItem("telegram-curator-settings", JSON.stringify(safeUpdated));
+    localStorage.setItem(settingsCacheKey(), JSON.stringify(safeUpdated));
     setSettings(safeUpdated);
 
     try {
       const response = await fetchWithAuth("/api/settings", {
         method: "POST",
-        body: JSON.stringify(safeUpdated)
+        body: JSON.stringify(serverPatch)
       });
       if (!response.ok) {
         throw new Error("Failed to save settings on server");
@@ -223,7 +231,7 @@ export default function App() {
       const data = await safeResponseJson(response);
       const safeData = sanitizeClientSettings(data);
       setSettings(safeData);
-      localStorage.setItem("telegram-curator-settings", JSON.stringify(safeData));
+      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
@@ -335,7 +343,7 @@ export default function App() {
     const cleanUsername = username.trim().toLowerCase();
     const updatedChannels = [...settings.channels, { username: cleanUsername, status: "idle" as const }];
     const updated = { ...settings, channels: updatedChannels };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { channels: updatedChannels });
     showToast(`Added channel @${cleanUsername}! Automatically fetching posts...`);
     // Auto fetch the newly added channel
     handleFetchChannel(cleanUsername);
@@ -344,14 +352,14 @@ export default function App() {
   const handleRemoveChannel = async (username: string) => {
     const updatedChannels = settings.channels.filter(c => c.username !== username);
     const updated = { ...settings, channels: updatedChannels };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { channels: updatedChannels });
     showToast(`Removed channel @${username}`);
   };
 
   // 2. Filter actions
   const handleUpdateFilters = async (updatedFilters: IFilterConfig) => {
     const updated = { ...settings, filters: updatedFilters };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { filters: updatedFilters });
     showToast("Filtering criteria updated successfully.");
   };
 
@@ -389,27 +397,34 @@ export default function App() {
     };
 
     const updated = { ...settings, destination: updatedDestination };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { destination: updatedDestination });
     showToast(botToken.trim() ? "Telegram bot token stored securely and destinations updated." : "Telegram destinations updated.");
     return true;
   };
 
   const handleUpdateAI = async (updatedAI: IAIConfig) => {
     const updated = { ...settings, aiConfig: updatedAI };
-    await saveSettingsToServer(updated);
+    await saveSettingsToServer(updated, { aiConfig: updatedAI });
     showToast("AI configuration updated successfully.");
   };
 
   // 4. Manual Post Tweaks or status changes
   const handleUpdatePost = async (postId: string, updatedFields: Partial<CuratedPost>) => {
+    let changedPost: CuratedPost | null = null;
     const updatedPosts = settings.posts.map(post => {
       if (post.id === postId) {
-        return { ...post, ...updatedFields };
+        changedPost = { ...post, ...updatedFields };
+        return changedPost;
       }
       return post;
     });
+
+    if (!changedPost) return;
+
     const updated = { ...settings, posts: updatedPosts };
-    await saveSettingsToServer(updated);
+    // Persist only this user's changed inbox row. The backend never accepts
+    // user-owned review state as a mutation of the canonical source post.
+    await saveSettingsToServer(updated, { posts: [changedPost] });
   };
 
   // 5. Scraper triggers
@@ -441,7 +456,7 @@ export default function App() {
   }));
 
   localStorage.setItem(
-    "telegram-curator-settings",
+    settingsCacheKey(),
     JSON.stringify({
       ...settings,
       channels: data.channels,
@@ -485,7 +500,7 @@ export default function App() {
       }));
 
       // Persist latest state
-      localStorage.setItem("telegram-curator-settings", JSON.stringify({
+      localStorage.setItem(settingsCacheKey(), JSON.stringify({
         ...settings,
         channels: data.channels,
         posts: data.posts
@@ -622,11 +637,9 @@ export default function App() {
               <p className="mt-1 leading-relaxed text-amber-700">
                 Content collection and editing are available. Configure and enable a Telegram destination before publishing.
               </p>
-              {currentUserRole === "super-admin" ? (
-                <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
-                  Configure destinations
-                </button>
-              ) : null}
+              <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
+                Configure my destinations
+              </button>
             </div>
           </div>
         ) : null}
@@ -656,7 +669,7 @@ export default function App() {
           <FilterConfig filters={settings.filters} onUpdateFilters={handleUpdateFilters} />
         ) : null}
 
-        {activeWorkspaceTab === "destination" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "destination" ? (
           <DestinationConfig destination={settings.destination} onSave={handleSaveDestination} />
         ) : null}
 

@@ -55,30 +55,33 @@ interface NavItem {
 
 const contentItems: NavItem[] = [
   { view: "dashboard", label: "Dashboard", icon: Home },
-  { view: "feed", label: "Content Inbox", icon: Inbox },
+  { view: "feed", label: "My Content Inbox", icon: Inbox },
   { view: "promotion", label: "Promotions", icon: Megaphone },
   { view: "history", label: "Publishing History", icon: History },
+];
+
+const personalItems: NavItem[] = [
+  { view: "destination", label: "My Destinations", icon: Bot },
 ];
 
 const setupItems: NavItem[] = [
   { view: "channels", label: "Sources", icon: Radio },
   { view: "filters", label: "Filters", icon: Filter },
-  { view: "destination", label: "Destinations", icon: Bot },
   { view: "ai", label: "AI Configuration", icon: Sparkles },
-  { view: "team", label: "Team", icon: Users },
+  { view: "team", label: "Team & Access", icon: Users },
   { view: "database", label: "System Settings", icon: Database },
 ];
 
 const titles: Record<WorkspaceView, string> = {
   dashboard: "Dashboard",
-  feed: "Content Inbox",
+  feed: "My Content Inbox",
   history: "Publishing History",
   promotion: "Promotions",
   channels: "Source Channels",
   filters: "Content Filters",
-  destination: "Destinations",
+  destination: "My Destinations",
   ai: "AI Configuration",
-  team: "Team",
+  team: "Team & Access",
   database: "System Settings",
 };
 
@@ -226,6 +229,16 @@ export default function AppShell({
             ))}
           </div>
 
+          <div className="my-5 border-t border-white/10" />
+          <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Personal setup</p>
+          <div className="mt-2 space-y-1">
+            {personalItems.map((item) => (
+              <div key={item.view}>
+                <SidebarButton item={item} active={activeView === item.view} onSelect={navigate} />
+              </div>
+            ))}
+          </div>
+
           {currentUserRole === "super-admin" ? (
             <>
               <div className="my-5 border-t border-white/10" />
@@ -248,7 +261,7 @@ export default function AppShell({
             </span>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold">{currentUsername || "Administrator"}</p>
-              <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? "System owner" : "Content admin"}</p>
+              <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? "System owner" : "Personal workspace"}</p>
             </div>
             <button
               type="button"
@@ -342,6 +355,20 @@ export default function AppShell({
             >
               <History className="h-5 w-5 text-sky-600" aria-hidden="true" /> Publishing History
             </button>
+            {personalItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  type="button"
+                  key={item.view}
+                  onClick={() => navigate(item.view)}
+                  className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-left text-sm font-semibold text-slate-700"
+                >
+                  <Icon className="h-5 w-5 text-sky-600" aria-hidden="true" />
+                  {item.label}
+                </button>
+              );
+            })}
             {currentUserRole === "super-admin"
               ? setupItems.map((item) => {
                   const Icon = item.icon;

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Bot, Check, AlertCircle, HelpCircle, Trash2, Plus, RefreshCw, Eye, EyeOff, Radio, Settings } from "lucide-react";
 import { DestinationConfig as IDestinationConfig, DestinationTarget } from "../types";
 import { safeResponseJson } from "../utils/api";
@@ -17,6 +17,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
   
   // List of targets in state for direct editing
   const [targets, setTargets] = useState<DestinationTarget[]>(destination.targets || []);
+
+  useEffect(() => {
+    setTargets(destination.targets || []);
+  }, [destination.targets]);
   
   // Form state for adding a new target
   const [newTargetName, setNewTargetName] = useState("");
@@ -37,7 +41,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     }
 
     const newTarget: DestinationTarget = {
-      id: `target-${Date.now()}`,
+      id: `target-${crypto.randomUUID()}`,
       name: newTargetName.trim(),
       channelId: cleanChannelId,
       enabled: true,
@@ -93,6 +97,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
           ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {})
         },
         body: JSON.stringify({
+          targetId: target.id,
           channelId: target.channelId
         })
       });
@@ -148,7 +153,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       setBotToken("");
       setTestResult({
         success: true,
-        message: "Bot Token stored securely in Supabase Vault."
+        message: "Bot token stored securely for your account."
       });
       setTimeout(() => setTestResult(null), 3000);
     }
@@ -163,10 +168,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
           <h2 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 mb-1.5">
             <Bot className="w-5 h-5 text-sky-500 animate-pulse" />
-            1. Telegram Bot Token Configuration
+            1. Your Telegram Bot Configuration
           </h2>
           <p className="text-slate-500 text-xs mb-5 font-sans leading-relaxed">
-            All destination channels and groups use one backend-owned Telegram bot credential. Stored tokens are never returned to this browser.
+            Your destination channels and groups use one private Telegram bot credential tied to your signed-in account. Stored tokens are never returned to this browser or shared with other users.
           </p>
 
           <div className="space-y-4">
@@ -216,7 +221,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   </span>
                 )}
                 <p className="text-[10px] text-slate-400">
-                  Acquire a token from <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">@BotFather</a>. Saving replaces the credential in Supabase Vault.
+                  Acquire a token from <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">@BotFather</a>. Saving stores or replaces only your account's credential in Supabase Vault.
                 </p>
               </div>
             </div>
@@ -230,7 +235,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
             2. Destination Channels & Groups
           </h2>
           <p className="text-slate-500 text-xs mb-5 font-sans leading-relaxed">
-            Manage public or private Telegram channels/groups. When publishing a curated post, it goes to all active targets simultaneously.
+            Manage your own public or private Telegram channels/groups. Only your signed-in account can list, edit, test, or publish to these targets.
           </p>
 
           {/* Target Addition Form */}
@@ -390,7 +395,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
             Multiple Destination Guide
           </h3>
           <p className="text-slate-500 text-xs mb-4 font-sans leading-relaxed">
-            Configure one bot to broadcast curated content to multiple target feeds simultaneously.
+            Configure your private bot to broadcast curated content to your own target feeds. Other TGReposter users have separate bot credentials and destination lists.
           </p>
 
           <ol className="space-y-4 text-xs">
