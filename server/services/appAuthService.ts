@@ -207,3 +207,160 @@ export async function countActiveSupabaseAppUsers() {
 
   return Number(rows[0]?.count ?? 0);
 }
+
+
+export async function createSupabaseAppUser(input: {
+  email: string;
+  password: string;
+  role: AppRole;
+  fullName?: string;
+}) {
+  const email = input.email.trim().toLowerCase();
+  const password = input.password;
+  const fullName = input.fullName?.trim() || email.split("@")[0];
+
+  if (!email.includes("@")) {
+    throw new Error("A valid email address is required for Supabase Auth accounts.");
+  }
+
+  if (password.length < 8) {
+    throw new Error("Supabase Auth passwords must be at least 8 characters.");
+  }
+
+  if (input.role !== "admin" && input.role !== "super-admin") {
+    throw new Error("Invalid application role.");
+  }
+
+  const pool = getPostgresPool();
+  const existing = await pool.query(
+    `
+      select id
+      from public.profiles
+      where lower(email) = lower($1)
+      limit 1
+    `,
+    [email]
+  );
+
+  if (existing.rows.length > 0) {
+    throw new Error("An account with this email already exists.");
+  }
+
+  const { url, key } = supabaseAuthConfig();
+  const response = await fetchWithTimeout(
+    `${url}/auth/v1/signup`,
+    {
+      method: "POST",
+      headers: {
+        apikey: key,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        data: {
+          full_name: fullName,
+        },
+      }),
+    }
+  );
+
+  const body = (await response.json().catch(() => ({}))) as SupabaseTokenResponse & {
+    id?: string;
+  };
+
+  if (!response.ok) {
+    const description =
+      body.error_description || body.msg || body.error || "Supabase Auth signup failed.";
+    throw new Error(description);
+  }
+
+  const userId = body.user?.id || body.id;
+  if (!userId) {
+    throw new Error("Supabase Auth did not return a user identifier.");
+  }
+
+  const activated = await pool.query(
+    `
+      update public.profiles
+      set full_name = $2,
+          role = $3,
+          is_active = true,
+          updated_at = now()
+      where id = $1::uuid
+      returning id, email, full_name, role, is_active, created_at
+    `,
+    [userId, fullName, input.role]
+  );
+
+  if (activated.rows.length === 0) {
+    throw new Error("Supabase profile bootstrap did not complete.");
+  }
+
+  const profile = activated.rows[0];
+
+  return {
+    id: profile.id,
+    username: String(profile.full_name || profile.email),
+    email: profile.email,
+    role: profile.role === "super-admin" ? "super-admin" : "admin",
+    isActive: profile.is_active === true,
+    createdAt:
+      profile.created_at instanceof Date
+        ? profile.created_at.toISOString()
+        : String(profile.created_at ?? ""),
+    authProvider: "supabase" as const,
+    confirmationRequired: !body.access_token,
+  };
+}
+
+export async function revokeSupabaseAppUser(identity: string) {
+  const cleanIdentity = identity.trim();
+  if (!cleanIdentity) return null;
+
+  const pool = getPostgresPool();
+  const result = await pool.query(
+    `
+      update public.profiles
+      set is_active = false,
+          updated_at = now()
+      where id::text = $1
+         or lower(email) = lower($1)
+      returning id, email, full_name, role, is_active, created_at
+    `,
+    [cleanIdentity]
+  );
+
+  return result.rows[0] ?? null;
+}
+
+export async function countActiveSupabaseSuperAdmins() {
+  const { rows } = await getPostgresPool().query(
+    `
+      select count(*)::bigint as count
+      from public.profiles
+      where is_active = true
+        and role = 'super-admin'
+    `
+  );
+
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function findSupabaseAppUser(identity: string) {
+  const cleanIdentity = identity.trim();
+  if (!cleanIdentity) return null;
+
+  const { rows } = await getPostgresPool().query(
+    `
+      select id, email, full_name, role, is_active, created_at
+      from public.profiles
+      where id::text = $1
+         or lower(email) = lower($1)
+      limit 1
+    `,
+    [cleanIdentity]
+  );
+
+  return rows[0] ?? null;
+}
