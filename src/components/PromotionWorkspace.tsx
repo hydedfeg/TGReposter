@@ -205,29 +205,23 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const loadCampaignsAndTargets = async () => {
-    const requests: Promise<any>[] = [
+    const [campaignData, targetData, botData] = await Promise.all([
       requestJson("/api/promotion/campaigns"),
       requestJson("/api/promotion/targets"),
-    ];
-    if (currentUserRole === "super-admin") {
-      requests.push(requestJson("/api/promotion/bot-accounts"));
-    }
-
-    const [campaignData, targetData, botData] = await Promise.all(requests);
+      requestJson("/api/promotion/bot-accounts"),
+    ]);
     const nextCampaigns = campaignData.campaigns || [];
     const nextTargets = targetData.targets || [];
     const nextBotAccounts = botData?.botAccounts || [];
 
     setCampaigns(nextCampaigns);
     setTargets(nextTargets);
-    if (currentUserRole === "super-admin") {
-      setBotAccounts(nextBotAccounts);
-      setTargetBotAccountId(current =>
-        current && nextBotAccounts.some((account: PromotionBotAccount) => account.id === current)
-          ? current
-          : nextBotAccounts.find((account: PromotionBotAccount) => account.enabled)?.id || ""
-      );
-    }
+    setBotAccounts(nextBotAccounts);
+    setTargetBotAccountId(current =>
+      current && nextBotAccounts.some((account: PromotionBotAccount) => account.id === current)
+        ? current
+        : nextBotAccounts.find((account: PromotionBotAccount) => account.enabled)?.id || ""
+    );
     return { campaigns: nextCampaigns, targets: nextTargets, botAccounts: nextBotAccounts };
   };
 
@@ -438,7 +432,6 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const createPromotionTarget = async () => {
-    if (currentUserRole !== "super-admin") return;
     if (!targetName.trim() || !targetChatId.trim() || !targetBotAccountId) {
       onToast("Target name, Telegram chat ID, and bot account are required.", "error");
       return;
@@ -468,7 +461,6 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const testPromotionTarget = async (targetId: string) => {
-    if (currentUserRole !== "super-admin") return;
     setIsActionLoading(true);
     try {
       await requestJson(`/api/promotion/targets/${targetId}/test`, { method: "POST" });
@@ -483,7 +475,6 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const setPromotionTargetEnabled = async (target: PromotionApiTarget, enabled: boolean) => {
-    if (currentUserRole !== "super-admin") return;
     setIsActionLoading(true);
     try {
       await requestJson(`/api/promotion/targets/${target.id}`, {
@@ -500,7 +491,6 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
   };
 
   const deletePromotionTarget = async (target: PromotionApiTarget) => {
-    if (currentUserRole !== "super-admin") return;
     if (!window.confirm(`Delete promotion destination “${target.name}”? Existing delivery history will prevent deletion when required for audit.`)) return;
 
     setIsActionLoading(true);
@@ -632,7 +622,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
           ["overview", BarChart3, "Overview"],
           ["campaigns", Megaphone, "Campaigns"],
           ["create", Plus, "Create Campaign"],
-          ["targets", Target, "Promotion Targets"],
+          ["targets", Target, "My Promotion Targets"],
           ["history", History, "Delivery History"],
         ] as const).map(([key, Icon, label]) => (
           <button
@@ -917,7 +907,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                         </button>
                       );
                     })}
-                    {targets.length === 0 && <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800">No promotion targets exist yet. A Super Admin must configure and verify at least one target before a campaign can launch.</div>}
+                    {targets.length === 0 && <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800">No promotion targets exist yet. Add and verify one of your own targets before launching a campaign.</div>}
                   </div>
 
                   {detail.campaign.status === "running" && detail.deliveries.length > 0 && (
@@ -973,8 +963,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
 
       {section === "targets" && (
         <div className="space-y-5">
-          {currentUserRole === "super-admin" && (
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
               <div className="p-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <Plus className="w-4 h-4 text-sky-600" />
@@ -1056,12 +1045,11 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                 </div>
               )}
             </div>
-          )}
 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Campaign destinations</h3>
+                <h3 className="text-sm font-bold text-slate-900">My my campaign destinations</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   These channels and groups are the destination pool shown when launching a campaign.
                 </p>
@@ -1096,37 +1084,31 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                       {target.errorMessage && <p className="text-[10px] text-rose-600 mt-1.5">{target.errorMessage}</p>}
                     </div>
 
-                    {currentUserRole === "super-admin" ? (
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          disabled={isActionLoading || !target.enabled}
-                          onClick={() => testPromotionTarget(target.id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-3 py-2 text-[10px] font-bold text-sky-700 disabled:text-slate-300 disabled:border-slate-200"
-                        >
-                          <ShieldCheck className="w-3.5 h-3.5" />
-                          {ready ? "Re-test" : "Test connection"}
-                        </button>
-                        <button
-                          disabled={isActionLoading}
-                          onClick={() => setPromotionTargetEnabled(target, !target.enabled)}
-                          className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600"
-                        >
-                          {target.enabled ? "Disable" : "Enable"}
-                        </button>
-                        <button
-                          disabled={isActionLoading}
-                          onClick={() => deletePromotionTarget(target)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Delete
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="text-[10px] font-semibold text-slate-400">
-                        {ready ? "Selectable for campaigns" : "Not selectable"}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        disabled={isActionLoading || !target.enabled}
+                        onClick={() => testPromotionTarget(target.id)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-3 py-2 text-[10px] font-bold text-sky-700 disabled:text-slate-300 disabled:border-slate-200"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        {ready ? "Re-test" : "Test connection"}
+                      </button>
+                      <button
+                        disabled={isActionLoading}
+                        onClick={() => setPromotionTargetEnabled(target, !target.enabled)}
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600"
+                      >
+                        {target.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        disabled={isActionLoading}
+                        onClick={() => deletePromotionTarget(target)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -1134,21 +1116,14 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               {targets.length === 0 && (
                 <div className="p-10 text-center">
                   <Target className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 mt-3">No campaign destinations configured</p>
+                  <p className="text-sm font-bold text-slate-700 mt-3">No my campaign destinations configured</p>
                   <p className="text-xs text-slate-500 mt-1">
-                    {currentUserRole === "super-admin"
-                      ? "Add a Telegram channel or group above, then test its connection."
-                      : "Ask a Super Admin to configure and verify a Promotion destination."}
+                    Add your Telegram channel or group above, then test its connection.
                   </p>
                 </div>
               )}
             </div>
 
-            {currentUserRole === "admin" && (
-              <div className="px-5 py-3 bg-amber-50 border-t border-amber-100 text-[10px] text-amber-700">
-                Admins can select verified campaign destinations but cannot change Telegram infrastructure.
-              </div>
-            )}
           </div>
         </div>
       )}
