@@ -86,19 +86,19 @@ export class UserInboxRepository {
           p.video_url,
           p.telegram_url,
           p.published_at,
-          coalesce(ui.status, p.inbox_default_status, 'pending') as status,
+          ui.status,
           ui.posted_at,
           ui.error_message
-        from public.posts p
-        left join public.user_inbox_items ui
-          on ui.post_id = p.id
-         and ui.owner_principal = $1
-        where
-          coalesce(ui.status, p.inbox_default_status, 'pending') in ('posted', 'approved')
-          or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
+        from public.user_inbox_items ui
+        join public.posts p on p.id = ui.post_id
+        where ui.owner_principal = $1
+          and (
+            ui.status in ('posted', 'approved')
+            or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
+          )
         order by
           p.published_at desc nulls last,
-          p.created_at desc
+          ui.updated_at desc
         limit $2
       `,
       [owner, safeLimit]
@@ -127,24 +127,77 @@ export class UserInboxRepository {
           p.video_url,
           p.telegram_url,
           p.published_at,
-          coalesce(ui.status, p.inbox_default_status, 'pending') as status,
+          ui.status,
           ui.posted_at,
           ui.error_message
-        from public.posts p
-        left join public.user_inbox_items ui
-          on ui.post_id = p.id
-         and ui.owner_principal = $1
-        where p.id = $2
-          and (
-            coalesce(ui.status, p.inbox_default_status, 'pending') in ('posted', 'approved')
-            or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
-          )
+        from public.user_inbox_items ui
+        join public.posts p on p.id = ui.post_id
+        where ui.owner_principal = $1
+          and ui.post_id = $2
         limit 1
       `,
       [owner, cleanPostId]
     );
 
     return rows[0] ?? null;
+  }
+
+  async ensureItems(
+    ownerPrincipal: string,
+    rawPosts: unknown
+  ): Promise<void> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const states = Array.isArray(rawPosts)
+      ? rawPosts.map(normalizeState)
+      : [];
+
+    if (states.length === 0) return;
+
+    const uniqueIds = Array.from(new Set(states.map(state => state.id)));
+    if (uniqueIds.length !== states.length) {
+      throw new Error("Duplicate post IDs are not allowed in an inbox assignment.");
+    }
+
+    const pool = getPostgresPool();
+    const existing = await pool.query(
+      `select id from public.posts where id = any($1::text[])`,
+      [uniqueIds]
+    );
+    const existingIds = new Set(existing.rows.map(row => String(row.id)));
+    const statesForExistingPosts = states.filter(state => existingIds.has(state.id));
+    if (statesForExistingPosts.length === 0) return;
+
+    await pool.query(
+      `
+        insert into public.user_inbox_items
+          (owner_principal, post_id, edited_text, status, posted_at, error_message, created_at, updated_at)
+        select
+          $1,
+          x.id,
+          x.edited_text,
+          x.status,
+          null,
+          null,
+          now(),
+          now()
+        from jsonb_to_recordset($2::jsonb) as x(
+          id text,
+          edited_text text,
+          status text
+        )
+        on conflict (owner_principal, post_id) do nothing
+      `,
+      [
+        owner,
+        JSON.stringify(
+          statesForExistingPosts.map(state => ({
+            id: state.id,
+            edited_text: state.text,
+            status: state.status,
+          }))
+        ),
+      ]
+    );
   }
 
   async upsertStates(
