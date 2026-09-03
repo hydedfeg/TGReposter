@@ -26,12 +26,16 @@ test("promotion dashboard launches campaigns and retries failed deliveries throu
   assert.match(workspace, /Retry all failed/);
 });
 
-test("promotion frontend never handles raw Telegram bot tokens", () => {
+test("promotion frontend never handles raw Telegram bot token values", () => {
   const workspace = read("src/components/PromotionWorkspace.tsx");
   const page = read("src/PromotionPage.tsx");
 
-  assert.equal(workspace.includes("botToken"), false);
-  assert.equal(page.includes("botToken"), false);
+  // A credential reference may name destination.botToken, but the browser never
+  // receives or submits the secret value itself.
+  assert.doesNotMatch(workspace, /\bbotToken\s*:/);
+  assert.doesNotMatch(page, /\bbotToken\s*:/);
+  assert.doesNotMatch(workspace, /type="password"[^>]*bot/i);
+  assert.match(workspace, /credentialRef: "destination\.botToken"/);
   assert.match(workspace, /botAccount\?\.name/);
 });
 
