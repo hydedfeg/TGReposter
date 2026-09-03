@@ -144,3 +144,107 @@ revoke all on table public.promotion_campaigns from anon, authenticated;
 revoke all on table public.promotion_campaign_posts from anon, authenticated;
 revoke all on table public.promotion_deliveries from anon, authenticated;
 revoke all on table public.promotion_delivery_attempts from anon, authenticated;
+
+
+-- Child promotion ownership is derived from its owned parent. This keeps every
+-- row tenant-attributable without trusting caller-supplied owner values.
+create or replace function public.tgreposter_set_promotion_target_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  select owner_principal
+  into new.owner_principal
+  from public.telegram_bot_accounts
+  where id = new.bot_account_id;
+
+  if new.owner_principal is null then
+    raise exception 'PROMOTION_BOT_OWNER_NOT_FOUND';
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.tgreposter_set_campaign_post_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  select owner_principal
+  into new.owner_principal
+  from public.promotion_campaigns
+  where id = new.campaign_id;
+
+  if new.owner_principal is null then
+    raise exception 'PROMOTION_CAMPAIGN_OWNER_NOT_FOUND';
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.tgreposter_set_delivery_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  select owner_principal
+  into new.owner_principal
+  from public.promotion_campaign_posts
+  where id = new.campaign_post_id;
+
+  if new.owner_principal is null then
+    raise exception 'PROMOTION_CAMPAIGN_POST_OWNER_NOT_FOUND';
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function public.tgreposter_set_delivery_attempt_owner()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public
+as $$
+begin
+  select owner_principal
+  into new.owner_principal
+  from public.promotion_deliveries
+  where id = new.delivery_id;
+
+  if new.owner_principal is null then
+    raise exception 'PROMOTION_DELIVERY_OWNER_NOT_FOUND';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_tgreposter_promotion_target_owner on public.promotion_targets;
+create trigger trg_tgreposter_promotion_target_owner
+before insert or update of bot_account_id on public.promotion_targets
+for each row execute function public.tgreposter_set_promotion_target_owner();
+
+drop trigger if exists trg_tgreposter_campaign_post_owner on public.promotion_campaign_posts;
+create trigger trg_tgreposter_campaign_post_owner
+before insert or update of campaign_id on public.promotion_campaign_posts
+for each row execute function public.tgreposter_set_campaign_post_owner();
+
+drop trigger if exists trg_tgreposter_delivery_owner on public.promotion_deliveries;
+create trigger trg_tgreposter_delivery_owner
+before insert or update of campaign_post_id on public.promotion_deliveries
+for each row execute function public.tgreposter_set_delivery_owner();
+
+drop trigger if exists trg_tgreposter_delivery_attempt_owner on public.promotion_delivery_attempts;
+create trigger trg_tgreposter_delivery_attempt_owner
+before insert or update of delivery_id on public.promotion_delivery_attempts
+for each row execute function public.tgreposter_set_delivery_attempt_owner();
+
+revoke execute on function public.tgreposter_set_promotion_target_owner() from public, anon, authenticated;
+revoke execute on function public.tgreposter_set_campaign_post_owner() from public, anon, authenticated;
+revoke execute on function public.tgreposter_set_delivery_owner() from public, anon, authenticated;
+revoke execute on function public.tgreposter_set_delivery_attempt_owner() from public, anon, authenticated;
