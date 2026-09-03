@@ -2,7 +2,6 @@ import mediaService from "./server/services/mediaService";
 import postService from "./server/services/postService";
 import telegramPublisherService from "./server/services/telegramPublisherService";
 import channelRoutes from "./server/routes/channels";
-import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
@@ -27,7 +26,6 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
-const channelRepository = new ChannelRepository();
 
 // Shared interfaces match src/types.ts
 interface SourceChannel {
@@ -486,7 +484,7 @@ const authOrCronMiddleware = async (req: any, res: any, next: any) => {
 
 // Source-channel configuration is infrastructure state and must never be
 // exposed as an unauthenticated database route.
-app.use("/api/channels", authMiddleware, requireSuperAdmin, channelRoutes);
+app.use("/api/channels", authMiddleware, channelRoutes);
 
 // Promotion configuration is server-owned and mounted only after authentication
 // middleware exists. Bot-account mutations and target configuration are further
