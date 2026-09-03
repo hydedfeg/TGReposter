@@ -45,6 +45,8 @@ test("every authenticated user can manage their own Promotion Targets", () => {
   assert.match(workspace, /\/api\/promotion\/targets\/\$\{targetId\}\/test/);
   assert.match(workspace, /My campaign destinations/);
   assert.match(workspace, /Ready for campaigns/);
+  assert.match(workspace, /Register My Destination Bot/);
+  assert.match(workspace, /credentialRef: "destination\.botToken"/);
   assert.doesNotMatch(workspace, /Ask a Super Admin to configure/);
   assert.doesNotMatch(workspace, /Admins can select verified campaign destinations but cannot change/);
 });
