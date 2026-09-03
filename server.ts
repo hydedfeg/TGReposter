@@ -10,7 +10,9 @@ import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
-import { getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
+import { ensureInboxPostsForOwner, getInboxPostsForOwner, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
+import { getUserWorkspaceConfig, saveUserAIConfig, saveUserChannels, saveUserFilters, userWorkspaceRepository } from "./server/services/userWorkspaceService";
+import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
@@ -846,7 +848,7 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const db = await readDb();
   const isSuper = req.user?.role === "super-admin";
-  
+
   const { passwordHash, users, ...safeDb } = db as any;
   const legacyUsers = users
     ? users.map(({ passwordHash, ...user }: any) => ({
@@ -857,18 +859,29 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
   const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
+  let channels = safeDb.channels;
+  let filters = safeDb.filters;
+  let aiConfig = safeDb.aiConfig;
   let destination = safeDb.destination;
   let posts = safeDb.posts;
+
   if (process.env.DATABASE_URL && req.user) {
     try {
-      [destination, posts] = await Promise.all([
+      const [workspace, userDestination, userPosts] = await Promise.all([
+        getUserWorkspaceConfig(req.user),
         getUserDestinationConfig(req.user),
         getUserInboxPosts(req.user),
       ]);
+
+      channels = workspace.channels;
+      filters = workspace.filters;
+      aiConfig = workspace.aiConfig;
+      destination = userDestination;
+      posts = userPosts;
     } catch (error) {
-      console.error("Failed loading user-scoped workspace data:", error);
+      console.error("Failed loading user-owned workspace data:", error);
       return res.status(500).json({
-        error: "Your personal workspace data could not be loaded.",
+        error: "Your workspace data could not be loaded.",
       });
     }
   } else if (destination) {
@@ -880,6 +893,9 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
+    channels,
+    filters,
+    aiConfig,
     destination,
     posts,
     passwordSet:
@@ -899,62 +915,47 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const isSuper = req.user.role === "super-admin";
   const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
 
-  // Sources, filters, and AI remain system-wide super-admin configuration.
-  // Destinations and Content Inbox workflow state are personal to every authenticated user.
-  if (!isSuper) {
-    if (incoming.channels || incoming.filters || incoming.aiConfig) {
-      return res.status(403).json({
-        error: "Forbidden. Admins can edit posts and manage only their own Telegram destinations.",
-      });
-    }
-  }
-
-  if (incoming.channels && isSuper) db.channels = incoming.channels;
-  if (incoming.filters && isSuper) db.filters = incoming.filters;
-  if (incoming.aiConfig && isSuper) db.aiConfig = incoming.aiConfig;
-
-  if (incoming.posts) {
-    if (usesUserScopedWorkspace) {
-      try {
-        await saveUserInboxPosts(req.user, incoming.posts);
-      } catch (error: any) {
-        console.error("Failed saving user-scoped Content Inbox:", error);
-        return res.status(400).json({
-          error: error?.message || "Your Content Inbox changes could not be saved.",
-        });
-      }
-    } else {
-      // Local-development compatibility keeps the legacy global post state.
-      db.posts = incoming.posts;
-    }
-  }
-
   let savedDestination: any = null;
-  if (incoming.destination) {
-    if (usesUserScopedWorkspace) {
-      try {
+
+  if (usesUserScopedWorkspace) {
+    try {
+      const saves: Promise<unknown>[] = [];
+
+      if (incoming.channels) {
+        saves.push(saveUserChannels(req.user, incoming.channels));
+      }
+      if (incoming.filters) {
+        saves.push(saveUserFilters(req.user, incoming.filters));
+      }
+      if (incoming.aiConfig) {
+        saves.push(saveUserAIConfig(req.user, incoming.aiConfig));
+      }
+      if (incoming.posts) {
+        saves.push(saveUserInboxPosts(req.user, incoming.posts));
+      }
+      if (incoming.destination) {
         savedDestination = await saveUserDestinationTargets(
           req.user,
           incoming.destination.targets ?? []
         );
-      } catch (error: any) {
-        console.error("Failed saving user-scoped destinations:", error);
-        return res.status(400).json({
-          error: error?.message || "Your Telegram destinations could not be saved.",
-        });
       }
-    } else if (isSuper) {
-      // Local-development compatibility when the normalized PostgreSQL backend
-      // is not configured.
-      db.destination = incoming.destination;
-    } else {
-      return res.status(403).json({
-        error: "Personal destinations require the production database backend.",
+
+      await Promise.all(saves);
+    } catch (error: any) {
+      console.error("Failed saving user-owned workspace data:", error);
+      return res.status(400).json({
+        error: error?.message || "Your workspace changes could not be saved.",
       });
     }
+  } else {
+    // Local-development compatibility keeps the previous single-user state model.
+    if (incoming.channels) db.channels = incoming.channels;
+    if (incoming.filters) db.filters = incoming.filters;
+    if (incoming.aiConfig) db.aiConfig = incoming.aiConfig;
+    if (incoming.posts) db.posts = incoming.posts;
+    if (incoming.destination) db.destination = incoming.destination;
+    await writeDb(db);
   }
-
-  await writeDb(db);
 
   const { passwordHash, users, ...safeDb } = db as any;
   const legacyUsers = users
@@ -966,20 +967,30 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const supabaseUsers = isSuper ? await listSupabaseAppUsers() : [];
   const safeUsers = [...supabaseUsers, ...legacyUsers];
 
+  let channels = safeDb.channels;
+  let filters = safeDb.filters;
+  let aiConfig = safeDb.aiConfig;
   let destination = safeDb.destination;
   let posts = safeDb.posts;
+
   if (usesUserScopedWorkspace) {
     try {
-      [destination, posts] = await Promise.all([
+      const [workspace, userDestination, userPosts] = await Promise.all([
+        getUserWorkspaceConfig(req.user),
         savedDestination
           ? Promise.resolve(savedDestination)
           : getUserDestinationConfig(req.user),
         getUserInboxPosts(req.user),
       ]);
+      channels = workspace.channels;
+      filters = workspace.filters;
+      aiConfig = workspace.aiConfig;
+      destination = userDestination;
+      posts = userPosts;
     } catch (error) {
-      console.error("Failed reloading user-scoped workspace data:", error);
+      console.error("Failed reloading user-owned workspace data:", error);
       return res.status(500).json({
-        error: "Your personal workspace changes were saved but could not be reloaded.",
+        error: "Your workspace changes were saved but could not be reloaded.",
       });
     }
   } else if (destination) {
@@ -991,6 +1002,9 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   res.json({
     ...safeDb,
+    channels,
+    filters,
+    aiConfig,
     destination,
     posts,
     passwordSet:
@@ -1347,10 +1361,21 @@ res.json({
 });
 
 // Trigger AI Content Curation (Gemini or OpenRouter)
-app.post("/api/ai/curate", authMiddleware, async (req, res) => {
+app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
   const db = await readDb();
-  const aiProvider = db.aiConfig?.provider || "gemini";
-  const aiModel = db.aiConfig?.model || "gemini-3.5-flash";
+  let aiProvider = db.aiConfig?.provider || "gemini";
+  let aiModel = db.aiConfig?.model || "gemini-3.5-flash";
+
+  if (process.env.DATABASE_URL && req.user) {
+    try {
+      const workspace = await getUserWorkspaceConfig(req.user);
+      aiProvider = workspace.aiConfig.provider;
+      aiModel = workspace.aiConfig.model;
+    } catch (error) {
+      console.error("Failed loading user AI configuration:", error);
+      return res.status(500).json({ error: "Your AI configuration could not be loaded." });
+    }
+  }
 
   const { action, text, context } = req.body;
   if (!text) {
