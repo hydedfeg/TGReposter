@@ -58,9 +58,9 @@ $$;
 
 -- A Telegram username may be monitored by more than one user, but every
 -- subscription row belongs to exactly one user.
-alter table public.source_channels
-  drop constraint if exists source_channels_username_key;
-drop index if exists public.source_channels_username_key;
+-- Keep the legacy global username uniqueness during the prepare phase so the
+-- currently deployed backend remains compatible. It is removed by the
+-- finalize migration after the owner-aware backend is live.
 create unique index if not exists source_channels_owner_username_key
   on public.source_channels (owner_principal, username);
 
@@ -72,9 +72,8 @@ create unique index if not exists ai_settings_owner_principal_key
 
 -- Promotion credential references may repeat between users because ownership,
 -- not a global identifier, is the isolation boundary.
-alter table public.telegram_bot_accounts
-  drop constraint if exists telegram_bot_accounts_credential_ref_key;
-drop index if exists public.telegram_bot_accounts_credential_ref_key;
+-- Keep legacy credential_ref uniqueness during the prepare phase for rollout
+-- compatibility. The finalize migration removes it after backend cutover.
 create unique index if not exists telegram_bot_accounts_owner_credential_ref_key
   on public.telegram_bot_accounts (owner_principal, credential_ref);
 
@@ -96,18 +95,10 @@ create index if not exists idx_filters_owner_updated
 create index if not exists idx_ai_settings_owner_updated
   on public.ai_settings (owner_principal, updated_at desc);
 
--- Existing Destinations were already backfilled in the previous migration.
--- Enforce the same no-orphan invariant everywhere.
-alter table public.destination_targets alter column owner_principal set not null;
-alter table public.source_channels alter column owner_principal set not null;
-alter table public.filters alter column owner_principal set not null;
-alter table public.ai_settings alter column owner_principal set not null;
-alter table public.telegram_bot_accounts alter column owner_principal set not null;
-alter table public.promotion_targets alter column owner_principal set not null;
-alter table public.promotion_campaigns alter column owner_principal set not null;
-alter table public.promotion_campaign_posts alter column owner_principal set not null;
-alter table public.promotion_deliveries alter column owner_principal set not null;
-alter table public.promotion_delivery_attempts alter column owner_principal set not null;
+-- The prepare phase intentionally leaves newly-added owner columns nullable.
+-- This keeps the currently deployed legacy backend operational until the new
+-- owner-aware backend is live. The finalize migration backfills any race-window
+-- rows, enforces NOT NULL, and removes obsolete global uniqueness constraints.
 
 comment on column public.source_channels.owner_principal is
   'Server-derived owner for this user source subscription.';
