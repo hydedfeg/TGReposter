@@ -1,13 +1,27 @@
 import { getPostgresPool } from "../utils/postgresPool";
 
-const BACKEND_RUNTIME_TABLES = [
+const TENANT_TABLES = [
   "source_channels",
   "filters",
   "destination_targets",
   "ai_settings",
-  "posts",
   "user_inbox_items",
+  "telegram_bot_accounts",
+  "promotion_targets",
+  "promotion_campaigns",
+  "promotion_campaign_posts",
+  "promotion_deliveries",
+  "promotion_delivery_attempts",
+] as const;
+
+const SYSTEM_TABLES = [
+  "posts",
   "curator_settings",
+] as const;
+
+const BACKEND_RUNTIME_TABLES = [
+  ...TENANT_TABLES,
+  ...SYSTEM_TABLES,
 ] as const;
 
 type BackendRuntimeTable = (typeof BACKEND_RUNTIME_TABLES)[number];
@@ -18,24 +32,17 @@ export interface DatabaseHealth {
     ready: boolean;
     readyCount: number;
     requiredCount: number;
-    tables: Array<{ name: BackendRuntimeTable; ready: boolean }>;
+    tables: Array<{
+      name: BackendRuntimeTable;
+      ready: boolean;
+      kind: "tenant" | "system";
+    }>;
   };
-  counts: {
-    sourceChannels: number;
-    destinationTargets: number;
-    inboxPosts: number;
-    postedPosts: number;
-    userInboxItems: number;
-  };
-  workspace: {
+  tenancy: {
     ready: boolean;
-    destinationOwnershipReady: boolean;
-    inboxIsolationReady: boolean;
-    destinationOwners: number;
-    unownedDestinationTargets: number;
-    inboxOwners: number;
-    activeSupabaseUsers: number;
-    legacyUsers: number;
+    ownerScopedCount: number;
+    expectedCount: number;
+    orphanRows: number;
   };
   automation: {
     ready: boolean;
@@ -65,24 +72,19 @@ function emptyHealth(error?: string): DatabaseHealth {
       ready: false,
       readyCount: 0,
       requiredCount: BACKEND_RUNTIME_TABLES.length,
-      tables: BACKEND_RUNTIME_TABLES.map(name => ({ name, ready: false })),
+      tables: BACKEND_RUNTIME_TABLES.map(name => ({
+        name,
+        ready: false,
+        kind: (TENANT_TABLES as readonly string[]).includes(name)
+          ? "tenant"
+          : "system",
+      })),
     },
-    counts: {
-      sourceChannels: 0,
-      destinationTargets: 0,
-      inboxPosts: 0,
-      postedPosts: 0,
-      userInboxItems: 0,
-    },
-    workspace: {
+    tenancy: {
       ready: false,
-      destinationOwnershipReady: false,
-      inboxIsolationReady: false,
-      destinationOwners: 0,
-      unownedDestinationTargets: 0,
-      inboxOwners: 0,
-      activeSupabaseUsers: 0,
-      legacyUsers: 0,
+      ownerScopedCount: 0,
+      expectedCount: TENANT_TABLES.length,
+      orphanRows: 0,
     },
     automation: {
       ready: false,
@@ -106,153 +108,80 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
 
   try {
     const pool = getPostgresPool();
-    const schemaResult = await pool.query(
+
+    const tableResult = await pool.query(
       `
-        select
-          to_regclass('public.source_channels') is not null as source_channels,
-          to_regclass('public.filters') is not null as filters,
-          to_regclass('public.destination_targets') is not null as destination_targets,
-          to_regclass('public.ai_settings') is not null as ai_settings,
-          to_regclass('public.posts') is not null as posts,
-          to_regclass('public.user_inbox_items') is not null as user_inbox_items,
-          to_regclass('public.curator_settings') is not null as curator_settings,
-          exists (
-            select 1
-            from information_schema.columns
-            where table_schema = 'public'
-              and table_name = 'destination_targets'
-              and column_name = 'owner_principal'
-          ) as destination_owner_column
-      `
+        select table_name
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = any($1::text[])
+      `,
+      [BACKEND_RUNTIME_TABLES]
+    );
+    const existingTables = new Set(
+      tableResult.rows.map(row => String(row.table_name))
     );
 
-    const schemaRow = schemaResult.rows[0] ?? {};
     const tables = BACKEND_RUNTIME_TABLES.map(name => ({
       name,
-      ready: schemaRow[name] === true,
+      ready: existingTables.has(name),
+      kind: (TENANT_TABLES as readonly string[]).includes(name)
+        ? ("tenant" as const)
+        : ("system" as const),
     }));
     const readyCount = tables.filter(table => table.ready).length;
-    const runtimeReady = readyCount === BACKEND_RUNTIME_TABLES.length;
-    const destinationOwnershipReady =
-      schemaRow.destination_targets === true &&
-      schemaRow.destination_owner_column === true;
-    const inboxIsolationReady = schemaRow.user_inbox_items === true;
 
     const health: DatabaseHealth = {
       ...emptyHealth(),
       backendMode: "normalized-postgres",
       runtime: {
-        ready: runtimeReady,
+        ready: readyCount === BACKEND_RUNTIME_TABLES.length,
         readyCount,
         requiredCount: BACKEND_RUNTIME_TABLES.length,
         tables,
       },
-      workspace: {
-        ...emptyHealth().workspace,
-        destinationOwnershipReady,
-        inboxIsolationReady,
-        ready: destinationOwnershipReady && inboxIsolationReady,
-      },
     };
 
-    if (
-      schemaRow.source_channels === true &&
-      schemaRow.destination_targets === true &&
-      schemaRow.posts === true
-    ) {
-      const countsResult = await pool.query(
-        `
-          select
-            (select count(*) from public.source_channels)::bigint as source_channels,
-            (select count(*) from public.destination_targets)::bigint as destination_targets,
-            (
-              select count(*)
-              from public.posts
-              where coalesce(published_at, created_at) >= now() - interval '24 hours'
-            )::bigint as inbox_posts,
-            (
-              select count(distinct owner_principal)
-              from public.destination_targets
-              where owner_principal is not null
-            )::bigint as destination_owners,
-            (
-              select count(*)
-              from public.destination_targets
-              where owner_principal is null
-            )::bigint as unowned_destination_targets,
-            (
-              select count(*)
-              from public.profiles
-              where is_active = true
-            )::bigint as active_supabase_users,
-            (
-              select count(*)
-              from public.curator_settings c
-              cross join lateral jsonb_array_elements(
-                coalesce(c.data->'users', '[]'::jsonb)
-              ) as user_record
-              where c.id = 'default'
-                and coalesce((user_record->>'isActive')::boolean, true) = true
-            )::bigint as legacy_users
-        `
+    const ownerColumnsResult = await pool.query(
+      `
+        select table_name
+        from information_schema.columns
+        where table_schema = 'public'
+          and column_name = 'owner_principal'
+          and table_name = any($1::text[])
+          and is_nullable = 'NO'
+      `,
+      [TENANT_TABLES]
+    );
+    const ownerScopedTables = ownerColumnsResult.rows.map(row =>
+      String(row.table_name)
+    );
+    const ownerScopedCount = ownerScopedTables.length;
+
+    let orphanRows = 0;
+    for (const tableName of ownerScopedTables) {
+      // tableName is selected from the fixed TENANT_TABLES allow-list above.
+      const orphanResult = await pool.query(
+        `select count(*)::bigint as count
+         from public."${tableName}"
+         where owner_principal is null`
       );
-      const counts = countsResult.rows[0] ?? {};
-
-      let userInboxItems = 0;
-      let postedPosts = 0;
-      let inboxOwners = 0;
-
-      if (inboxIsolationReady) {
-        const inboxResult = await pool.query(
-          `
-            select
-              count(*)::bigint as user_inbox_items,
-              count(*) filter (where status = 'posted')::bigint as posted_posts,
-              count(distinct owner_principal)::bigint as inbox_owners
-            from public.user_inbox_items
-          `
-        );
-        const inboxCounts = inboxResult.rows[0] ?? {};
-        userInboxItems = Number(inboxCounts.user_inbox_items ?? 0);
-        postedPosts = Number(inboxCounts.posted_posts ?? 0);
-        inboxOwners = Number(inboxCounts.inbox_owners ?? 0);
-      } else {
-        const legacyPostedResult = await pool.query(
-          `
-            select count(*)::bigint as posted_posts
-            from public.posts
-            where status = 'posted'
-          `
-        );
-        postedPosts = Number(legacyPostedResult.rows[0]?.posted_posts ?? 0);
-      }
-
-      health.counts = {
-        sourceChannels: Number(counts.source_channels ?? 0),
-        destinationTargets: Number(counts.destination_targets ?? 0),
-        inboxPosts: Number(counts.inbox_posts ?? 0),
-        postedPosts,
-        userInboxItems,
-      };
-      health.workspace = {
-        ready: destinationOwnershipReady && inboxIsolationReady,
-        destinationOwnershipReady,
-        inboxIsolationReady,
-        destinationOwners: Number(counts.destination_owners ?? 0),
-        unownedDestinationTargets: Number(
-          counts.unowned_destination_targets ?? 0
-        ),
-        inboxOwners,
-        activeSupabaseUsers: Number(counts.active_supabase_users ?? 0),
-        legacyUsers: Number(counts.legacy_users ?? 0),
-      };
+      orphanRows += Number(orphanResult.rows[0]?.count ?? 0);
     }
 
-    const existingBackendTables = BACKEND_RUNTIME_TABLES.filter(
-      tableName => schemaRow[tableName] === true
-    );
+    health.tenancy = {
+      ready:
+        ownerScopedCount === TENANT_TABLES.length &&
+        orphanRows === 0,
+      ownerScopedCount,
+      expectedCount: TENANT_TABLES.length,
+      orphanRows,
+    };
 
-    if (existingBackendTables.length > 0) {
+    const securityTables = BACKEND_RUNTIME_TABLES.filter(name =>
+      existingTables.has(name)
+    );
+    if (securityTables.length > 0) {
       const securityResult = await pool.query(
         `
           select c.relname as table_name,
@@ -274,15 +203,19 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
           where n.nspname = 'public'
             and c.relname = any($1::text[])
         `,
-        [existingBackendTables]
+        [securityTables]
       );
 
       const protectedCount = securityResult.rows.filter(
-        row => row.rls_enabled && !row.anon_has_dml && !row.authenticated_has_dml
+        row =>
+          row.rls_enabled &&
+          !row.anon_has_dml &&
+          !row.authenticated_has_dml
       ).length;
+
       health.security = {
         ready:
-          existingBackendTables.length === BACKEND_RUNTIME_TABLES.length &&
+          securityTables.length === BACKEND_RUNTIME_TABLES.length &&
           protectedCount === BACKEND_RUNTIME_TABLES.length,
         protectedCount,
         expectedCount: BACKEND_RUNTIME_TABLES.length,
@@ -320,7 +253,10 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
             order by d.start_time desc
             limit 1
           ) r on true
-          where j.jobname in ('tgreposter-inbox-import', 'tgreposter-inbox-cleanup')
+          where j.jobname in (
+            'tgreposter-inbox-import',
+            'tgreposter-inbox-cleanup'
+          )
           order by j.jobname
         `
       );
@@ -329,7 +265,9 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
         name: String(row.jobname),
         schedule: String(row.schedule),
         active: !!row.active,
-        ...(row.last_status ? { lastStatus: String(row.last_status) } : {}),
+        ...(row.last_status
+          ? { lastStatus: String(row.last_status) }
+          : {}),
         ...(row.last_start_time
           ? { lastRunAt: new Date(row.last_start_time).toISOString() }
           : {}),
@@ -339,19 +277,19 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
       }));
     }
 
-    const requiredJobNames = new Set([
+    const requiredJobs = new Set([
       "tgreposter-inbox-import",
       "tgreposter-inbox-cleanup",
     ]);
-    const activeRequiredJobs = jobs.filter(
-      job => requiredJobNames.has(job.name) && job.active
+    const activeRequired = jobs.filter(
+      job => requiredJobs.has(job.name) && job.active
     );
 
     health.automation = {
       ready:
         pgCronInstalled &&
         pgNetInstalled &&
-        activeRequiredJobs.length === requiredJobNames.size,
+        activeRequired.length === requiredJobs.size,
       pgCronInstalled,
       pgNetInstalled,
       jobs,
