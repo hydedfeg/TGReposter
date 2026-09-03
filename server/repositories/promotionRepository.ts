@@ -1,5 +1,4 @@
-import { Pool } from "pg";
-import { getPostgresConnectionString } from "../utils/postgresConnection";
+import { getPostgresPool } from "../utils/postgresPool";
 
 export type TelegramBotCredentialSource = "legacy_settings" | "environment" | "vault";
 export type PromotionTargetChatType = "channel" | "group" | "supergroup";
@@ -65,15 +64,9 @@ export interface UpdatePromotionTargetInput {
   errorMessage?: string | null;
 }
 
-let pool: Pool | null = null;
-
-function getPool(): Pool {
-  const connectionString = getPostgresConnectionString();
-
-  if (!pool) {
-    pool = new Pool({ connectionString, max: 5 });
-  }
-  return pool;
+function cleanOwner(ownerPrincipal?: string) {
+  const owner = ownerPrincipal?.trim().toLowerCase();
+  return owner || null;
 }
 
 function mapBotAccount(row: any): TelegramBotAccountRecord {
@@ -106,51 +99,88 @@ function mapTarget(row: any): PromotionTargetRecord {
 }
 
 export class PromotionRepository {
+  private readonly ownerPrincipal: string | null;
+
+  constructor(ownerPrincipal?: string) {
+    this.ownerPrincipal = cleanOwner(ownerPrincipal);
+  }
+
+  private requireOwner() {
+    if (!this.ownerPrincipal) {
+      throw new Error("Promotion owner principal is required for this operation.");
+    }
+    return this.ownerPrincipal;
+  }
+
   async listBotAccounts(): Promise<TelegramBotAccountRecord[]> {
-    const result = await getPool().query(`
-      select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
-      from public.telegram_bot_accounts
-      order by created_at asc
-    `);
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `
+        select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
+        from public.telegram_bot_accounts
+        where owner_principal = $1
+        order by created_at asc
+      `,
+      [owner]
+    );
     return result.rows.map(mapBotAccount);
   }
 
   async getBotAccount(id: string): Promise<TelegramBotAccountRecord | null> {
-    const result = await getPool().query(
-      `select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
-       from public.telegram_bot_accounts where id = $1 limit 1`,
-      [id]
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `
+        select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
+        from public.telegram_bot_accounts
+        where id = $1 and owner_principal = $2
+        limit 1
+      `,
+      [id, owner]
     );
     return result.rows[0] ? mapBotAccount(result.rows[0]) : null;
   }
 
   async createBotAccount(input: CreateBotAccountInput): Promise<TelegramBotAccountRecord> {
-    const result = await getPool().query(
-      `insert into public.telegram_bot_accounts
-        (name, bot_username, credential_source, credential_ref, enabled)
-       values ($1, $2, $3, $4, $5)
-       returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at`,
-      [input.name, input.botUsername ?? null, input.credentialSource, input.credentialRef, input.enabled ?? true]
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `
+        insert into public.telegram_bot_accounts
+          (owner_principal, name, bot_username, credential_source, credential_ref, enabled)
+        values ($1,$2,$3,$4,$5,$6)
+        returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
+      `,
+      [
+        owner,
+        input.name,
+        input.botUsername ?? null,
+        input.credentialSource,
+        input.credentialRef,
+        input.enabled ?? true,
+      ]
     );
     return mapBotAccount(result.rows[0]);
   }
 
   async updateBotAccount(id: string, input: UpdateBotAccountInput): Promise<TelegramBotAccountRecord | null> {
+    const owner = this.requireOwner();
     const current = await this.getBotAccount(id);
     if (!current) return null;
 
-    const result = await getPool().query(
-      `update public.telegram_bot_accounts
-       set name = $2,
-           bot_username = $3,
-           credential_source = $4,
-           credential_ref = $5,
-           enabled = $6,
-           updated_at = now()
-       where id = $1
-       returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at`,
+    const result = await getPostgresPool().query(
+      `
+        update public.telegram_bot_accounts
+        set name = $3,
+            bot_username = $4,
+            credential_source = $5,
+            credential_ref = $6,
+            enabled = $7,
+            updated_at = now()
+        where id = $1 and owner_principal = $2
+        returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
+      `,
       [
         id,
+        owner,
         input.name ?? current.name,
         input.botUsername === undefined ? current.botUsername ?? null : input.botUsername,
         input.credentialSource ?? current.credentialSource,
@@ -162,63 +192,99 @@ export class PromotionRepository {
   }
 
   async deleteBotAccount(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.telegram_bot_accounts where id = $1`, [id]);
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `delete from public.telegram_bot_accounts where id = $1 and owner_principal = $2`,
+      [id, owner]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
   async listTargets(): Promise<PromotionTargetRecord[]> {
-    const result = await getPool().query(`
-      select id, bot_account_id, name, chat_id, chat_type, enabled,
-             connection_status, last_checked_at, error_message, created_at, updated_at
-      from public.promotion_targets
-      order by created_at asc
-    `);
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `
+        select id, bot_account_id, name, chat_id, chat_type, enabled,
+               connection_status, last_checked_at, error_message, created_at, updated_at
+        from public.promotion_targets
+        where owner_principal = $1
+        order by created_at asc
+      `,
+      [owner]
+    );
     return result.rows.map(mapTarget);
   }
 
   async getTarget(id: string): Promise<PromotionTargetRecord | null> {
-    const result = await getPool().query(
-      `select id, bot_account_id, name, chat_id, chat_type, enabled,
-              connection_status, last_checked_at, error_message, created_at, updated_at
-       from public.promotion_targets where id = $1 limit 1`,
-      [id]
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `
+        select id, bot_account_id, name, chat_id, chat_type, enabled,
+               connection_status, last_checked_at, error_message, created_at, updated_at
+        from public.promotion_targets
+        where id = $1 and owner_principal = $2
+        limit 1
+      `,
+      [id, owner]
     );
     return result.rows[0] ? mapTarget(result.rows[0]) : null;
   }
 
   async createTarget(input: CreatePromotionTargetInput): Promise<PromotionTargetRecord> {
-    const result = await getPool().query(
-      `insert into public.promotion_targets
-        (bot_account_id, name, chat_id, chat_type, enabled)
-       values ($1, $2, $3, $4, $5)
-       returning id, bot_account_id, name, chat_id, chat_type, enabled,
-                 connection_status, last_checked_at, error_message, created_at, updated_at`,
-      [input.botAccountId, input.name, input.chatId, input.chatType ?? null, input.enabled ?? true]
+    const owner = this.requireOwner();
+    const account = await this.getBotAccount(input.botAccountId);
+    if (!account) throw new Error("Promotion bot account does not belong to this workspace.");
+
+    const result = await getPostgresPool().query(
+      `
+        insert into public.promotion_targets
+          (owner_principal, bot_account_id, name, chat_id, chat_type, enabled)
+        values ($1,$2,$3,$4,$5,$6)
+        returning id, bot_account_id, name, chat_id, chat_type, enabled,
+                  connection_status, last_checked_at, error_message, created_at, updated_at
+      `,
+      [
+        owner,
+        input.botAccountId,
+        input.name,
+        input.chatId,
+        input.chatType ?? null,
+        input.enabled ?? true,
+      ]
     );
     return mapTarget(result.rows[0]);
   }
 
   async updateTarget(id: string, input: UpdatePromotionTargetInput): Promise<PromotionTargetRecord | null> {
+    const owner = this.requireOwner();
     const current = await this.getTarget(id);
     if (!current) return null;
 
-    const result = await getPool().query(
-      `update public.promotion_targets
-       set bot_account_id = $2,
-           name = $3,
-           chat_id = $4,
-           chat_type = $5,
-           enabled = $6,
-           connection_status = $7,
-           last_checked_at = $8,
-           error_message = $9,
-           updated_at = now()
-       where id = $1
-       returning id, bot_account_id, name, chat_id, chat_type, enabled,
-                 connection_status, last_checked_at, error_message, created_at, updated_at`,
+    const nextBotAccountId = input.botAccountId ?? current.botAccountId;
+    if (!(await this.getBotAccount(nextBotAccountId))) {
+      throw new Error("Promotion bot account does not belong to this workspace.");
+    }
+
+    const result = await getPostgresPool().query(
+      `
+        update public.promotion_targets
+        set bot_account_id = $3,
+            name = $4,
+            chat_id = $5,
+            chat_type = $6,
+            enabled = $7,
+            connection_status = $8,
+            last_checked_at = $9,
+            error_message = $10,
+            updated_at = now()
+        where id = $1 and owner_principal = $2
+        returning id, bot_account_id, name, chat_id, chat_type, enabled,
+                  connection_status, last_checked_at, error_message, created_at, updated_at
+      `,
       [
         id,
-        input.botAccountId ?? current.botAccountId,
+        owner,
+        nextBotAccountId,
         input.name ?? current.name,
         input.chatId ?? current.chatId,
         input.chatType === undefined ? current.chatType ?? null : input.chatType,
@@ -232,9 +298,15 @@ export class PromotionRepository {
   }
 
   async deleteTarget(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.promotion_targets where id = $1`, [id]);
+    const owner = this.requireOwner();
+    const result = await getPostgresPool().query(
+      `delete from public.promotion_targets where id = $1 and owner_principal = $2`,
+      [id, owner]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 }
 
+// Kept only for dependency compatibility in tests. Production routes always
+// instantiate PromotionRepository with the authenticated owner principal.
 export default new PromotionRepository();
