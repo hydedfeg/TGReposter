@@ -81,7 +81,7 @@ export default function UserManagement({
       const ok = await onAddUser(cleanEmail, password, role);
       if (ok) {
         setSuccess(
-          `Workspace member "${cleanEmail}" was provisioned with a private Content Inbox and Destinations workspace.`
+          `Workspace member "${cleanEmail}" was provisioned with a fully isolated personal workspace.`
         );
         setEmail("");
         setPassword("");
@@ -98,7 +98,7 @@ export default function UserManagement({
 
   const handleDelete = async (identity: string) => {
     const confirmed = window.confirm(
-      `Revoke access for "${identity}"? Their personal Content Inbox and Destinations data will be retained for audit/recovery, but they will no longer be able to sign in.`
+      `Revoke access for "${identity}"? Their complete personal workspace will be retained for audit/recovery, but they will no longer be able to sign in.`
     );
     if (!confirmed) return;
 
@@ -133,10 +133,10 @@ export default function UserManagement({
               </h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Every member has an isolated publishing workspace: their own Content Inbox,
-              review status, publishing history, Telegram bot credential, and Destinations.
-              Sources, Filters, AI Configuration, Team, and System Settings remain shared
-              system controls managed by Super-Admins.
+              Every member owns a fully isolated workspace: Sources, Filters, AI configuration,
+              Content Inbox, Destinations, Promotions, publishing history, and dashboard data.
+              No member's application data is reused as another member's configuration or content.
+              Super-Admins only receive additional Team & Access and infrastructure-health controls.
             </p>
           </div>
 
@@ -153,30 +153,30 @@ export default function UserManagement({
           <article className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
             <div className="flex items-center gap-2">
               <Inbox className="h-4 w-4 text-sky-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Private Content Inbox</h3>
+              <h3 className="text-sm font-bold text-slate-900">Private Content & Sources</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Edits, approvals, archives, publish results, and history belong only to that member.
+              Sources, filters, collected content, edits, approvals, archives, and history belong to that member.
             </p>
           </article>
 
           <article className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Private Destinations</h3>
+              <h3 className="text-sm font-bold text-slate-900">Private Publishing & Promotions</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Each member owns a separate Telegram bot credential and destination list.
+              Each member owns separate Telegram credentials, destinations, promotion targets, and campaigns.
             </p>
           </article>
 
           <article className="rounded-xl border border-violet-100 bg-violet-50/70 p-4">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-violet-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Shared System Setup</h3>
+              <h3 className="text-sm font-bold text-slate-900">Administrative Controls Only</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Super-Admins control shared sources, filters, AI provider settings, and platform configuration.
+              Super-Admins manage the account directory and infrastructure health; they do not provide shared application configuration to other users.
             </p>
           </article>
         </div>
@@ -277,8 +277,8 @@ export default function UserManagement({
               </p>
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 {role === "super-admin"
-                  ? "Gets a private Inbox and Destinations plus permission to manage shared sources, filters, AI, team members, and system settings."
-                  : "Gets a private Inbox and Destinations and can review, edit, approve, archive, and publish content. Shared system configuration stays read-only/unavailable."}
+                  ? "Gets a complete private workspace (Sources, Filters, AI, Inbox, Destinations, Promotions and History) plus Team & Access and infrastructure-health administration."
+                  : "Gets a complete private workspace: Sources, Filters, AI, Inbox, Destinations, Promotions and Publishing History. Other users' application data is never exposed."}
               </p>
             </div>
 
@@ -391,7 +391,7 @@ export default function UserManagement({
                         {isSupabase ? "Supabase Auth" : "Legacy identity"}
                       </span>
                       <span>·</span>
-                      <span>Private Inbox + Destinations</span>
+                      <span>Fully isolated personal workspace</span>
                     </div>
 
                     {!isSupabase ? (
