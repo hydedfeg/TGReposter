@@ -15,30 +15,45 @@ const healthSource = fs.readFileSync(
 );
 const serverSource = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
 
-test("System Settings explains shared vs personal multi-user boundaries", () => {
-  assert.match(systemSource, /System Architecture & Health/);
-  assert.match(systemSource, /Shared Platform Data/);
-  assert.match(systemSource, /Personal Workspace Data/);
-  assert.match(systemSource, /Runtime Data Boundaries/);
-  assert.match(systemSource, /Workspace Isolation Checks/);
-  assert.match(systemSource, /Shared Super-Admin scope/);
+test("System Settings is infrastructure-only and rejects shared application data language", () => {
+  assert.match(systemSource, /Infrastructure & Isolation Health/);
+  assert.match(systemSource, /no shared user application configuration/i);
+  assert.match(systemSource, /Per-user Ownership Check/);
+  assert.match(systemSource, /Internal System Storage/);
+  assert.match(systemSource, /No shared application data/);
+  assert.doesNotMatch(systemSource, /Shared Platform Data/);
+  assert.doesNotMatch(systemSource, /Shared Sources/);
+  assert.doesNotMatch(systemSource, /Shared Filters/);
+  assert.doesNotMatch(systemSource, /Shared AI Settings/);
 });
 
-test("System Settings recognizes user-owned destination and inbox tables", () => {
-  assert.match(healthSource, /"destination_targets"/);
-  assert.match(healthSource, /"user_inbox_items"/);
-  assert.match(healthSource, /destinationOwnershipReady/);
-  assert.match(healthSource, /inboxIsolationReady/);
-  assert.match(healthSource, /unownedDestinationTargets/);
-  assert.match(healthSource, /count\(distinct owner_principal\)/);
+test("System health verifies ownership for every user application domain", () => {
+  for (const table of [
+    "source_channels",
+    "filters",
+    "destination_targets",
+    "ai_settings",
+    "user_inbox_items",
+    "telegram_bot_accounts",
+    "promotion_targets",
+    "promotion_campaigns",
+    "promotion_campaign_posts",
+    "promotion_deliveries",
+    "promotion_delivery_attempts",
+  ]) {
+    assert.match(healthSource, new RegExp(`"${table}"`));
+  }
+  assert.match(healthSource, /owner_principal/);
+  assert.match(healthSource, /orphanRows/);
 });
 
-test("System Settings counts published state from the user inbox after cutover", () => {
-  assert.match(
-    healthSource,
-    /count\(\*\) filter \(where status = 'posted'\).*posted_posts/s
-  );
-  assert.match(healthSource, /from public\.user_inbox_items/);
+test("System Settings does not expose cross-user application record counts", () => {
+  assert.doesNotMatch(systemSource, /Destination Targets/);
+  assert.doesNotMatch(systemSource, /Inbox Workflow Rows/);
+  assert.doesNotMatch(systemSource, /Published Workflow/);
+  assert.doesNotMatch(systemSource, /Source Channels/);
+  assert.doesNotMatch(healthSource, /destinationOwners/);
+  assert.doesNotMatch(healthSource, /inboxOwners/);
 });
 
 test("platform health endpoint is restricted to super-admins", () => {
@@ -48,8 +63,8 @@ test("platform health endpoint is restricted to super-admins", () => {
   );
 });
 
-test("System Settings never presents personal bot credentials as global config", () => {
-  assert.match(systemSource, /Personal bot tokens and destination details are/);
-  assert.match(systemSource, /user-scoped Vault secrets/);
-  assert.doesNotMatch(systemSource, /Telegram Bot Token Configuration/);
+test("internal ingestion cache is not treated as user-visible shared content", () => {
+  assert.match(systemSource, /Internal Ingestion Cache/);
+  assert.match(systemSource, /invisible to a user until that user/);
+  assert.match(systemSource, /own source/);
 });
