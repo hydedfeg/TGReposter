@@ -14,7 +14,7 @@ import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 
-const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "ai", "team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
