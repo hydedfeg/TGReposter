@@ -50,3 +50,19 @@ export async function saveUserInboxPosts(
   const ownerPrincipal = ownerPrincipalForUser(user);
   await userInboxRepository.upsertStates(ownerPrincipal, posts);
 }
+
+
+export async function getInboxPostsForOwner(
+  ownerPrincipal: string,
+  limit = 400
+) {
+  const rows = await userInboxRepository.list(ownerPrincipal, limit);
+  return rows.map(mapRow);
+}
+
+export async function ensureInboxPostsForOwner(
+  ownerPrincipal: string,
+  posts: unknown
+) {
+  await userInboxRepository.ensureItems(ownerPrincipal, posts);
+}
