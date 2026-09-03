@@ -54,33 +54,33 @@ interface NavItem {
 }
 
 const contentItems: NavItem[] = [
-  { view: "dashboard", label: "Dashboard", icon: Home },
+  { view: "dashboard", label: "My Dashboard", icon: Home },
   { view: "feed", label: "My Content Inbox", icon: Inbox },
-  { view: "promotion", label: "Promotions", icon: Megaphone },
-  { view: "history", label: "Publishing History", icon: History },
+  { view: "promotion", label: "My Promotions", icon: Megaphone },
+  { view: "history", label: "My Publishing History", icon: History },
 ];
 
 const personalItems: NavItem[] = [
+  { view: "channels", label: "My Sources", icon: Radio },
+  { view: "filters", label: "My Filters", icon: Filter },
   { view: "destination", label: "My Destinations", icon: Bot },
+  { view: "ai", label: "My AI Configuration", icon: Sparkles },
 ];
 
 const setupItems: NavItem[] = [
-  { view: "channels", label: "Sources", icon: Radio },
-  { view: "filters", label: "Filters", icon: Filter },
-  { view: "ai", label: "AI Configuration", icon: Sparkles },
   { view: "team", label: "Team & Access", icon: Users },
   { view: "database", label: "System Settings", icon: Database },
 ];
 
 const titles: Record<WorkspaceView, string> = {
-  dashboard: "Dashboard",
+  dashboard: "My Dashboard",
   feed: "My Content Inbox",
-  history: "Publishing History",
-  promotion: "Promotions",
-  channels: "Source Channels",
-  filters: "Content Filters",
+  history: "My Publishing History",
+  promotion: "My Promotions",
+  channels: "My Sources",
+  filters: "My Filters",
   destination: "My Destinations",
-  ai: "AI Configuration",
+  ai: "My AI Configuration",
   team: "Team & Access",
   database: "System Settings",
 };
@@ -220,7 +220,7 @@ export default function AppShell({
         </div>
 
         <nav className="mt-7 flex-1 overflow-y-auto" aria-label="Primary navigation">
-          <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Content operations</p>
+          <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">My workspace</p>
           <div className="mt-2 space-y-1">
             {contentItems.map((item) => (
               <div key={item.view}>
@@ -230,7 +230,7 @@ export default function AppShell({
           </div>
 
           <div className="my-5 border-t border-white/10" />
-          <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Personal setup</p>
+          <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">My configuration</p>
           <div className="mt-2 space-y-1">
             {personalItems.map((item) => (
               <div key={item.view}>
@@ -242,7 +242,7 @@ export default function AppShell({
           {currentUserRole === "super-admin" ? (
             <>
               <div className="my-5 border-t border-white/10" />
-              <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Super-admin setup</p>
+              <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">System administration</p>
               <div className="mt-2 space-y-1">
                 {setupItems.map((item) => (
                   <div key={item.view}>
@@ -353,7 +353,7 @@ export default function AppShell({
               onClick={() => navigate("history")}
               className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-sm font-semibold text-slate-700"
             >
-              <History className="h-5 w-5 text-sky-600" aria-hidden="true" /> Publishing History
+              <History className="h-5 w-5 text-sky-600" aria-hidden="true" /> My Publishing History
             </button>
             {personalItems.map((item) => {
               const Icon = item.icon;
@@ -402,8 +402,8 @@ export default function AppShell({
       >
         <div className="mx-auto flex max-w-xl items-center">
           <MobileNavButton active={activeView === "dashboard"} icon={Home} label="Home" onClick={() => navigate("dashboard")} />
-          <MobileNavButton active={activeView === "feed"} icon={Inbox} label="Inbox" onClick={() => navigate("feed")} />
-          <MobileNavButton active={activeView === "promotion"} icon={Megaphone} label="Promotions" onClick={() => navigate("promotion")} />
+          <MobileNavButton active={activeView === "feed"} icon={Inbox} label="My Inbox" onClick={() => navigate("feed")} />
+          <MobileNavButton active={activeView === "promotion"} icon={Megaphone} label="My Promotions" onClick={() => navigate("promotion")} />
           <MobileNavButton active={isMoreView || moreOpen} expanded={moreOpen} icon={moreOpen ? X : Menu} label="More" onClick={() => setMoreOpen((open) => !open)} />
         </div>
       </nav>
