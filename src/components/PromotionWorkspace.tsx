@@ -431,6 +431,31 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
     }
   };
 
+  const registerMyDestinationBot = async () => {
+    setIsActionLoading(true);
+    try {
+      await requestJson("/api/promotion/bot-accounts", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "My Destination Bot",
+          credentialSource: "legacy_settings",
+          credentialRef: "destination.botToken",
+          enabled: true,
+        }),
+      });
+      await loadCampaignsAndTargets();
+      onToast("Your Destination bot is now registered for your Promotion workspace.");
+    } catch (error: any) {
+      onToast(
+        error.message ||
+          "Unable to register your Destination bot for Promotions.",
+        "error"
+      );
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
   const createPromotionTarget = async () => {
     if (!targetName.trim() || !targetChatId.trim() || !targetBotAccountId) {
       onToast("Target name, Telegram chat ID, and bot account are required.", "error");
@@ -1040,8 +1065,19 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               </div>
 
               {botAccounts.length === 0 && (
-                <div className="mx-5 mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[10px] text-amber-800">
-                  No Promotion bot account is available. The existing Destination Bot can be registered as a Promotion bot account first.
+                <div className="mx-5 mb-5 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[10px] text-amber-800 sm:flex-row sm:items-center sm:justify-between">
+                  <span>
+                    No Promotion bot is registered in your workspace yet. You can reuse
+                    the private Telegram bot credential from My Destinations.
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isActionLoading}
+                    onClick={registerMyDestinationBot}
+                    className="inline-flex min-h-9 shrink-0 items-center justify-center rounded-lg border border-amber-300 bg-white px-3 font-bold text-amber-800 disabled:opacity-50"
+                  >
+                    Register My Destination Bot
+                  </button>
                 </div>
               )}
             </div>
