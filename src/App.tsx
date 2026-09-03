@@ -661,11 +661,11 @@ export default function App() {
           />
         ) : null}
 
-        {activeWorkspaceTab === "channels" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "channels" ? (
           <SourceChannelsConfig channels={settings.channels} onAddChannel={handleAddChannel} onRemoveChannel={handleRemoveChannel} onFetchChannel={handleFetchChannel} onFetchAll={handleFetchAll} isGlobalFetching={isScraping} />
         ) : null}
 
-        {activeWorkspaceTab === "filters" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "filters" ? (
           <FilterConfig filters={settings.filters} onUpdateFilters={handleUpdateFilters} />
         ) : null}
 
@@ -673,7 +673,7 @@ export default function App() {
           <DestinationConfig destination={settings.destination} onSave={handleSaveDestination} />
         ) : null}
 
-        {activeWorkspaceTab === "ai" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "ai" ? (
           <AIConfigView aiConfig={settings.aiConfig} onUpdateAI={handleUpdateAI} geminiActive={geminiActive} openrouterActive={openrouterActive} />
         ) : null}
 
