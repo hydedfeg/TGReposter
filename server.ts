@@ -1041,47 +1041,106 @@ app.post("/api/supabase/setup-table", authMiddleware, requireSuperAdmin, async (
   res.json(outcome);
 });
 
-// Scrape target channels and parse posts
-app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
-  const db = await readDb();
-  const requestedUsernames = Array.isArray(req.body?.usernames)
-    ? req.body.usernames
+// Scrape only the signed-in user's source subscriptions. The scheduled collector
+// iterates each owner independently. public.posts is only an internal ingestion
+// cache; user-visible rows are explicitly assigned to user_inbox_items.
+function matchesWorkspaceFilters(originalText: string, filters: FilterConfig) {
+  const textToMatch = filters.caseSensitive
+    ? originalText
+    : originalText.toLowerCase();
+
+  for (const keyword of filters.negativeKeywords ?? []) {
+    const clean = filters.caseSensitive ? keyword : keyword.toLowerCase();
+    if (clean && textToMatch.includes(clean)) return false;
+  }
+
+  const positives = filters.positiveKeywords ?? [];
+  const hashtags = filters.requiredHashtags ?? [];
+  if (positives.length === 0 && hashtags.length === 0) return true;
+
+  for (const keyword of positives) {
+    const clean = filters.caseSensitive ? keyword : keyword.toLowerCase();
+    if (clean && textToMatch.includes(clean)) return true;
+  }
+
+  for (const hashtag of hashtags) {
+    const clean = filters.caseSensitive ? hashtag : hashtag.toLowerCase();
+    const token = clean.startsWith("#") ? clean : `#${clean}`;
+    if (token && textToMatch.includes(token)) return true;
+  }
+
+  return false;
+}
+
+async function scrapeOwnedWorkspace(
+  ownerPrincipal: string,
+  workspace: {
+    channels: SourceChannel[];
+    filters: FilterConfig;
+  },
+  requestedUsernames?: string[] | null
+) {
+  const requested = requestedUsernames
+    ? new Set(
+        requestedUsernames
+          .map(value => String(value).trim().replace(/^@/, "").toLowerCase())
+          .filter(Boolean)
+      )
     : null;
-  const usernamesToFetch = requestedUsernames ??
-    db.channels.filter(channel => channel.enabled !== false).map(channel => channel.username);
 
-  let newlyFetchedCount = 0;
-  const currentPostsMap = new Map(db.posts.map(p => [p.id, p]));
-  const dirtyPostsMap = new Map<string, CuratedPost>();
+  const configuredUsernames = new Set(
+    workspace.channels.map(channel => channel.username.toLowerCase())
+  );
 
-  for (const username of usernamesToFetch) {
-    const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
-    if (!cleanUsername) continue;
-
-    // Find channel config or create transient one
-    let channelIdx = db.channels.findIndex(c => c.username.toLowerCase() === cleanUsername);
-    if (channelIdx === -1) {
-      db.channels.push({ username: cleanUsername, status: "fetching" });
-      channelIdx = db.channels.length - 1;
-    } else {
-      db.channels[channelIdx].status = "fetching";
+  if (requested) {
+    const unauthorized = Array.from(requested).filter(
+      username => !configuredUsernames.has(username)
+    );
+    if (unauthorized.length > 0) {
+      const error: any = new Error(
+        `Source channel does not belong to this workspace: @${unauthorized[0]}`
+      );
+      error.status = 403;
+      throw error;
     }
+  }
 
-    await channelRepository.saveScanState({
+  const channels = workspace.channels.map(channel => ({ ...channel }));
+  const selectedChannels = channels.filter(channel => {
+    if (channel.enabled === false) return false;
+    return requested ? requested.has(channel.username.toLowerCase()) : true;
+  });
+
+  let newlyAssignedCount = 0;
+  const existingInbox = await getInboxPostsForOwner(ownerPrincipal, 1000);
+  const existingInboxIds = new Set(existingInbox.map((post: any) => post.id));
+  const canonicalChanges = new Map<string, CuratedPost>();
+  const observedForInbox = new Map<string, CuratedPost>();
+
+  for (const channel of selectedChannels) {
+    const cleanUsername = channel.username.trim().replace(/^@/, "").toLowerCase();
+    const channelIndex = channels.findIndex(
+      candidate => candidate.username.toLowerCase() === cleanUsername
+    );
+    if (channelIndex < 0) continue;
+
+    channels[channelIndex].status = "fetching";
+    channels[channelIndex].errorMessage = undefined;
+
+    await userWorkspaceRepository.saveScanState(ownerPrincipal, {
+      ...channels[channelIndex],
       username: cleanUsername,
-      display_name: db.channels[channelIdx].name,
-      enabled: db.channels[channelIdx].enabled !== false,
       status: "fetching",
-      error_message: null,
+      errorMessage: undefined,
     });
 
     try {
-      const url = `https://t.me/s/${cleanUsername}`;
-      const response = await fetch(url, {
+      const response = await fetch(`https://t.me/s/${cleanUsername}`, {
         headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept-Language": "en-US,en;q=0.9"
-        }
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
       });
 
       if (!response.ok) {
@@ -1089,83 +1148,59 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       }
 
       const html = await response.text();
-
-      // Simple regex parser for public channel HTML blocks
       const messageBlocks = html.split('class="tgme_widget_message_wrap');
-      // Skip the first split element as it is the page header
       messageBlocks.shift();
 
-      // readDb() intentionally returns only the newest 400 posts for the UI.
-      // Before classifying scraped Telegram posts as new, hydrate any matching
-      // persisted rows that fell outside that UI window. This preserves edits,
-      // moderation state, and publish history while preventing false "new" counts.
-      const scrapedPostIds = Array.from(new Set(
-        messageBlocks
-          .map(block => block.match(/data-post="([^"]+)"/)?.[1])
-          .filter((postId): postId is string => !!postId)
-      ));
-      const missingPersistedIds = scrapedPostIds.filter(postId => !currentPostsMap.has(postId));
-
-      if (missingPersistedIds.length > 0) {
-        const persistedPosts = await postService.getPostsByIds(missingPersistedIds);
-        for (const persisted of persistedPosts as any[]) {
-          currentPostsMap.set(persisted.id, {
-            id: persisted.id,
-            channelUsername: persisted.channel_username,
-            originalText: persisted.original_text,
-            text: persisted.original_text,
-            mediaType: persisted.media_type ?? undefined,
-            photoUrl: persisted.photo_url ?? undefined,
-            videoUrl: persisted.video_url ?? undefined,
-            date: persisted.published_at,
-            url: persisted.telegram_url,
-            status:
-              persisted.inbox_default_status === "archived"
-                ? "archived"
-                : "pending",
-          });
-        }
-      }
-
-      let parsedCount = 0;
+      const scrapedPostIds = Array.from(
+        new Set(
+          messageBlocks
+            .map(block => block.match(/data-post="([^"]+)"/)?.[1])
+            .filter((postId): postId is string => !!postId)
+        )
+      );
+      const persistedPosts = await postService.getPostsByIds(scrapedPostIds);
+      const persistedById = new Map(
+        (persistedPosts as any[]).map(post => [String(post.id), post])
+      );
 
       for (const block of messageBlocks) {
-        // Extract post id, e.g., data-post="techcrunch/1234"
         const postMatch = block.match(/data-post="([^"]+)"/);
         if (!postMatch) continue;
-        const postId = postMatch[1]; // "username/1234"
+        const postId = postMatch[1];
 
-        // Extract message text content
         let originalText = "";
-        const textMatch = block.match(/<div class="tgme_widget_message_text[^"]*"[^>]* dir="auto">([\s\S]*?)<\/div>/) ||
-                           block.match(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+        const textMatch =
+          block.match(
+            /<div class="tgme_widget_message_text[^"]*"[^>]* dir="auto">([\s\S]*?)<\/div>/
+          ) ||
+          block.match(
+            /<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/
+          );
         if (textMatch) {
           originalText = textMatch[1]
             .replace(/<br\s*\/?>/gi, "\n")
-            .replace(/<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, "$2 ($1)") // preserve links readable
-            .replace(/<[^>]+>/g, "") // strip other HTML tags
+            .replace(
+              /<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi,
+              "$2 ($1)"
+            )
+            .replace(/<[^>]+>/g, "")
             .trim();
         }
 
-        // Extract actual Telegram media before deciding whether the post is empty.
-        // Video source lives on .tgme_widget_message_video; its thumbnail is not the video.
         const videoUrl = extractTelegramVideoUrl(block);
         const photoUrl = extractTelegramPhotoUrl(block);
-        const mediaType: CuratedPost['mediaType'] = videoUrl ? 'video' : photoUrl ? 'photo' : undefined;
+        const mediaType: CuratedPost["mediaType"] = videoUrl
+          ? "video"
+          : photoUrl
+            ? "photo"
+            : undefined;
 
-        // Preserve media-only posts too. Text filters can still archive them when they
-        // do not match configured keywords, but the collector must not discard them.
         if (!originalText && !photoUrl && !videoUrl) continue;
 
-        // Extract date
         let date = new Date().toISOString();
         const dateMatch = block.match(/<time datetime="([^"]+)"/);
-        if (dateMatch) {
-          date = dateMatch[1];
-        }
+        if (dateMatch) date = dateMatch[1];
 
-        // The Content Inbox is a rolling 24-hour window. Ignore source posts
-        // that are already expired instead of importing them and deleting them later.
         const sourcePublishedAt = Date.parse(date);
         if (
           Number.isFinite(sourcePublishedAt) &&
@@ -1174,190 +1209,217 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
           continue;
         }
 
-        // Apply keyword/hashtag rules
-        const textToMatch = db.filters.caseSensitive ? originalText : originalText.toLowerCase();
-        
-        // Negative keywords check: if present, automatically archive/skip
-        let containsNegative = false;
-        for (const kw of db.filters.negativeKeywords) {
-          const cleanKw = db.filters.caseSensitive ? kw : kw.toLowerCase();
-          if (cleanKw && textToMatch.includes(cleanKw)) {
-            containsNegative = true;
-            break;
-          }
-        }
-
-        let isMatch = false;
-        if (!containsNegative) {
-          // If no filters are defined, everything is a match
-          if (db.filters.positiveKeywords.length === 0 && db.filters.requiredHashtags.length === 0) {
-            isMatch = true;
-          } else {
-            // Check positive keywords
-            for (const kw of db.filters.positiveKeywords) {
-              const cleanKw = db.filters.caseSensitive ? kw : kw.toLowerCase();
-              if (cleanKw && textToMatch.includes(cleanKw)) {
-                isMatch = true;
-                break;
-              }
+        const existing = persistedById.get(postId);
+        const canonical: CuratedPost = existing
+          ? {
+              id: postId,
+              channelUsername: existing.channel_username,
+              originalText: existing.original_text,
+              text: existing.original_text,
+              mediaType: existing.media_type ?? undefined,
+              photoUrl: existing.photo_url ?? undefined,
+              videoUrl: existing.video_url ?? undefined,
+              date: existing.published_at
+                ? new Date(existing.published_at).toISOString()
+                : date,
+              url: existing.telegram_url || `https://t.me/${postId}`,
+              status: "pending",
             }
-            // Check required hashtags (as keywords with a #)
-            if (!isMatch) {
-              for (const hash of db.filters.requiredHashtags) {
-                const cleanHash = db.filters.caseSensitive ? hash : hash.toLowerCase();
-                const hashPrefix = cleanHash.startsWith("#") ? cleanHash : `#${cleanHash}`;
-                if (textToMatch.includes(hashPrefix)) {
-                  isMatch = true;
-                  break;
-                }
-              }
-            }
-          }
-        }
+          : {
+              id: postId,
+              channelUsername: cleanUsername,
+              originalText,
+              text: originalText,
+              mediaType,
+              photoUrl,
+              videoUrl,
+              date,
+              url: `https://t.me/${postId}`,
+              status: "pending",
+            };
 
-        const initialStatus = isMatch ? "pending" : "archived";
+        let canonicalChanged = !existing;
 
-        // Create new curated posts, or self-heal only media data for existing posts.
-        // This intentionally does not overwrite status, edits, AI output,
-        // moderation state, or publish history.
-        const existingPost = currentPostsMap.get(postId);
-        if (!existingPost) {
-          const newPost: CuratedPost = {
-            id: postId,
-            channelUsername: cleanUsername,
-            originalText,
-            text: originalText, // Copy original initially so the user can tweak it
-            mediaType,
-            photoUrl,
-            videoUrl,
-            date,
-            url: `https://t.me/${postId}`,
-            status: initialStatus
-          };
-          currentPostsMap.set(postId, newPost);
-          dirtyPostsMap.set(postId, newPost);
-          newlyFetchedCount++;
-        } else if (videoUrl) {
-          // Existing video posts created before video support often stored the thumbnail
-          // as photoUrl. Keep edits/status intact while attaching the authoritative video.
-          let mediaChanged = false;
-          if (existingPost.videoUrl !== videoUrl) {
-            existingPost.videoUrl = videoUrl;
-            mediaChanged = true;
+        if (videoUrl) {
+          if (canonical.videoUrl !== videoUrl) {
+            canonical.videoUrl = videoUrl;
+            canonicalChanged = true;
           }
-          if (existingPost.mediaType !== 'video') {
-            existingPost.mediaType = 'video';
-            mediaChanged = true;
+          if (canonical.mediaType !== "video") {
+            canonical.mediaType = "video";
+            canonicalChanged = true;
           }
-          if (!photoUrl && existingPost.photoUrl) {
-            existingPost.photoUrl = undefined;
-            mediaChanged = true;
-          }
-          if (mediaChanged) {
-            dirtyPostsMap.set(postId, existingPost);
+          if (!photoUrl && canonical.photoUrl) {
+            canonical.photoUrl = undefined;
+            canonicalChanged = true;
           }
         } else {
-          let mediaChanged = false;
-          const repairedPhotoUrl = repairLegacyPhotoUrl(existingPost.photoUrl, photoUrl);
-          if (repairedPhotoUrl !== existingPost.photoUrl) {
-            existingPost.photoUrl = repairedPhotoUrl;
-            mediaChanged = true;
+          const repairedPhotoUrl = repairLegacyPhotoUrl(
+            canonical.photoUrl,
+            photoUrl
+          );
+          if (repairedPhotoUrl !== canonical.photoUrl) {
+            canonical.photoUrl = repairedPhotoUrl;
+            canonicalChanged = true;
           }
-          if (repairedPhotoUrl && existingPost.mediaType !== 'photo') {
-            existingPost.mediaType = 'photo';
-            mediaChanged = true;
-          }
-          if (mediaChanged) {
-            dirtyPostsMap.set(postId, existingPost);
+          if (repairedPhotoUrl && canonical.mediaType !== "photo") {
+            canonical.mediaType = "photo";
+            canonicalChanged = true;
           }
         }
-        parsedCount++;
+
+        if (canonicalChanged) {
+          canonicalChanges.set(postId, canonical);
+        }
+
+        const personalStatus = matchesWorkspaceFilters(
+          canonical.originalText,
+          workspace.filters
+        )
+          ? "pending"
+          : "archived";
+
+        observedForInbox.set(postId, {
+          ...canonical,
+          text: canonical.originalText,
+          status: personalStatus,
+        });
+
+        if (!existingInboxIds.has(postId)) {
+          newlyAssignedCount += 1;
+          existingInboxIds.add(postId);
+        }
       }
 
-      db.channels[channelIdx].status = "success";
-      db.channels[channelIdx].lastFetched = new Date().toISOString();
-      db.channels[channelIdx].errorMessage = undefined;
+      channels[channelIndex].status = "success";
+      channels[channelIndex].lastFetched = new Date().toISOString();
+      channels[channelIndex].errorMessage = undefined;
 
-      // Extract nice display name from HTML if possible
-      const titleMatch = html.match(/<meta property="og:title" content="([^"]+)"/);
-      if (titleMatch && (!db.channels[channelIdx].name || db.channels[channelIdx].name === db.channels[channelIdx].username)) {
-        db.channels[channelIdx].name = titleMatch[1];
+      const titleMatch = html.match(
+        /<meta property="og:title" content="([^"]+)"/
+      );
+      if (
+        titleMatch &&
+        (!channels[channelIndex].name ||
+          channels[channelIndex].name === channels[channelIndex].username)
+      ) {
+        channels[channelIndex].name = titleMatch[1];
       }
 
-      await channelRepository.saveScanState({
-        username: cleanUsername,
-        display_name: db.channels[channelIdx].name,
-        enabled: db.channels[channelIdx].enabled !== false,
-        last_scan_at: db.channels[channelIdx].lastFetched,
-        status: "success",
-        error_message: null,
-      });
-    } catch (err: any) {
-      console.error(`Error fetching channel @${username}:`, err);
-      db.channels[channelIdx].status = "error";
-      db.channels[channelIdx].lastFetched = new Date().toISOString();
-      db.channels[channelIdx].errorMessage = err.message || "Failed to scrape channel";
+      await userWorkspaceRepository.saveScanState(
+        ownerPrincipal,
+        channels[channelIndex]
+      );
+    } catch (error: any) {
+      console.error(
+        `Error fetching user-owned channel @${cleanUsername}:`,
+        error
+      );
+      channels[channelIndex].status = "error";
+      channels[channelIndex].lastFetched = new Date().toISOString();
+      channels[channelIndex].errorMessage =
+        error?.message || "Failed to scrape channel";
 
-      await channelRepository.saveScanState({
-        username: cleanUsername,
-        display_name: db.channels[channelIdx].name,
-        enabled: db.channels[channelIdx].enabled !== false,
-        last_scan_at: db.channels[channelIdx].lastFetched,
-        status: "error",
-        error_message: db.channels[channelIdx].errorMessage,
-      });
+      await userWorkspaceRepository.saveScanState(
+        ownerPrincipal,
+        channels[channelIndex]
+      );
     }
   }
 
-  // Persist only posts that are genuinely new or whose authoritative media
-  // metadata was repaired during this scan. PostgreSQL remains the durable source;
-  // unchanged inbox rows should not receive a fresh updated_at every five minutes.
-  try {
-    const dirtyPosts = Array.from(dirtyPostsMap.values());
-    const postEntities = dirtyPosts.map(post => ({
-      id: post.id,
-      channel_username: post.channelUsername,
-      original_text: post.originalText,
-      edited_text: post.originalText,
-      media_type: post.mediaType ?? null,
-      photo_url: post.photoUrl ?? null,
-      video_url: post.videoUrl ?? null,
-      telegram_url: post.url,
-      published_at: post.date,
-      posted_at: null,
-      error_message: null,
-      status: post.status === "archived" ? "archived" : "pending",
-      inbox_default_status: post.status === "archived" ? "archived" : "pending",
-    }));
+  const canonicalEntities = Array.from(canonicalChanges.values()).map(post => ({
+    id: post.id,
+    channel_username: post.channelUsername,
+    original_text: post.originalText,
+    edited_text: post.originalText,
+    media_type: post.mediaType ?? null,
+    photo_url: post.photoUrl ?? null,
+    video_url: post.videoUrl ?? null,
+    telegram_url: post.url,
+    published_at: post.date,
+    posted_at: null,
+    error_message: null,
+    status: "pending",
+    inbox_default_status: "pending" as const,
+  }));
 
-    await postService.savePosts(postEntities);
-    console.log(`Persisted ${postEntities.length} changed inbox posts.`);
-  } catch (err) {
-    console.error("Failed saving changed inbox posts:", err);
+  if (canonicalEntities.length > 0) {
+    await postService.savePosts(canonicalEntities);
   }
 
-const isCronActor = req.user?.username === "system:cron";
-const latestPosts =
-  process.env.DATABASE_URL && req.user && !isCronActor
-    ? await getUserInboxPosts(req.user, 400)
-    : (await postService.getRecentPosts(400)).map((p: any) => ({
-        id: p.id,
-        channelUsername: p.channel_username,
-        originalText: p.original_text,
-        text: p.original_text,
-        mediaType: p.media_type,
-        photoUrl: p.photo_url,
-        videoUrl: p.video_url,
-        date: p.published_at,
-        url: p.telegram_url,
-        status: p.inbox_default_status === "archived" ? "archived" : "pending",
-      }));
+  await ensureInboxPostsForOwner(
+    ownerPrincipal,
+    Array.from(observedForInbox.values())
+  );
 
-res.json({
-  channels: db.channels,
-  posts: latestPosts,
-  fetchedCount: newlyFetchedCount
-});
+  return {
+    channels: (await userWorkspaceRepository.getConfig(ownerPrincipal)).channels,
+    posts: await getInboxPostsForOwner(ownerPrincipal, 400),
+    fetchedCount: newlyAssignedCount,
+  };
+}
+
+app.post("/api/fetch-posts", authOrCronMiddleware, async (req: any, res) => {
+  const isCronActor = req.user?.username === "system:cron";
+
+  try {
+    if (process.env.DATABASE_URL) {
+      if (isCronActor) {
+        const workspaces = await userWorkspaceRepository.listAllConfigs();
+        let fetchedCount = 0;
+
+        for (const workspace of workspaces) {
+          if (!workspace.channels.some(channel => channel.enabled !== false)) {
+            continue;
+          }
+          const result = await scrapeOwnedWorkspace(
+            workspace.ownerPrincipal,
+            workspace,
+            null
+          );
+          fetchedCount += result.fetchedCount;
+        }
+
+        return res.json({
+          success: true,
+          workspaceCount: workspaces.length,
+          fetchedCount,
+        });
+      }
+
+      if (!req.user) {
+        return res.status(401).json({ error: "Unauthorized. Please log in." });
+      }
+
+      const workspace = await getUserWorkspaceConfig(req.user);
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      const requestedUsernames = Array.isArray(req.body?.usernames)
+        ? req.body.usernames
+        : null;
+
+      return res.json(
+        await scrapeOwnedWorkspace(
+          ownerPrincipal,
+          workspace,
+          requestedUsernames
+        )
+      );
+    }
+
+    // Local single-user compatibility when DATABASE_URL is not configured.
+    const db = await readDb();
+    return res.json({
+      channels: db.channels,
+      posts: db.posts,
+      fetchedCount: 0,
+      warning: "Persistent per-user collection requires DATABASE_URL.",
+    });
+  } catch (error: any) {
+    console.error("Workspace source synchronization failed:", error);
+    return res.status(error?.status || 500).json({
+      error: error?.message || "Source synchronization failed.",
+    });
+  }
 });
 
 // Trigger AI Content Curation (Gemini or OpenRouter)
