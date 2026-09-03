@@ -170,7 +170,8 @@ function shouldQuarantineDelivery(result: {
 export class PromotionCampaignService {
   constructor(
     private readonly readLegacySettings: LegacySettingsReader,
-    private readonly repository: PromotionCampaignRepository = promotionCampaignRepository
+    private readonly repository: PromotionCampaignRepository = promotionCampaignRepository,
+    private readonly adminRepository = promotionRepository
   ) {}
 
   async listCampaigns() {
@@ -315,8 +316,8 @@ export class PromotionCampaignService {
 
   private async validateTargets(targetIds: string[]) {
     const [targets, accounts] = await Promise.all([
-      promotionRepository.listTargets(),
-      promotionRepository.listBotAccounts(),
+      this.adminRepository.listTargets(),
+      this.adminRepository.listBotAccounts(),
     ]);
     const targetById = new Map(targets.map(target => [target.id, target]));
     const accountById = new Map(accounts.map(account => [account.id, account]));
