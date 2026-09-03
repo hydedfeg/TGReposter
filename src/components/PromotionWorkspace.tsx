@@ -1049,7 +1049,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">My my campaign destinations</h3>
+                <h3 className="text-sm font-bold text-slate-900">My campaign destinations</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   These channels and groups are the destination pool shown when launching a campaign.
                 </p>
@@ -1116,7 +1116,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               {targets.length === 0 && (
                 <div className="p-10 text-center">
                   <Target className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 mt-3">No my campaign destinations configured</p>
+                  <p className="text-sm font-bold text-slate-700 mt-3">No campaign destinations configured</p>
                   <p className="text-xs text-slate-500 mt-1">
                     Add your Telegram channel or group above, then test its connection.
                   </p>
