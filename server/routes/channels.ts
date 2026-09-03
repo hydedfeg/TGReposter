@@ -1,52 +1,72 @@
 import { Router } from "express";
-import { ChannelService } from "../services/channelService";
+import { ownerPrincipalForUser } from "../services/userPrincipalService";
+import { userWorkspaceRepository } from "../services/userWorkspaceService";
 
 const router = Router();
-const channelService = new ChannelService();
 
-// GET /api/channels
-router.get("/", async (_req, res) => {
+function cleanUsername(value: unknown) {
+  return typeof value === "string"
+    ? value.trim().replace(/^@/, "").toLowerCase()
+    : "";
+}
+
+// These routes are tenant-scoped. authMiddleware is mounted by server.ts.
+router.get("/", async (req: any, res) => {
   try {
-    const channels = await channelService.list();
-    res.json(channels);
-  } catch (err: any) {
-    console.error(err);
+    const owner = ownerPrincipalForUser(req.user);
+    const workspace = await userWorkspaceRepository.getConfig(owner);
+    res.json(workspace.channels);
+  } catch (error: any) {
+    console.error(error);
     res.status(500).json({
-      error: err.message || "Failed to load channels",
+      error: error?.message || "Failed to load your source channels.",
     });
   }
 });
 
-// POST /api/channels
-router.post("/", async (req, res) => {
+router.post("/", async (req: any, res) => {
   try {
-    const { username } = req.body;
+    const owner = ownerPrincipalForUser(req.user);
+    const username = cleanUsername(req.body?.username);
+    if (!username) {
+      return res.status(400).json({ error: "Channel username is required." });
+    }
 
-    const channel = await channelService.add(username);
+    const workspace = await userWorkspaceRepository.getConfig(owner);
+    if (workspace.channels.some(channel => channel.username === username)) {
+      return res.status(409).json({ error: "Channel already exists in your workspace." });
+    }
 
-    res.status(201).json(channel);
-  } catch (err: any) {
-    console.error(err);
+    const channels = await userWorkspaceRepository.replaceChannels(owner, [
+      ...workspace.channels,
+      { username, enabled: true, status: "idle" },
+    ]);
 
+    res.status(201).json(
+      channels.find(channel => channel.username === username)
+    );
+  } catch (error: any) {
+    console.error(error);
     res.status(400).json({
-      error: err.message,
+      error: error?.message || "Failed to add source channel.",
     });
   }
 });
 
-// DELETE /api/channels/:username
-router.delete("/:username", async (req, res) => {
+router.delete("/:username", async (req: any, res) => {
   try {
-    await channelService.remove(req.params.username);
-
-    res.json({
-      success: true,
-    });
-  } catch (err: any) {
-    console.error(err);
-
+    const owner = ownerPrincipalForUser(req.user);
+    const username = cleanUsername(req.params.username);
+    const workspace = await userWorkspaceRepository.getConfig(owner);
+    const channels = workspace.channels.filter(
+      channel => channel.username !== username
+    );
+    await userWorkspaceRepository.replaceChannels(owner, channels);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error(error);
     res.status(400).json({
-      error: err.message,
+      error: error?.message || "Failed to remove source channel.",
     });
   }
 });
