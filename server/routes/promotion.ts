@@ -3,11 +3,11 @@ import { PromotionAdminError, PromotionAdminService } from "../services/promotio
 import { PromotionAIError, PromotionAIService } from "../services/promotionAIService";
 import { PromotionCampaignError, PromotionCampaignService } from "../services/promotionCampaignService";
 import type { LegacySettingsReader } from "../services/telegramCredentialService";
+import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { PostgresConnectionConfigError } from "../utils/postgresConnection";
 
 interface PromotionRouterDependencies {
   authMiddleware: RequestHandler;
-  requireSuperAdmin: RequestHandler;
   readLegacySettings: LegacySettingsReader;
 }
 
@@ -37,7 +37,6 @@ function sendError(res: any, error: any) {
 
 export function createPromotionRouter({
   authMiddleware,
-  requireSuperAdmin,
   readLegacySettings,
 }: PromotionRouterDependencies) {
   const router = Router();
@@ -55,95 +54,113 @@ export function createPromotionRouter({
     return next();
   });
 
-  // Bot credentials/configuration are super-admin only.
-  router.get("/bot-accounts", requireSuperAdmin, async (_req, res) => {
+  router.get("/bot-accounts", async (req: any, res) => {
     try {
-      res.json({ botAccounts: await adminService.listBotAccounts() });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ botAccounts: await adminService.listBotAccounts(ownerPrincipal) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/bot-accounts", requireSuperAdmin, async (req, res) => {
+  router.post("/bot-accounts", async (req: any, res) => {
     try {
-      const account = await adminService.createBotAccount(req.body);
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      const account = await adminService.createBotAccount(ownerPrincipal, req.body);
       res.status(201).json({ botAccount: account });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.patch("/bot-accounts/:id", requireSuperAdmin, async (req, res) => {
+  router.post("/bot-accounts/personal", async (req: any, res) => {
     try {
-      res.json({ botAccount: await adminService.updateBotAccount(req.params.id, req.body) });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      const account = await adminService.createPersonalDestinationBot(ownerPrincipal);
+      res.status(201).json({ botAccount: account });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.delete("/bot-accounts/:id", requireSuperAdmin, async (req, res) => {
+  router.patch("/bot-accounts/:id", async (req: any, res) => {
     try {
-      res.json(await adminService.deleteBotAccount(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ botAccount: await adminService.updateBotAccount(ownerPrincipal, req.params.id, req.body) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/bot-accounts/:id/verify", requireSuperAdmin, async (req, res) => {
+  router.delete("/bot-accounts/:id", async (req: any, res) => {
     try {
-      res.json(await adminService.verifyBotAccount(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await adminService.deleteBotAccount(ownerPrincipal, req.params.id));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  // Authenticated admins may list approved target metadata for campaign composition,
-  // while only super-admins can mutate or connection-test Telegram infrastructure.
-  router.get("/targets", async (_req, res) => {
+  router.post("/bot-accounts/:id/verify", async (req: any, res) => {
     try {
-      res.json({ targets: await adminService.listTargets() });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await adminService.verifyBotAccount(ownerPrincipal, req.params.id));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/targets", requireSuperAdmin, async (req, res) => {
+  router.get("/targets", async (req: any, res) => {
     try {
-      res.status(201).json({ target: await adminService.createTarget(req.body) });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ targets: await adminService.listTargets(ownerPrincipal) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.patch("/targets/:id", requireSuperAdmin, async (req, res) => {
+  router.post("/targets", async (req: any, res) => {
     try {
-      res.json({ target: await adminService.updateTarget(req.params.id, req.body) });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.status(201).json({ target: await adminService.createTarget(ownerPrincipal, req.body) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.delete("/targets/:id", requireSuperAdmin, async (req, res) => {
+  router.patch("/targets/:id", async (req: any, res) => {
     try {
-      res.json(await adminService.deleteTarget(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ target: await adminService.updateTarget(ownerPrincipal, req.params.id, req.body) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/targets/:id/test", requireSuperAdmin, async (req, res) => {
+  router.delete("/targets/:id", async (req: any, res) => {
     try {
-      res.json(await adminService.testTarget(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await adminService.deleteTarget(ownerPrincipal, req.params.id));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  // Campaign workflow is available to both admins and super-admins. Infrastructure
-  // credentials remain invisible; campaign execution resolves them server-side.
-  router.get("/campaigns", async (_req, res) => {
+  router.post("/targets/:id/test", async (req: any, res) => {
     try {
-      res.json({ campaigns: await campaignService.listCampaigns() });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await adminService.testTarget(ownerPrincipal, req.params.id));
+    } catch (error) {
+      sendError(res, error);
+    }
+  });
+
+  // Every authenticated account receives an isolated campaign workspace. Bot
+  // credentials stay server-side and are resolved only for that account owner.
+  router.get("/campaigns", async (req: any, res) => {
+    try {
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ campaigns: await campaignService.listCampaigns(ownerPrincipal) });
     } catch (error) {
       sendError(res, error);
     }
@@ -151,50 +168,57 @@ export function createPromotionRouter({
 
   router.post("/campaigns", async (req: any, res) => {
     try {
-      const campaign = await campaignService.createCampaign(req.body, req.user?.username);
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      const campaign = await campaignService.createCampaign(ownerPrincipal, req.body, req.user?.username);
       res.status(201).json({ campaign });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.get("/campaigns/:id", async (req, res) => {
+  router.get("/campaigns/:id", async (req: any, res) => {
     try {
-      res.json(await campaignService.getCampaignDetail(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await campaignService.getCampaignDetail(ownerPrincipal, req.params.id));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.patch("/campaigns/:id", async (req, res) => {
+  router.patch("/campaigns/:id", async (req: any, res) => {
     try {
-      res.json({ campaign: await campaignService.updateCampaign(req.params.id, req.body) });
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json({ campaign: await campaignService.updateCampaign(ownerPrincipal, req.params.id, req.body) });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.delete("/campaigns/:id", async (req, res) => {
+  router.delete("/campaigns/:id", async (req: any, res) => {
     try {
-      res.json(await campaignService.deleteCampaign(req.params.id));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await campaignService.deleteCampaign(ownerPrincipal, req.params.id));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/campaigns/:id/posts", async (req, res) => {
+  router.post("/campaigns/:id/posts", async (req: any, res) => {
     try {
-      const campaignPost = await campaignService.addCampaignPost(req.params.id, req.body);
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      const campaignPost = await campaignService.addCampaignPost(ownerPrincipal, req.params.id, req.body);
       res.status(201).json({ campaignPost });
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.patch("/campaigns/:id/posts/:campaignPostId", async (req, res) => {
+  router.patch("/campaigns/:id/posts/:campaignPostId", async (req: any, res) => {
     try {
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
       res.json({
         campaignPost: await campaignService.updateCampaignPost(
+          ownerPrincipal,
           req.params.id,
           req.params.campaignPostId,
           req.body
@@ -205,9 +229,10 @@ export function createPromotionRouter({
     }
   });
 
-  router.delete("/campaigns/:id/posts/:campaignPostId", async (req, res) => {
+  router.delete("/campaigns/:id/posts/:campaignPostId", async (req: any, res) => {
     try {
-      res.json(await campaignService.deleteCampaignPost(req.params.id, req.params.campaignPostId));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await campaignService.deleteCampaignPost(ownerPrincipal, req.params.id, req.params.campaignPostId));
     } catch (error) {
       sendError(res, error);
     }
@@ -215,25 +240,28 @@ export function createPromotionRouter({
 
   // AI generation is scoped to an existing mutable campaign post. The server resolves
   // the configured provider/model and API credentials; the frontend receives only copy.
-  router.post("/campaigns/:id/posts/:campaignPostId/ai", async (req, res) => {
+  router.post("/campaigns/:id/posts/:campaignPostId/ai", async (req: any, res) => {
     try {
-      res.json(await aiService.generate(req.params.id, req.params.campaignPostId, req.body));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await aiService.generate(ownerPrincipal, req.params.id, req.params.campaignPostId, req.body));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/campaigns/:id/launch", async (req, res) => {
+  router.post("/campaigns/:id/launch", async (req: any, res) => {
     try {
-      res.json(await campaignService.launchCampaign(req.params.id, req.body));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await campaignService.launchCampaign(ownerPrincipal, req.params.id, req.body));
     } catch (error) {
       sendError(res, error);
     }
   });
 
-  router.post("/campaigns/:id/retry", async (req, res) => {
+  router.post("/campaigns/:id/retry", async (req: any, res) => {
     try {
-      res.json(await campaignService.retryFailedDeliveries(req.params.id, req.body));
+      const ownerPrincipal = ownerPrincipalForUser(req.user);
+      res.json(await campaignService.retryFailedDeliveries(ownerPrincipal, req.params.id, req.body));
     } catch (error) {
       sendError(res, error);
     }

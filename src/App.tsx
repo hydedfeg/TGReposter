@@ -14,7 +14,7 @@ import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 
-const superAdminViews = new Set<WorkspaceView>(["channels", "filters", "ai", "team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
@@ -27,8 +27,8 @@ function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
 }
 
 function settingsCacheKey() {
-  const username = localStorage.getItem("curator_username")?.trim().toLowerCase();
-  return `telegram-curator-settings:${username || "anonymous"}`;
+  const accountKey = localStorage.getItem("curator_account_key")?.trim().toLowerCase();
+  return `telegram-curator-settings:${accountKey || "anonymous"}`;
 }
 
 function initialWorkspaceView(): WorkspaceView {
@@ -101,14 +101,17 @@ export default function App() {
         setCurrentUsername(data.username);
         localStorage.setItem("curator_role", data.role || "");
         localStorage.setItem("curator_username", data.username || "");
+        localStorage.setItem("curator_account_key", data.accountKey || "");
         return true;
       } else {
         setIsAuthenticated(false);
         setAuthToken(null);
         setCurrentUserRole(null);
         setCurrentUsername(null);
+        localStorage.removeItem(settingsCacheKey());
         localStorage.removeItem("curator_role");
         localStorage.removeItem("curator_username");
+        localStorage.removeItem("curator_account_key");
         if (data.passwordSet) {
           localStorage.removeItem("curator_token");
         }
@@ -241,10 +244,17 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = (token: string, isNewSetup: boolean, role: 'super-admin' | 'admin', username: string) => {
+  const handleLoginSuccess = (
+    token: string,
+    isNewSetup: boolean,
+    role: 'super-admin' | 'admin',
+    username: string,
+    accountKey: string
+  ) => {
     localStorage.setItem("curator_token", token);
     localStorage.setItem("curator_role", role);
     localStorage.setItem("curator_username", username);
+    localStorage.setItem("curator_account_key", accountKey);
     setAuthToken(token);
     setCurrentUserRole(role);
     setCurrentUsername(username);
@@ -264,9 +274,11 @@ export default function App() {
     } catch (e) {
       console.error("Logout notification failed:", e);
     }
+    localStorage.removeItem(settingsCacheKey());
     localStorage.removeItem("curator_token");
     localStorage.removeItem("curator_role");
     localStorage.removeItem("curator_username");
+    localStorage.removeItem("curator_account_key");
     setAuthToken(null);
     setCurrentUserRole(null);
     setCurrentUsername(null);
@@ -422,8 +434,7 @@ export default function App() {
     if (!changedPost) return;
 
     const updated = { ...settings, posts: updatedPosts };
-    // Persist only this user's changed inbox row. The backend never accepts
-    // user-owned review state as a mutation of the canonical source post.
+    // Persist only this user's changed row in their private Content Inbox.
     await saveSettingsToServer(updated, { posts: [changedPost] });
   };
 
@@ -661,11 +672,11 @@ export default function App() {
           />
         ) : null}
 
-        {activeWorkspaceTab === "channels" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "channels" ? (
           <SourceChannelsConfig channels={settings.channels} onAddChannel={handleAddChannel} onRemoveChannel={handleRemoveChannel} onFetchChannel={handleFetchChannel} onFetchAll={handleFetchAll} isGlobalFetching={isScraping} />
         ) : null}
 
-        {activeWorkspaceTab === "filters" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "filters" ? (
           <FilterConfig filters={settings.filters} onUpdateFilters={handleUpdateFilters} />
         ) : null}
 
@@ -673,7 +684,7 @@ export default function App() {
           <DestinationConfig destination={settings.destination} onSave={handleSaveDestination} />
         ) : null}
 
-        {activeWorkspaceTab === "ai" && currentUserRole === "super-admin" ? (
+        {activeWorkspaceTab === "ai" ? (
           <AIConfigView aiConfig={settings.aiConfig} onUpdateAI={handleUpdateAI} geminiActive={geminiActive} openrouterActive={openrouterActive} />
         ) : null}
 

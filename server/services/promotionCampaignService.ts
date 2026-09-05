@@ -52,7 +52,7 @@ function optionalText(value: unknown, field: string): string | undefined {
 
 function optionalPosition(value: unknown): number | undefined {
   if (value === undefined) return undefined;
-  if (!Number.isInteger(value) || value < 0) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
     throw new PromotionCampaignError(400, "VALIDATION_ERROR", "position must be a non-negative integer.");
   }
   return value;
@@ -173,31 +173,31 @@ export class PromotionCampaignService {
     private readonly repository: PromotionCampaignRepository = promotionCampaignRepository
   ) {}
 
-  async listCampaigns() {
-    return this.repository.listCampaigns();
+  async listCampaigns(ownerPrincipal: string) {
+    return this.repository.listCampaigns(ownerPrincipal);
   }
 
-  async getCampaignDetail(id: string) {
-    const campaign = await this.repository.getCampaign(id);
+  async getCampaignDetail(ownerPrincipal: string, id: string) {
+    const campaign = await this.repository.getCampaign(ownerPrincipal, id);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
 
     const [campaignPosts, deliveries, attempts, summary] = await Promise.all([
-      this.repository.listCampaignPosts(id),
-      this.repository.listDeliveries(id),
-      this.repository.listDeliveryAttempts(id),
-      this.repository.getDeliverySummary(id),
+      this.repository.listCampaignPosts(ownerPrincipal, id),
+      this.repository.listDeliveries(ownerPrincipal, id),
+      this.repository.listDeliveryAttempts(ownerPrincipal, id),
+      this.repository.getDeliverySummary(ownerPrincipal, id),
     ]);
     const posts = await Promise.all(campaignPosts.map(async campaignPost => ({
       ...campaignPost,
-      sourcePost: await this.repository.getSourcePost(campaignPost.postId),
+      sourcePost: await this.repository.getSourcePost(ownerPrincipal, campaignPost.postId),
     })));
 
     return { campaign, posts, deliveries, attempts, summary };
   }
 
-  async createCampaign(body: any, username?: string) {
+  async createCampaign(ownerPrincipal: string, body: any, username?: string) {
     try {
-      return await this.repository.createCampaign({
+      return await this.repository.createCampaign(ownerPrincipal, {
         name: requiredText(body?.name, "name"),
         description: optionalText(body?.description, "description"),
         createdByUsername: username,
@@ -207,8 +207,8 @@ export class PromotionCampaignService {
     }
   }
 
-  async updateCampaign(id: string, body: any) {
-    const campaign = await this.repository.getCampaign(id);
+  async updateCampaign(ownerPrincipal: string, id: string, body: any) {
+    const campaign = await this.repository.getCampaign(ownerPrincipal, id);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
     if (!editableStatuses.has(campaign.status)) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "A campaign with delivery history cannot be edited manually.");
@@ -230,26 +230,26 @@ export class PromotionCampaignService {
       ? undefined
       : optionalText(body.description, "description") ?? null;
 
-    const updated = await this.repository.updateCampaign(id, { name, description, status: nextStatus });
+    const updated = await this.repository.updateCampaign(ownerPrincipal, id, { name, description, status: nextStatus });
     return updated!;
   }
 
-  async deleteCampaign(id: string) {
-    const campaign = await this.repository.getCampaign(id);
+  async deleteCampaign(ownerPrincipal: string, id: string) {
+    const campaign = await this.repository.getCampaign(ownerPrincipal, id);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
     if (!editableStatuses.has(campaign.status)) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Campaigns with delivery history are retained for audit and cannot be deleted.");
     }
-    const summary = await this.repository.getDeliverySummary(id);
+    const summary = await this.repository.getDeliverySummary(ownerPrincipal, id);
     if (summary.total > 0) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Campaign delivery history must be retained for audit.");
     }
-    await this.repository.deleteCampaign(id);
+    await this.repository.deleteCampaign(ownerPrincipal, id);
     return { success: true };
   }
 
-  private async requireMutableCampaign(campaignId: string) {
-    const campaign = await this.repository.getCampaign(campaignId);
+  private async requireMutableCampaign(ownerPrincipal: string, campaignId: string) {
+    const campaign = await this.repository.getCampaign(ownerPrincipal, campaignId);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
     if (!mutableCampaignStatuses.has(campaign.status)) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Campaign posts can only be edited while the campaign is draft or ready.");
@@ -264,15 +264,15 @@ export class PromotionCampaignService {
     return value as PromotionContentMode;
   }
 
-  async addCampaignPost(campaignId: string, body: any) {
-    await this.requireMutableCampaign(campaignId);
+  async addCampaignPost(ownerPrincipal: string, campaignId: string, body: any) {
+    await this.requireMutableCampaign(ownerPrincipal, campaignId);
     const postId = requiredText(body?.postId, "postId");
-    if (!(await this.repository.getSourcePost(postId))) {
+    if (!(await this.repository.getSourcePost(ownerPrincipal, postId))) {
       throw new PromotionCampaignError(404, "POST_NOT_FOUND", "Selected collected post does not exist.");
     }
 
     try {
-      return await this.repository.createCampaignPost({
+      return await this.repository.createCampaignPost(ownerPrincipal, {
         campaignId,
         postId,
         contentMode: this.validateContentMode(body?.contentMode ?? "original"),
@@ -286,14 +286,14 @@ export class PromotionCampaignService {
     }
   }
 
-  async updateCampaignPost(campaignId: string, campaignPostId: string, body: any) {
-    await this.requireMutableCampaign(campaignId);
-    const existing = await this.repository.getCampaignPost(campaignPostId);
+  async updateCampaignPost(ownerPrincipal: string, campaignId: string, campaignPostId: string, body: any) {
+    await this.requireMutableCampaign(ownerPrincipal, campaignId);
+    const existing = await this.repository.getCampaignPost(ownerPrincipal, campaignPostId);
     if (!existing || existing.campaignId !== campaignId) {
       throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign post not found.");
     }
 
-    const updated = await this.repository.updateCampaignPost(campaignPostId, {
+    const updated = await this.repository.updateCampaignPost(ownerPrincipal, campaignPostId, {
       contentMode: body?.contentMode === undefined ? undefined : this.validateContentMode(body.contentMode),
       promotionText: body?.promotionText === undefined ? undefined : optionalText(body.promotionText, "promotionText") ?? null,
       ctaText: body?.ctaText === undefined ? undefined : optionalText(body.ctaText, "ctaText") ?? null,
@@ -303,20 +303,20 @@ export class PromotionCampaignService {
     return updated!;
   }
 
-  async deleteCampaignPost(campaignId: string, campaignPostId: string) {
-    await this.requireMutableCampaign(campaignId);
-    const existing = await this.repository.getCampaignPost(campaignPostId);
+  async deleteCampaignPost(ownerPrincipal: string, campaignId: string, campaignPostId: string) {
+    await this.requireMutableCampaign(ownerPrincipal, campaignId);
+    const existing = await this.repository.getCampaignPost(ownerPrincipal, campaignPostId);
     if (!existing || existing.campaignId !== campaignId) {
       throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign post not found.");
     }
-    await this.repository.deleteCampaignPost(campaignPostId);
+    await this.repository.deleteCampaignPost(ownerPrincipal, campaignPostId);
     return { success: true };
   }
 
-  private async validateTargets(targetIds: string[]) {
+  private async validateTargets(ownerPrincipal: string, targetIds: string[]) {
     const [targets, accounts] = await Promise.all([
-      promotionRepository.listTargets(),
-      promotionRepository.listBotAccounts(),
+      promotionRepository.listTargets(ownerPrincipal),
+      promotionRepository.listBotAccounts(ownerPrincipal),
     ]);
     const targetById = new Map(targets.map(target => [target.id, target]));
     const accountById = new Map(accounts.map(account => [account.id, account]));
@@ -340,14 +340,14 @@ export class PromotionCampaignService {
     }
   }
 
-  private async validateCampaignContent(campaignId: string) {
-    const campaignPosts = await this.repository.listCampaignPosts(campaignId);
+  private async validateCampaignContent(ownerPrincipal: string, campaignId: string) {
+    const campaignPosts = await this.repository.listCampaignPosts(ownerPrincipal, campaignId);
     if (campaignPosts.length === 0) {
       throw new PromotionCampaignError(400, "EMPTY_CAMPAIGN", "Add at least one post before launching the campaign.");
     }
 
     for (const campaignPost of campaignPosts) {
-      const sourcePost = await this.repository.getSourcePost(campaignPost.postId);
+      const sourcePost = await this.repository.getSourcePost(ownerPrincipal, campaignPost.postId);
       if (!sourcePost) {
         throw new PromotionCampaignError(409, "REFERENCE_CONFLICT", `Collected post '${campaignPost.postId}' no longer exists.`);
       }
@@ -355,8 +355,8 @@ export class PromotionCampaignService {
     }
   }
 
-  private async recordFailure(items: Array<{ item: PromotionDeliveryWorkItem; attemptNumber: number }>, message: string) {
-    await Promise.all(items.map(({ item, attemptNumber }) => this.repository.completeDeliveryAttempt({
+  private async recordFailure(ownerPrincipal: string, items: Array<{ item: PromotionDeliveryWorkItem; attemptNumber: number }>, message: string) {
+    await Promise.all(items.map(({ item, attemptNumber }) => this.repository.completeDeliveryAttempt(ownerPrincipal, {
       deliveryId: item.delivery.id,
       attemptNumber,
       success: false,
@@ -365,11 +365,12 @@ export class PromotionCampaignService {
   }
 
   private async executeDeliveries(
+    ownerPrincipal: string,
     campaignId: string,
     allowedStatus: "pending" | "failed",
     deliveryIds?: string[]
   ) {
-    const workItems = await this.repository.listDeliveryWorkItems(campaignId, [allowedStatus], deliveryIds);
+    const workItems = await this.repository.listDeliveryWorkItems(ownerPrincipal, campaignId, [allowedStatus], deliveryIds);
     if (deliveryIds?.length) {
       const found = new Set(workItems.map(item => item.delivery.id));
       const unavailable = deliveryIds.filter(id => !found.has(id));
@@ -409,7 +410,7 @@ export class PromotionCampaignService {
     for (const group of groups.values()) {
       const claimed: Array<{ item: PromotionDeliveryWorkItem; attemptNumber: number }> = [];
       for (const item of group) {
-        const delivery = await this.repository.claimDelivery(item.delivery.id, allowedStatus);
+        const delivery = await this.repository.claimDelivery(ownerPrincipal, item.delivery.id, allowedStatus);
         if (delivery) claimed.push({ item, attemptNumber: delivery.attemptCount });
       }
       if (claimed.length === 0) continue;
@@ -429,7 +430,7 @@ export class PromotionCampaignService {
       }
 
       await Promise.all(configurationFailures.map(({ entry, message }) =>
-        this.repository.completeDeliveryAttempt({
+        this.repository.completeDeliveryAttempt(ownerPrincipal, {
           deliveryId: entry.item.delivery.id,
           attemptNumber: entry.attemptNumber,
           success: false,
@@ -444,11 +445,12 @@ export class PromotionCampaignService {
       try {
         botToken = await resolveTelegramBotToken(
           representative.botAccount as TelegramBotAccountRecord,
-          this.readLegacySettings
+          this.readLegacySettings,
+          ownerPrincipal
         );
         text = renderPromotionText(representative.campaignPost, representative.sourcePost);
       } catch (error: any) {
-        await this.recordFailure(publishable, error?.message || "Promotion content or Telegram credential could not be resolved.");
+        await this.recordFailure(ownerPrincipal, publishable, error?.message || "Promotion content or Telegram credential could not be resolved.");
         continue;
       }
 
@@ -470,7 +472,7 @@ export class PromotionCampaignService {
           text,
         });
       } catch (error: any) {
-        await this.recordFailure(publishable, error?.message || "Telegram publishing failed unexpectedly.");
+        await this.recordFailure(ownerPrincipal, publishable, error?.message || "Telegram publishing failed unexpectedly.");
         continue;
       }
 
@@ -478,7 +480,7 @@ export class PromotionCampaignService {
       await Promise.all(publishable.map(async ({ item, attemptNumber }) => {
         const result = resultsByDeliveryId.get(item.delivery.id);
         if (!result) {
-          await this.repository.completeDeliveryAttempt({
+          await this.repository.completeDeliveryAttempt(ownerPrincipal, {
             deliveryId: item.delivery.id,
             attemptNumber,
             success: false,
@@ -486,7 +488,7 @@ export class PromotionCampaignService {
           });
           return;
         }
-        await this.repository.completeDeliveryAttempt({
+        await this.repository.completeDeliveryAttempt(ownerPrincipal, {
           deliveryId: item.delivery.id,
           attemptNumber,
           success: result.success,
@@ -504,26 +506,26 @@ export class PromotionCampaignService {
     }
   }
 
-  async launchCampaign(campaignId: string, body: any) {
+  async launchCampaign(ownerPrincipal: string, campaignId: string, body: any) {
     const targetIds = uniqueUuidArray(body?.targetIds, "targetIds");
-    const campaign = await this.repository.getCampaign(campaignId);
+    const campaign = await this.repository.getCampaign(ownerPrincipal, campaignId);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
     if (!["draft", "ready", "running"].includes(campaign.status)) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", `Campaign cannot be launched from status '${campaign.status}'. Use retry for failed deliveries.`);
     }
 
-    await this.validateCampaignContent(campaignId);
-    await this.validateTargets(targetIds);
+    await this.validateCampaignContent(ownerPrincipal, campaignId);
+    await this.validateTargets(ownerPrincipal, targetIds);
 
     let prepared: { campaign: any; resumed: boolean };
     try {
-      prepared = await this.repository.prepareLaunch(campaignId, targetIds);
+      prepared = await this.repository.prepareLaunch(ownerPrincipal, campaignId, targetIds);
     } catch (error) {
       return mapDatabaseError(error);
     }
 
     if (prepared.resumed) {
-      const existingTargetIds = await this.repository.getDistinctDeliveryTargetIds(campaignId);
+      const existingTargetIds = await this.repository.getDistinctDeliveryTargetIds(ownerPrincipal, campaignId);
       if (!sameIdSet(existingTargetIds, targetIds)) {
         throw new PromotionCampaignError(
           409,
@@ -534,17 +536,17 @@ export class PromotionCampaignService {
       }
     }
 
-    await this.executeDeliveries(campaignId, "pending");
-    const updatedCampaign = await this.repository.refreshCampaignOutcome(campaignId);
+    await this.executeDeliveries(ownerPrincipal, campaignId, "pending");
+    const updatedCampaign = await this.repository.refreshCampaignOutcome(ownerPrincipal, campaignId);
     return {
-      ...(await this.getCampaignDetail(campaignId)),
+      ...(await this.getCampaignDetail(ownerPrincipal, campaignId)),
       campaign: updatedCampaign,
       resumed: prepared.resumed,
     };
   }
 
-  async retryFailedDeliveries(campaignId: string, body: any) {
-    const campaign = await this.repository.getCampaign(campaignId);
+  async retryFailedDeliveries(ownerPrincipal: string, campaignId: string, body: any) {
+    const campaign = await this.repository.getCampaign(ownerPrincipal, campaignId);
     if (!campaign) throw new PromotionCampaignError(404, "NOT_FOUND", "Promotion campaign not found.");
     if (campaign.status !== "partial" && campaign.status !== "failed") {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Only partial or failed campaigns have retryable deliveries.");
@@ -553,7 +555,7 @@ export class PromotionCampaignService {
     const deliveryIds = body?.deliveryIds === undefined
       ? undefined
       : uniqueUuidArray(body.deliveryIds, "deliveryIds");
-    const failedWork = await this.repository.listDeliveryWorkItems(campaignId, ["failed"], deliveryIds);
+    const failedWork = await this.repository.listDeliveryWorkItems(ownerPrincipal, campaignId, ["failed"], deliveryIds);
     if (failedWork.length === 0) {
       throw new PromotionCampaignError(400, "NO_FAILED_DELIVERIES", "No failed promotion deliveries are available to retry.");
     }
@@ -594,16 +596,16 @@ export class PromotionCampaignService {
     }
 
     const targetIds = Array.from(new Set(retryableFailedWork.map(item => item.target.id)));
-    await this.validateTargets(targetIds);
-    const running = await this.repository.markCampaignRunningForRetry(campaignId);
+    await this.validateTargets(ownerPrincipal, targetIds);
+    const running = await this.repository.markCampaignRunningForRetry(ownerPrincipal, campaignId);
     if (!running) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Campaign retry could not acquire the campaign state.");
     }
 
-    await this.executeDeliveries(campaignId, "failed", deliveryIds);
-    const updatedCampaign = await this.repository.refreshCampaignOutcome(campaignId);
+    await this.executeDeliveries(ownerPrincipal, campaignId, "failed", deliveryIds);
+    const updatedCampaign = await this.repository.refreshCampaignOutcome(ownerPrincipal, campaignId);
     return {
-      ...(await this.getCampaignDetail(campaignId)),
+      ...(await this.getCampaignDetail(ownerPrincipal, campaignId)),
       campaign: updatedCampaign,
     };
   }

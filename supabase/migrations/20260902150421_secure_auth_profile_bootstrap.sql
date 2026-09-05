@@ -1,6 +1,3 @@
--- Secure Supabase Auth profile bootstrap for TGReposter RBAC.
--- New Auth identities must not become application admins automatically.
-
 alter table public.profiles
   alter column is_active set default false;
 

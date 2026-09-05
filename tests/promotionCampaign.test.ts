@@ -12,6 +12,7 @@ import type {
 } from "../server/repositories/promotionCampaignRepository";
 
 const now = new Date().toISOString();
+const ownerPrincipal = "legacy:alice";
 
 function campaign(overrides: Partial<PromotionCampaignRecord> = {}): PromotionCampaignRecord {
   return {
@@ -85,13 +86,13 @@ test("non-original promotion modes require prepared promotion text", () => {
 test("campaign creation trims metadata and preserves creator identity", async () => {
   let captured: any = null;
   const fakeRepository = {
-    createCampaign: async (input: any) => {
+    createCampaign: async (_owner: string, input: any) => {
       captured = input;
       return campaign({ name: input.name, description: input.description, createdByUsername: input.createdByUsername });
     },
   } as any;
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
-  await service.createCampaign({ name: "  Launch  ", description: "  Partner push  " }, "editor");
+  await service.createCampaign(ownerPrincipal, { name: "  Launch  ", description: "  Partner push  " }, "editor");
   assert.deepEqual(captured, {
     name: "Launch",
     description: "Partner push",
@@ -105,7 +106,7 @@ test("campaigns with delivery history cannot be manually edited", async () => {
   } as any;
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
   await assert.rejects(
-    service.updateCampaign(campaign().id, { name: "Changed" }),
+    service.updateCampaign(ownerPrincipal, campaign().id, { name: "Changed" }),
     (error: any) => {
       assert.ok(error instanceof PromotionCampaignError);
       assert.equal(error.code, "CAMPAIGN_STATE_CONFLICT");
@@ -121,7 +122,7 @@ test("campaign launch rejects an empty campaign before any target publishing wor
   } as any;
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
   await assert.rejects(
-    service.launchCampaign(campaign().id, {
+    service.launchCampaign(ownerPrincipal, campaign().id, {
       targetIds: ["33333333-3333-4333-8333-333333333333"],
     }),
     (error: any) => {
@@ -150,7 +151,7 @@ test("retry validates every requested delivery before acquiring running state", 
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
 
   await assert.rejects(
-    service.retryFailedDeliveries(campaign().id, {
+    service.retryFailedDeliveries(ownerPrincipal, campaign().id, {
       deliveryIds: [validDeliveryId, missingDeliveryId],
     }),
     (error: any) => {
@@ -169,7 +170,7 @@ test("campaign post positions reject negative values before persistence", async 
   } as any;
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
   await assert.rejects(
-    service.addCampaignPost(campaign().id, {
+    service.addCampaignPost(ownerPrincipal, campaign().id, {
       postId: "source/42",
       contentMode: "custom",
       promotionText: "Promotion copy",

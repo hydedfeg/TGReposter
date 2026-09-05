@@ -36,7 +36,7 @@ test("promotion frontend never handles raw Telegram bot tokens", () => {
 });
 
 
-test("super-admin can manage campaign destinations from Promotion Targets", () => {
+test("every authenticated user can manage private campaign destinations", () => {
   const workspace = read("src/components/PromotionWorkspace.tsx");
 
   assert.match(workspace, /Add campaign destination/);
@@ -44,4 +44,5 @@ test("super-admin can manage campaign destinations from Promotion Targets", () =
   assert.match(workspace, /\/api\/promotion\/targets\/\$\{targetId\}\/test/);
   assert.match(workspace, /Campaign destinations/);
   assert.match(workspace, /Ready for campaigns/);
+  assert.doesNotMatch(workspace, /currentUserRole === "super-admin"/);
 });

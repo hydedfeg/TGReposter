@@ -67,6 +67,14 @@ export interface UpdatePromotionTargetInput {
 
 let pool: Pool | null = null;
 
+function cleanOwnerPrincipal(value: string): string {
+  const ownerPrincipal = value.trim().toLowerCase();
+  if (!ownerPrincipal) {
+    throw new Error("Promotion owner principal is required.");
+  }
+  return ownerPrincipal;
+}
+
 function getPool(): Pool {
   const connectionString = getPostgresConnectionString();
 
@@ -106,50 +114,63 @@ function mapTarget(row: any): PromotionTargetRecord {
 }
 
 export class PromotionRepository {
-  async listBotAccounts(): Promise<TelegramBotAccountRecord[]> {
-    const result = await getPool().query(`
-      select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
-      from public.telegram_bot_accounts
-      order by created_at asc
-    `);
+  async listBotAccounts(ownerPrincipal: string): Promise<TelegramBotAccountRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      `select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
+       from public.telegram_bot_accounts
+       where owner_principal = $1
+       order by created_at asc`,
+      [owner]
+    );
     return result.rows.map(mapBotAccount);
   }
 
-  async getBotAccount(id: string): Promise<TelegramBotAccountRecord | null> {
+  async getBotAccount(ownerPrincipal: string, id: string): Promise<TelegramBotAccountRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at
-       from public.telegram_bot_accounts where id = $1 limit 1`,
-      [id]
+       from public.telegram_bot_accounts
+       where owner_principal = $1 and id = $2
+       limit 1`,
+      [owner, id]
     );
     return result.rows[0] ? mapBotAccount(result.rows[0]) : null;
   }
 
-  async createBotAccount(input: CreateBotAccountInput): Promise<TelegramBotAccountRecord> {
+  async createBotAccount(ownerPrincipal: string, input: CreateBotAccountInput): Promise<TelegramBotAccountRecord> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `insert into public.telegram_bot_accounts
-        (name, bot_username, credential_source, credential_ref, enabled)
-       values ($1, $2, $3, $4, $5)
+        (owner_principal, name, bot_username, credential_source, credential_ref, enabled)
+       values ($1, $2, $3, $4, $5, $6)
        returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at`,
-      [input.name, input.botUsername ?? null, input.credentialSource, input.credentialRef, input.enabled ?? true]
+      [owner, input.name, input.botUsername ?? null, input.credentialSource, input.credentialRef, input.enabled ?? true]
     );
     return mapBotAccount(result.rows[0]);
   }
 
-  async updateBotAccount(id: string, input: UpdateBotAccountInput): Promise<TelegramBotAccountRecord | null> {
-    const current = await this.getBotAccount(id);
+  async updateBotAccount(
+    ownerPrincipal: string,
+    id: string,
+    input: UpdateBotAccountInput
+  ): Promise<TelegramBotAccountRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const current = await this.getBotAccount(owner, id);
     if (!current) return null;
 
     const result = await getPool().query(
       `update public.telegram_bot_accounts
-       set name = $2,
-           bot_username = $3,
-           credential_source = $4,
-           credential_ref = $5,
-           enabled = $6,
+       set name = $3,
+           bot_username = $4,
+           credential_source = $5,
+           credential_ref = $6,
+           enabled = $7,
            updated_at = now()
-       where id = $1
+       where owner_principal = $1 and id = $2
        returning id, name, bot_username, credential_source, credential_ref, enabled, created_at, updated_at`,
       [
+        owner,
         id,
         input.name ?? current.name,
         input.botUsername === undefined ? current.botUsername ?? null : input.botUsername,
@@ -161,62 +182,79 @@ export class PromotionRepository {
     return result.rows[0] ? mapBotAccount(result.rows[0]) : null;
   }
 
-  async deleteBotAccount(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.telegram_bot_accounts where id = $1`, [id]);
+  async deleteBotAccount(ownerPrincipal: string, id: string): Promise<boolean> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      `delete from public.telegram_bot_accounts where owner_principal = $1 and id = $2`,
+      [owner, id]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
-  async listTargets(): Promise<PromotionTargetRecord[]> {
-    const result = await getPool().query(`
-      select id, bot_account_id, name, chat_id, chat_type, enabled,
-             connection_status, last_checked_at, error_message, created_at, updated_at
-      from public.promotion_targets
-      order by created_at asc
-    `);
-    return result.rows.map(mapTarget);
-  }
-
-  async getTarget(id: string): Promise<PromotionTargetRecord | null> {
+  async listTargets(ownerPrincipal: string): Promise<PromotionTargetRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select id, bot_account_id, name, chat_id, chat_type, enabled,
               connection_status, last_checked_at, error_message, created_at, updated_at
-       from public.promotion_targets where id = $1 limit 1`,
-      [id]
+       from public.promotion_targets
+       where owner_principal = $1
+       order by created_at asc`,
+      [owner]
+    );
+    return result.rows.map(mapTarget);
+  }
+
+  async getTarget(ownerPrincipal: string, id: string): Promise<PromotionTargetRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      `select id, bot_account_id, name, chat_id, chat_type, enabled,
+              connection_status, last_checked_at, error_message, created_at, updated_at
+       from public.promotion_targets
+       where owner_principal = $1 and id = $2
+       limit 1`,
+      [owner, id]
     );
     return result.rows[0] ? mapTarget(result.rows[0]) : null;
   }
 
-  async createTarget(input: CreatePromotionTargetInput): Promise<PromotionTargetRecord> {
+  async createTarget(ownerPrincipal: string, input: CreatePromotionTargetInput): Promise<PromotionTargetRecord> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `insert into public.promotion_targets
-        (bot_account_id, name, chat_id, chat_type, enabled)
-       values ($1, $2, $3, $4, $5)
+        (owner_principal, bot_account_id, name, chat_id, chat_type, enabled)
+       values ($1, $2, $3, $4, $5, $6)
        returning id, bot_account_id, name, chat_id, chat_type, enabled,
                  connection_status, last_checked_at, error_message, created_at, updated_at`,
-      [input.botAccountId, input.name, input.chatId, input.chatType ?? null, input.enabled ?? true]
+      [owner, input.botAccountId, input.name, input.chatId, input.chatType ?? null, input.enabled ?? true]
     );
     return mapTarget(result.rows[0]);
   }
 
-  async updateTarget(id: string, input: UpdatePromotionTargetInput): Promise<PromotionTargetRecord | null> {
-    const current = await this.getTarget(id);
+  async updateTarget(
+    ownerPrincipal: string,
+    id: string,
+    input: UpdatePromotionTargetInput
+  ): Promise<PromotionTargetRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const current = await this.getTarget(owner, id);
     if (!current) return null;
 
     const result = await getPool().query(
       `update public.promotion_targets
-       set bot_account_id = $2,
-           name = $3,
-           chat_id = $4,
-           chat_type = $5,
-           enabled = $6,
-           connection_status = $7,
-           last_checked_at = $8,
-           error_message = $9,
+       set bot_account_id = $3,
+           name = $4,
+           chat_id = $5,
+           chat_type = $6,
+           enabled = $7,
+           connection_status = $8,
+           last_checked_at = $9,
+           error_message = $10,
            updated_at = now()
-       where id = $1
+       where owner_principal = $1 and id = $2
        returning id, bot_account_id, name, chat_id, chat_type, enabled,
                  connection_status, last_checked_at, error_message, created_at, updated_at`,
       [
+        owner,
         id,
         input.botAccountId ?? current.botAccountId,
         input.name ?? current.name,
@@ -231,8 +269,12 @@ export class PromotionRepository {
     return result.rows[0] ? mapTarget(result.rows[0]) : null;
   }
 
-  async deleteTarget(id: string): Promise<boolean> {
-    const result = await getPool().query(`delete from public.promotion_targets where id = $1`, [id]);
+  async deleteTarget(ownerPrincipal: string, id: string): Promise<boolean> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      `delete from public.promotion_targets where owner_principal = $1 and id = $2`,
+      [owner, id]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 }

@@ -21,14 +21,14 @@ interface AISettingsSnapshot {
   };
 }
 
-export type PromotionAISettingsReader = () => Promise<AISettingsSnapshot>;
+export type PromotionAISettingsReader = (ownerPrincipal: string) => Promise<AISettingsSnapshot>;
 
 type PromotionAIDispatcher = typeof dispatchCuration;
 
 interface PromotionAIRepository {
-  getCampaign(id: string): Promise<PromotionCampaignRecord | null>;
-  getCampaignPost(id: string): Promise<PromotionCampaignPostRecord | null>;
-  getSourcePost(id: string): Promise<PromotionSourcePostRecord | null>;
+  getCampaign(ownerPrincipal: string, id: string): Promise<PromotionCampaignRecord | null>;
+  getCampaignPost(ownerPrincipal: string, id: string): Promise<PromotionCampaignPostRecord | null>;
+  getSourcePost(ownerPrincipal: string, id: string): Promise<PromotionSourcePostRecord | null>;
 }
 
 export class PromotionAIError extends Error {
@@ -98,11 +98,12 @@ export class PromotionAIService {
   }
 
   async generate(
+    ownerPrincipal: string,
     campaignId: string,
     campaignPostId: string,
     body: any
   ): Promise<PromotionAIGenerateResult> {
-    const campaign = await this.repository.getCampaign(campaignId);
+    const campaign = await this.repository.getCampaign(ownerPrincipal, campaignId);
     if (!campaign) {
       throw new PromotionAIError(404, "NOT_FOUND", "Promotion campaign not found.");
     }
@@ -114,12 +115,12 @@ export class PromotionAIService {
       );
     }
 
-    const campaignPost = await this.repository.getCampaignPost(campaignPostId);
+    const campaignPost = await this.repository.getCampaignPost(ownerPrincipal, campaignPostId);
     if (!campaignPost || campaignPost.campaignId !== campaignId) {
       throw new PromotionAIError(404, "NOT_FOUND", "Promotion campaign post not found.");
     }
 
-    const sourcePost = await this.repository.getSourcePost(campaignPost.postId);
+    const sourcePost = await this.repository.getSourcePost(ownerPrincipal, campaignPost.postId);
     if (!sourcePost) {
       throw new PromotionAIError(409, "REFERENCE_CONFLICT", "The collected source post is no longer available.");
     }
@@ -156,7 +157,7 @@ export class PromotionAIService {
       instructions,
     });
 
-    const settings = await this.readSettings();
+    const settings = await this.readSettings(ownerPrincipal);
     const provider = settings.aiConfig?.provider || "gemini";
     const model = settings.aiConfig?.model || "gemini-3.5-flash";
     const geminiApiKey = process.env.GEMINI_API_KEY;

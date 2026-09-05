@@ -29,9 +29,13 @@ export interface DatabaseHealth {
   };
   workspace: {
     ready: boolean;
+    applicationOwnershipReady: boolean;
     destinationOwnershipReady: boolean;
     inboxIsolationReady: boolean;
+    sourceOwners: number;
+    postOwners: number;
     destinationOwners: number;
+    unownedApplicationRows: number;
     unownedDestinationTargets: number;
     inboxOwners: number;
     activeSupabaseUsers: number;
@@ -76,9 +80,13 @@ function emptyHealth(error?: string): DatabaseHealth {
     },
     workspace: {
       ready: false,
+      applicationOwnershipReady: false,
       destinationOwnershipReady: false,
       inboxIsolationReady: false,
+      sourceOwners: 0,
+      postOwners: 0,
       destinationOwners: 0,
+      unownedApplicationRows: 0,
       unownedDestinationTargets: 0,
       inboxOwners: 0,
       activeSupabaseUsers: 0,
@@ -116,13 +124,21 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
           to_regclass('public.posts') is not null as posts,
           to_regclass('public.user_inbox_items') is not null as user_inbox_items,
           to_regclass('public.curator_settings') is not null as curator_settings,
-          exists (
-            select 1
-            from information_schema.columns
-            where table_schema = 'public'
-              and table_name = 'destination_targets'
-              and column_name = 'owner_principal'
-          ) as destination_owner_column
+          (select is_nullable = 'NO' from information_schema.columns
+            where table_schema = 'public' and table_name = 'source_channels'
+              and column_name = 'owner_principal') is true as source_owner_required,
+          (select is_nullable = 'NO' from information_schema.columns
+            where table_schema = 'public' and table_name = 'filters'
+              and column_name = 'owner_principal') is true as filters_owner_required,
+          (select is_nullable = 'NO' from information_schema.columns
+            where table_schema = 'public' and table_name = 'ai_settings'
+              and column_name = 'owner_principal') is true as ai_owner_required,
+          (select is_nullable = 'NO' from information_schema.columns
+            where table_schema = 'public' and table_name = 'posts'
+              and column_name = 'owner_principal') is true as posts_owner_required,
+          (select is_nullable = 'NO' from information_schema.columns
+            where table_schema = 'public' and table_name = 'destination_targets'
+              and column_name = 'owner_principal') is true as destination_owner_required
       `
     );
 
@@ -133,10 +149,15 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
     }));
     const readyCount = tables.filter(table => table.ready).length;
     const runtimeReady = readyCount === BACKEND_RUNTIME_TABLES.length;
-    const destinationOwnershipReady =
-      schemaRow.destination_targets === true &&
-      schemaRow.destination_owner_column === true;
-    const inboxIsolationReady = schemaRow.user_inbox_items === true;
+    const applicationOwnershipReady =
+      schemaRow.source_owner_required === true &&
+      schemaRow.filters_owner_required === true &&
+      schemaRow.ai_owner_required === true &&
+      schemaRow.posts_owner_required === true &&
+      schemaRow.destination_owner_required === true;
+    const destinationOwnershipReady = schemaRow.destination_owner_required === true;
+    const inboxIsolationReady =
+      schemaRow.user_inbox_items === true && schemaRow.posts_owner_required === true;
 
     const health: DatabaseHealth = {
       ...emptyHealth(),
@@ -149,17 +170,14 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
       },
       workspace: {
         ...emptyHealth().workspace,
+        applicationOwnershipReady,
         destinationOwnershipReady,
         inboxIsolationReady,
-        ready: destinationOwnershipReady && inboxIsolationReady,
+        ready: applicationOwnershipReady && inboxIsolationReady,
       },
     };
 
-    if (
-      schemaRow.source_channels === true &&
-      schemaRow.destination_targets === true &&
-      schemaRow.posts === true
-    ) {
+    if (runtimeReady && applicationOwnershipReady) {
       const countsResult = await pool.query(
         `
           select
@@ -172,9 +190,24 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
             )::bigint as inbox_posts,
             (
               select count(distinct owner_principal)
+              from public.source_channels
+            )::bigint as source_owners,
+            (
+              select count(distinct owner_principal)
+              from public.posts
+            )::bigint as post_owners,
+            (
+              select count(distinct owner_principal)
               from public.destination_targets
               where owner_principal is not null
             )::bigint as destination_owners,
+            (
+              (select count(*) from public.source_channels where owner_principal is null) +
+              (select count(*) from public.filters where owner_principal is null) +
+              (select count(*) from public.ai_settings where owner_principal is null) +
+              (select count(*) from public.posts where owner_principal is null) +
+              (select count(*) from public.destination_targets where owner_principal is null)
+            )::bigint as unowned_application_rows,
             (
               select count(*)
               from public.destination_targets
@@ -235,10 +268,14 @@ export async function getDatabaseHealth(): Promise<DatabaseHealth> {
         userInboxItems,
       };
       health.workspace = {
-        ready: destinationOwnershipReady && inboxIsolationReady,
+        ready: applicationOwnershipReady && inboxIsolationReady,
+        applicationOwnershipReady,
         destinationOwnershipReady,
         inboxIsolationReady,
+        sourceOwners: Number(counts.source_owners ?? 0),
+        postOwners: Number(counts.post_owners ?? 0),
         destinationOwners: Number(counts.destination_owners ?? 0),
+        unownedApplicationRows: Number(counts.unowned_application_rows ?? 0),
         unownedDestinationTargets: Number(
           counts.unowned_destination_targets ?? 0
         ),

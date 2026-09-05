@@ -31,8 +31,6 @@ begin
     limit 1;
   end if;
 
-  -- Compatibility fallback for installations that still use the original owner
-  -- username but do not yet have a populated profile row.
   if initial_owner is null then
     initial_owner := 'legacy:system_admin';
   end if;
@@ -70,11 +68,6 @@ begin
 end
 $$;
 
--- Keep the pre-existing global client_id unique index during this rollout so
--- the currently deployed backend can continue writing safely between the schema
--- migration and application deployment. New target IDs are UUID-based, making
--- accidental cross-user collisions practically impossible. A later cleanup
--- migration may remove the compatibility index after the cutover is complete.
 create unique index if not exists destination_targets_owner_client_id_key
   on public.destination_targets (owner_principal, client_id)
   where owner_principal is not null
@@ -92,8 +85,6 @@ create index if not exists idx_destination_targets_owner_enabled
 comment on column public.destination_targets.owner_principal is
   'Server-derived destination owner key. Format is supabase:<auth-user-uuid> or legacy:<username>. Never accept this value from the browser.';
 
--- Destination rows are backend-owned. The browser accesses them only through
--- authenticated Express routes, which enforce owner_principal scoping.
 alter table public.destination_targets enable row level security;
 revoke all on table public.destination_targets from anon, authenticated;
 grant select, insert, update, delete on table public.destination_targets to service_role;

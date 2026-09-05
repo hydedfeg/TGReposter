@@ -135,6 +135,14 @@ export interface UpdateCampaignPostInput {
 
 let pool: Pool | null = null;
 
+function cleanOwnerPrincipal(value: string): string {
+  const ownerPrincipal = value.trim().toLowerCase();
+  if (!ownerPrincipal) {
+    throw new Error("Promotion owner principal is required.");
+  }
+  return ownerPrincipal;
+}
+
 function getPool(): Pool {
   const connectionString = getPostgresConnectionString();
   if (!pool) pool = new Pool({ connectionString, max: 5 });
@@ -227,39 +235,54 @@ const campaignPostSelect = "id, campaign_id, post_id, content_mode, promotion_te
 const deliverySelect = "id, campaign_post_id, target_id, status, attempt_count, telegram_message_id, warning_message, error_message, last_attempt_at, published_at, created_at, updated_at";
 
 export class PromotionCampaignRepository {
-  async listCampaigns(limit = 100): Promise<PromotionCampaignRecord[]> {
+  async listCampaigns(ownerPrincipal: string, limit = 100): Promise<PromotionCampaignRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
-      `select ${campaignSelect} from public.promotion_campaigns order by created_at desc limit $1`,
-      [limit]
+      `select ${campaignSelect}
+       from public.promotion_campaigns
+       where owner_principal = $1
+       order by created_at desc
+       limit $2`,
+      [owner, limit]
     );
     return result.rows.map(mapCampaign);
   }
 
-  async getCampaign(id: string): Promise<PromotionCampaignRecord | null> {
+  async getCampaign(ownerPrincipal: string, id: string): Promise<PromotionCampaignRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
-      `select ${campaignSelect} from public.promotion_campaigns where id = $1 limit 1`,
-      [id]
+      `select ${campaignSelect}
+       from public.promotion_campaigns
+       where owner_principal = $1 and id = $2
+       limit 1`,
+      [owner, id]
     );
     return result.rows[0] ? mapCampaign(result.rows[0]) : null;
   }
 
-  async createCampaign(input: CreateCampaignInput): Promise<PromotionCampaignRecord> {
+  async createCampaign(ownerPrincipal: string, input: CreateCampaignInput): Promise<PromotionCampaignRecord> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
-      `insert into public.promotion_campaigns (name, description, created_by_username)
-       values ($1, $2, $3) returning ${campaignSelect}`,
-      [input.name, input.description ?? null, input.createdByUsername ?? null]
+      `insert into public.promotion_campaigns
+        (owner_principal, name, description, created_by_username)
+       values ($1, $2, $3, $4)
+       returning ${campaignSelect}`,
+      [owner, input.name, input.description ?? null, input.createdByUsername ?? null]
     );
     return mapCampaign(result.rows[0]);
   }
 
-  async updateCampaign(id: string, input: UpdateCampaignInput): Promise<PromotionCampaignRecord | null> {
-    const current = await this.getCampaign(id);
+  async updateCampaign(ownerPrincipal: string, id: string, input: UpdateCampaignInput): Promise<PromotionCampaignRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const current = await this.getCampaign(owner, id);
     if (!current) return null;
     const result = await getPool().query(
       `update public.promotion_campaigns
-       set name = $2, description = $3, status = $4, updated_at = now()
-       where id = $1 returning ${campaignSelect}`,
+       set name = $3, description = $4, status = $5, updated_at = now()
+       where owner_principal = $1 and id = $2
+       returning ${campaignSelect}`,
       [
+        owner,
         id,
         input.name ?? current.name,
         input.description === undefined ? current.description ?? null : input.description,
@@ -269,60 +292,76 @@ export class PromotionCampaignRepository {
     return result.rows[0] ? mapCampaign(result.rows[0]) : null;
   }
 
-  async deleteCampaign(id: string): Promise<boolean> {
-    const result = await getPool().query("delete from public.promotion_campaigns where id = $1", [id]);
+  async deleteCampaign(ownerPrincipal: string, id: string): Promise<boolean> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      "delete from public.promotion_campaigns where owner_principal = $1 and id = $2",
+      [owner, id]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getSourcePost(postId: string): Promise<PromotionSourcePostRecord | null> {
+  async getSourcePost(ownerPrincipal: string, postId: string): Promise<PromotionSourcePostRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select id, channel_username, original_text, edited_text, photo_url, video_url, telegram_url, status, published_at
-       from public.posts where id = $1 limit 1`,
-      [postId]
+       from public.posts
+       where owner_principal = $1 and id = $2
+       limit 1`,
+      [owner, postId]
     );
     return result.rows[0] ? mapSourcePost(result.rows[0]) : null;
   }
 
-  async listCampaignPosts(campaignId: string): Promise<PromotionCampaignPostRecord[]> {
+  async listCampaignPosts(ownerPrincipal: string, campaignId: string): Promise<PromotionCampaignPostRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select ${campaignPostSelect}
        from public.promotion_campaign_posts
-       where campaign_id = $1
+       where owner_principal = $1 and campaign_id = $2
        order by position asc, created_at asc`,
-      [campaignId]
+      [owner, campaignId]
     );
     return result.rows.map(mapCampaignPost);
   }
 
-  async getCampaignPost(id: string): Promise<PromotionCampaignPostRecord | null> {
+  async getCampaignPost(ownerPrincipal: string, id: string): Promise<PromotionCampaignPostRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
-      `select ${campaignPostSelect} from public.promotion_campaign_posts where id = $1 limit 1`,
-      [id]
+      `select ${campaignPostSelect}
+       from public.promotion_campaign_posts
+       where owner_principal = $1 and id = $2
+       limit 1`,
+      [owner, id]
     );
     return result.rows[0] ? mapCampaignPost(result.rows[0]) : null;
   }
 
-  async createCampaignPost(input: CreateCampaignPostInput): Promise<PromotionCampaignPostRecord> {
+  async createCampaignPost(ownerPrincipal: string, input: CreateCampaignPostInput): Promise<PromotionCampaignPostRecord> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `insert into public.promotion_campaign_posts
-        (campaign_id, post_id, content_mode, promotion_text, cta_text, source_link_override, position)
-       values ($1, $2, $3, $4, $5, $6, $7)
+        (owner_principal, campaign_id, post_id, content_mode, promotion_text, cta_text, source_link_override, position)
+       values ($1, $2, $3, $4, $5, $6, $7, $8)
        returning ${campaignPostSelect}`,
-      [input.campaignId, input.postId, input.contentMode, input.promotionText ?? null,
+      [owner, input.campaignId, input.postId, input.contentMode, input.promotionText ?? null,
        input.ctaText ?? null, input.sourceLinkOverride ?? null, input.position ?? 0]
     );
     return mapCampaignPost(result.rows[0]);
   }
 
-  async updateCampaignPost(id: string, input: UpdateCampaignPostInput): Promise<PromotionCampaignPostRecord | null> {
-    const current = await this.getCampaignPost(id);
+  async updateCampaignPost(ownerPrincipal: string, id: string, input: UpdateCampaignPostInput): Promise<PromotionCampaignPostRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const current = await this.getCampaignPost(owner, id);
     if (!current) return null;
     const result = await getPool().query(
       `update public.promotion_campaign_posts
-       set content_mode = $2, promotion_text = $3, cta_text = $4,
-           source_link_override = $5, position = $6, updated_at = now()
-       where id = $1 returning ${campaignPostSelect}`,
+       set content_mode = $3, promotion_text = $4, cta_text = $5,
+           source_link_override = $6, position = $7, updated_at = now()
+       where owner_principal = $1 and id = $2
+       returning ${campaignPostSelect}`,
       [
+        owner,
         id,
         input.contentMode ?? current.contentMode,
         input.promotionText === undefined ? current.promotionText ?? null : input.promotionText,
@@ -334,58 +373,77 @@ export class PromotionCampaignRepository {
     return result.rows[0] ? mapCampaignPost(result.rows[0]) : null;
   }
 
-  async deleteCampaignPost(id: string): Promise<boolean> {
-    const result = await getPool().query("delete from public.promotion_campaign_posts where id = $1", [id]);
+  async deleteCampaignPost(ownerPrincipal: string, id: string): Promise<boolean> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const result = await getPool().query(
+      "delete from public.promotion_campaign_posts where owner_principal = $1 and id = $2",
+      [owner, id]
+    );
     return (result.rowCount ?? 0) > 0;
   }
 
-  async listDeliveries(campaignId: string): Promise<PromotionDeliveryRecord[]> {
+  async listDeliveries(ownerPrincipal: string, campaignId: string): Promise<PromotionDeliveryRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select d.id, d.campaign_post_id, d.target_id, d.status, d.attempt_count,
               d.telegram_message_id, d.warning_message, d.error_message, d.last_attempt_at,
               d.published_at, d.created_at, d.updated_at
        from public.promotion_deliveries d
-       join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
-       where cp.campaign_id = $1
+       join public.promotion_campaign_posts cp
+         on cp.owner_principal = d.owner_principal and cp.id = d.campaign_post_id
+       where d.owner_principal = $1 and cp.campaign_id = $2
        order by d.created_at asc`,
-      [campaignId]
+      [owner, campaignId]
     );
     return result.rows.map(mapDelivery);
   }
 
-  async listDeliveryAttempts(campaignId: string): Promise<PromotionDeliveryAttemptRecord[]> {
+  async listDeliveryAttempts(ownerPrincipal: string, campaignId: string): Promise<PromotionDeliveryAttemptRecord[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select a.id, a.delivery_id, a.attempt_number, a.outcome, a.telegram_message_id,
               a.telegram_error_code, a.warning_message, a.error_message, a.attempted_at
        from public.promotion_delivery_attempts a
-       join public.promotion_deliveries d on d.id = a.delivery_id
-       join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
-       where cp.campaign_id = $1
+       join public.promotion_deliveries d
+         on d.owner_principal = a.owner_principal and d.id = a.delivery_id
+       join public.promotion_campaign_posts cp
+         on cp.owner_principal = d.owner_principal and cp.id = d.campaign_post_id
+       where a.owner_principal = $1 and cp.campaign_id = $2
        order by a.attempted_at asc, a.attempt_number asc`,
-      [campaignId]
+      [owner, campaignId]
     );
     return result.rows.map(mapAttempt);
   }
 
-  async getDistinctDeliveryTargetIds(campaignId: string): Promise<string[]> {
+  async getDistinctDeliveryTargetIds(ownerPrincipal: string, campaignId: string): Promise<string[]> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select distinct d.target_id
        from public.promotion_deliveries d
-       join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
-       where cp.campaign_id = $1
+       join public.promotion_campaign_posts cp
+         on cp.owner_principal = d.owner_principal and cp.id = d.campaign_post_id
+       where d.owner_principal = $1 and cp.campaign_id = $2
        order by d.target_id`,
-      [campaignId]
+      [owner, campaignId]
     );
     return result.rows.map(row => row.target_id);
   }
 
-  async prepareLaunch(campaignId: string, targetIds: string[]): Promise<{ campaign: PromotionCampaignRecord; resumed: boolean }> {
+  async prepareLaunch(
+    ownerPrincipal: string,
+    campaignId: string,
+    targetIds: string[]
+  ): Promise<{ campaign: PromotionCampaignRecord; resumed: boolean }> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const client = await getPool().connect();
     try {
       await client.query("begin");
       const campaignResult = await client.query(
-        `select ${campaignSelect} from public.promotion_campaigns where id = $1 for update`,
-        [campaignId]
+        `select ${campaignSelect}
+         from public.promotion_campaigns
+         where owner_principal = $1 and id = $2
+         for update`,
+        [owner, campaignId]
       );
       if (!campaignResult.rows[0]) throw new Error("CAMPAIGN_NOT_FOUND");
 
@@ -400,23 +458,28 @@ export class PromotionCampaignRepository {
           `update public.promotion_campaigns
            set status = 'running', started_at = coalesce(started_at, now()),
                completed_at = null, updated_at = now()
-           where id = $1`,
-          [campaignId]
+           where owner_principal = $1 and id = $2`,
+          [owner, campaignId]
         );
         await client.query(
-          `insert into public.promotion_deliveries (campaign_post_id, target_id, status)
-           select cp.id, selected.target_id, 'pending'
+          `insert into public.promotion_deliveries
+             (owner_principal, campaign_post_id, target_id, status)
+           select $1, cp.id, selected.target_id, 'pending'
            from public.promotion_campaign_posts cp
-           cross join unnest($2::uuid[]) as selected(target_id)
-           where cp.campaign_id = $1
-           on conflict (campaign_post_id, target_id) do nothing`,
-          [campaignId, targetIds]
+           cross join unnest($3::uuid[]) as selected(target_id)
+           join public.promotion_targets t
+             on t.owner_principal = $1 and t.id = selected.target_id
+           where cp.owner_principal = $1 and cp.campaign_id = $2
+           on conflict do nothing`,
+          [owner, campaignId, targetIds]
         );
       }
 
       const updatedResult = await client.query(
-        `select ${campaignSelect} from public.promotion_campaigns where id = $1`,
-        [campaignId]
+        `select ${campaignSelect}
+         from public.promotion_campaigns
+         where owner_principal = $1 and id = $2`,
+        [owner, campaignId]
       );
       await client.query("commit");
       return { campaign: mapCampaign(updatedResult.rows[0]), resumed };
@@ -428,27 +491,30 @@ export class PromotionCampaignRepository {
     }
   }
 
-  async markCampaignRunningForRetry(campaignId: string): Promise<PromotionCampaignRecord | null> {
+  async markCampaignRunningForRetry(ownerPrincipal: string, campaignId: string): Promise<PromotionCampaignRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `update public.promotion_campaigns
        set status = 'running', completed_at = null, updated_at = now()
-       where id = $1 and status in ('partial', 'failed')
+       where owner_principal = $1 and id = $2 and status in ('partial', 'failed')
        returning ${campaignSelect}`,
-      [campaignId]
+      [owner, campaignId]
     );
     return result.rows[0] ? mapCampaign(result.rows[0]) : null;
   }
 
   async listDeliveryWorkItems(
+    ownerPrincipal: string,
     campaignId: string,
     statuses: PromotionDeliveryStatus[],
     deliveryIds?: string[]
   ): Promise<PromotionDeliveryWorkItem[]> {
-    const values: unknown[] = [campaignId, statuses];
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const values: unknown[] = [owner, campaignId, statuses];
     let idFilter = "";
     if (deliveryIds?.length) {
       values.push(deliveryIds);
-      idFilter = "and d.id = any($3::uuid[])";
+      idFilter = "and d.id = any($4::uuid[])";
     }
 
     const result = await getPool().query(
@@ -467,12 +533,17 @@ export class PromotionCampaignRepository {
          b.id as bot_id, b.name as bot_name, b.bot_username, b.credential_source,
          b.credential_ref, b.enabled as bot_enabled
        from public.promotion_deliveries d
-       join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
-       join public.posts p on p.id = cp.post_id
-       join public.promotion_targets t on t.id = d.target_id
-       join public.telegram_bot_accounts b on b.id = t.bot_account_id
-       where cp.campaign_id = $1
-         and d.status = any($2::text[])
+       join public.promotion_campaign_posts cp
+         on cp.owner_principal = d.owner_principal and cp.id = d.campaign_post_id
+       join public.posts p
+         on p.owner_principal = cp.owner_principal and p.id = cp.post_id
+       join public.promotion_targets t
+         on t.owner_principal = d.owner_principal and t.id = d.target_id
+       join public.telegram_bot_accounts b
+         on b.owner_principal = t.owner_principal and b.id = t.bot_account_id
+       where d.owner_principal = $1
+         and cp.campaign_id = $2
+         and d.status = any($3::text[])
          ${idFilter}
        order by cp.position asc, d.created_at asc`,
       values
@@ -536,20 +607,25 @@ export class PromotionCampaignRepository {
     }));
   }
 
-  async claimDelivery(id: string, allowedStatus: PromotionDeliveryStatus): Promise<PromotionDeliveryRecord | null> {
+  async claimDelivery(
+    ownerPrincipal: string,
+    id: string,
+    allowedStatus: PromotionDeliveryStatus
+  ): Promise<PromotionDeliveryRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `update public.promotion_deliveries
        set status = 'in_progress', attempt_count = attempt_count + 1,
            last_attempt_at = now(), warning_message = null, error_message = null,
            updated_at = now()
-       where id = $1 and status = $2
+       where owner_principal = $1 and id = $2 and status = $3
        returning ${deliverySelect}`,
-      [id, allowedStatus]
+      [owner, id, allowedStatus]
     );
     return result.rows[0] ? mapDelivery(result.rows[0]) : null;
   }
 
-  async completeDeliveryAttempt(input: {
+  async completeDeliveryAttempt(ownerPrincipal: string, input: {
     deliveryId: string;
     attemptNumber: number;
     success: boolean;
@@ -559,6 +635,7 @@ export class PromotionCampaignRepository {
     telegramMessageId?: number;
     telegramErrorCode?: number;
   }): Promise<PromotionDeliveryRecord> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const client = await getPool().connect();
     try {
       await client.query("begin");
@@ -572,15 +649,17 @@ export class PromotionCampaignRepository {
 
       const deliveryResult = await client.query(
         `update public.promotion_deliveries
-         set status = $2,
-             telegram_message_id = $3,
-             warning_message = $4,
-             error_message = $5,
-             published_at = case when $2 = 'success' then coalesce(published_at, now()) else published_at end,
+         set status = $3,
+             telegram_message_id = $4,
+             warning_message = $5,
+             error_message = $6,
+             published_at = case when $3 = 'success' then coalesce(published_at, now()) else published_at end,
              updated_at = now()
-         where id = $1 and status = 'in_progress' and attempt_count = $6
+         where owner_principal = $1 and id = $2
+           and status = 'in_progress' and attempt_count = $7
          returning ${deliverySelect}`,
         [
+          owner,
           input.deliveryId,
           terminalStatus,
           input.telegramMessageId ?? null,
@@ -593,10 +672,11 @@ export class PromotionCampaignRepository {
 
       await client.query(
         `insert into public.promotion_delivery_attempts
-          (delivery_id, attempt_number, outcome, telegram_message_id, telegram_error_code,
+          (owner_principal, delivery_id, attempt_number, outcome, telegram_message_id, telegram_error_code,
            warning_message, error_message)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
+          owner,
           input.deliveryId,
           input.attemptNumber,
           outcome,
@@ -617,7 +697,8 @@ export class PromotionCampaignRepository {
     }
   }
 
-  async getDeliverySummary(campaignId: string): Promise<PromotionDeliverySummary> {
+  async getDeliverySummary(ownerPrincipal: string, campaignId: string): Promise<PromotionDeliverySummary> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const result = await getPool().query(
       `select
          count(*)::int as total,
@@ -628,9 +709,10 @@ export class PromotionCampaignRepository {
          count(*) filter (where d.status = 'skipped')::int as skipped,
          count(*) filter (where d.warning_message is not null)::int as warnings
        from public.promotion_deliveries d
-       join public.promotion_campaign_posts cp on cp.id = d.campaign_post_id
-       where cp.campaign_id = $1`,
-      [campaignId]
+       join public.promotion_campaign_posts cp
+         on cp.owner_principal = d.owner_principal and cp.id = d.campaign_post_id
+       where d.owner_principal = $1 and cp.campaign_id = $2`,
+      [owner, campaignId]
     );
     const row = result.rows[0];
     return {
@@ -644,8 +726,9 @@ export class PromotionCampaignRepository {
     };
   }
 
-  async refreshCampaignOutcome(campaignId: string): Promise<PromotionCampaignRecord | null> {
-    const summary = await this.getDeliverySummary(campaignId);
+  async refreshCampaignOutcome(ownerPrincipal: string, campaignId: string): Promise<PromotionCampaignRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const summary = await this.getDeliverySummary(owner, campaignId);
     let status: PromotionCampaignStatus;
     if (summary.total === 0) status = "draft";
     else if (summary.pending > 0 || summary.inProgress > 0) status = "running";
@@ -656,12 +739,12 @@ export class PromotionCampaignRepository {
     const terminal = status === "completed" || status === "partial" || status === "failed";
     const result = await getPool().query(
       `update public.promotion_campaigns
-       set status = $2,
-           completed_at = case when $3 then now() else null end,
+       set status = $3,
+           completed_at = case when $4 then now() else null end,
            updated_at = now()
-       where id = $1
+       where owner_principal = $1 and id = $2
        returning ${campaignSelect}`,
-      [campaignId, status, terminal]
+      [owner, campaignId, status, terminal]
     );
     return result.rows[0] ? mapCampaign(result.rows[0]) : null;
   }

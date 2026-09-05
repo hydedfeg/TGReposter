@@ -25,13 +25,35 @@ function mapRow(row: UserInboxPostRow) {
   };
 }
 
+export async function getOwnerInboxPosts(
+  ownerPrincipal: string,
+  limit = 400
+) {
+  const rows = await userInboxRepository.list(ownerPrincipal, limit);
+  return rows.map(mapRow);
+}
+
+export async function getOwnerInboxPost(
+  ownerPrincipal: string,
+  postId: string
+) {
+  const row = await userInboxRepository.getById(ownerPrincipal, postId);
+  return row ? mapRow(row) : null;
+}
+
+export async function saveOwnerInboxPosts(
+  ownerPrincipal: string,
+  posts: unknown
+) {
+  await userInboxRepository.upsertStates(ownerPrincipal, posts);
+}
+
 export async function getUserInboxPosts(
   user: AuthenticatedUserIdentity,
   limit = 400
 ) {
   const ownerPrincipal = ownerPrincipalForUser(user);
-  const rows = await userInboxRepository.list(ownerPrincipal, limit);
-  return rows.map(mapRow);
+  return getOwnerInboxPosts(ownerPrincipal, limit);
 }
 
 export async function getUserInboxPost(
@@ -39,8 +61,7 @@ export async function getUserInboxPost(
   postId: string
 ) {
   const ownerPrincipal = ownerPrincipalForUser(user);
-  const row = await userInboxRepository.getById(ownerPrincipal, postId);
-  return row ? mapRow(row) : null;
+  return getOwnerInboxPost(ownerPrincipal, postId);
 }
 
 export async function saveUserInboxPosts(
@@ -48,5 +69,5 @@ export async function saveUserInboxPosts(
   posts: unknown
 ) {
   const ownerPrincipal = ownerPrincipalForUser(user);
-  await userInboxRepository.upsertStates(ownerPrincipal, posts);
+  await saveOwnerInboxPosts(ownerPrincipal, posts);
 }

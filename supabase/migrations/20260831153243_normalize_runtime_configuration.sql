@@ -1,6 +1,3 @@
--- Normalize runtime configuration into dedicated PostgreSQL tables.
--- This migration is intentionally non-destructive to curator_settings so the
--- previous runtime can still be rolled back while the backend cutover occurs.
 
 alter table public.source_channels
   add column if not exists last_scan_at timestamptz,
@@ -152,3 +149,4 @@ set name = excluded.name,
 alter table public.source_channels validate constraint source_channels_status_check;
 alter table public.destination_targets validate constraint destination_targets_status_check;
 alter table public.posts validate constraint posts_status_check;
+

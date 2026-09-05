@@ -15,21 +15,23 @@ const healthSource = fs.readFileSync(
 );
 const serverSource = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
 
-test("System Settings explains shared vs personal multi-user boundaries", () => {
+test("System Settings explains the fully personal application-data boundary", () => {
   assert.match(systemSource, /System Architecture & Health/);
-  assert.match(systemSource, /Shared Platform Data/);
+  assert.match(systemSource, /Personal Monitoring Data/);
   assert.match(systemSource, /Personal Workspace Data/);
   assert.match(systemSource, /Runtime Data Boundaries/);
   assert.match(systemSource, /Workspace Isolation Checks/);
-  assert.match(systemSource, /Shared Super-Admin scope/);
+  assert.match(systemSource, /System administration scope/);
+  assert.doesNotMatch(systemSource, /Shared Platform Data/);
 });
 
 test("System Settings recognizes user-owned destination and inbox tables", () => {
   assert.match(healthSource, /"destination_targets"/);
   assert.match(healthSource, /"user_inbox_items"/);
   assert.match(healthSource, /destinationOwnershipReady/);
+  assert.match(healthSource, /applicationOwnershipReady/);
   assert.match(healthSource, /inboxIsolationReady/);
-  assert.match(healthSource, /unownedDestinationTargets/);
+  assert.match(healthSource, /unownedApplicationRows/);
   assert.match(healthSource, /count\(distinct owner_principal\)/);
 });
 
@@ -49,7 +51,7 @@ test("platform health endpoint is restricted to super-admins", () => {
 });
 
 test("System Settings never presents personal bot credentials as global config", () => {
-  assert.match(systemSource, /Personal bot tokens and destination details are/);
+  assert.match(systemSource, /Credentials[\s\S]*remain managed from each member/);
   assert.match(systemSource, /user-scoped Vault secrets/);
   assert.doesNotMatch(systemSource, /Telegram Bot Token Configuration/);
 });

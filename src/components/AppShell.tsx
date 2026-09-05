@@ -61,13 +61,13 @@ const contentItems: NavItem[] = [
 ];
 
 const personalItems: NavItem[] = [
+  { view: "channels", label: "My Sources", icon: Radio },
+  { view: "filters", label: "My Filters", icon: Filter },
   { view: "destination", label: "My Destinations", icon: Bot },
+  { view: "ai", label: "My AI Configuration", icon: Sparkles },
 ];
 
-const setupItems: NavItem[] = [
-  { view: "channels", label: "Sources", icon: Radio },
-  { view: "filters", label: "Filters", icon: Filter },
-  { view: "ai", label: "AI Configuration", icon: Sparkles },
+const systemItems: NavItem[] = [
   { view: "team", label: "Team & Access", icon: Users },
   { view: "database", label: "System Settings", icon: Database },
 ];
@@ -242,9 +242,9 @@ export default function AppShell({
           {currentUserRole === "super-admin" ? (
             <>
               <div className="my-5 border-t border-white/10" />
-              <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Super-admin setup</p>
+              <p className="px-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-500">System administration</p>
               <div className="mt-2 space-y-1">
-                {setupItems.map((item) => (
+                {systemItems.map((item) => (
                   <div key={item.view}>
                     <SidebarButton item={item} active={activeView === item.view} onSelect={navigate} />
                   </div>
@@ -370,7 +370,7 @@ export default function AppShell({
               );
             })}
             {currentUserRole === "super-admin"
-              ? setupItems.map((item) => {
+              ? systemItems.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button

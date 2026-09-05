@@ -6,9 +6,13 @@ export interface LegacyDestinationSettings {
   destination?: {
     botToken?: string;
   };
+  aiConfig?: {
+    provider?: string;
+    model?: string;
+  };
 }
 
-export type LegacySettingsReader = () => Promise<LegacyDestinationSettings>;
+export type LegacySettingsReader = (ownerPrincipal?: string) => Promise<LegacyDestinationSettings>;
 
 const ENVIRONMENT_REF_PATTERN = /^[A-Z][A-Z0-9_]{2,127}$/;
 
@@ -28,7 +32,8 @@ export function isCredentialReferenceConfigured(account: TelegramBotAccountRecor
 
 export async function resolveTelegramBotToken(
   account: TelegramBotAccountRecord,
-  readLegacySettings: LegacySettingsReader
+  readLegacySettings: LegacySettingsReader,
+  ownerPrincipal?: string
 ): Promise<string> {
   if (!account.enabled) {
     throw new Error("Telegram bot account is disabled.");
@@ -39,10 +44,11 @@ export async function resolveTelegramBotToken(
       throw new Error("Unsupported legacy Telegram credential reference.");
     }
 
-    const settings = await readLegacySettings();
-    const token = settings.destination?.botToken?.trim();
+    const token = ownerPrincipal
+      ? await getUserTelegramBotToken(ownerPrincipal)
+      : (await readLegacySettings()).destination?.botToken?.trim();
     if (!token) {
-      throw new Error("The legacy Telegram bot token is not configured.");
+      throw new Error("The Telegram bot token is not configured for this account.");
     }
     return token;
   }

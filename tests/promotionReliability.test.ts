@@ -7,6 +7,8 @@ import {
   PromotionCampaignService,
 } from "../server/services/promotionCampaignService";
 
+const ownerPrincipal = "legacy:alice";
+
 test("Telegram publisher bounds target concurrency while preserving result order", async () => {
   let active = 0;
   let maxActive = 0;
@@ -55,7 +57,7 @@ test("promotion retries stop at the configured delivery attempt ceiling", async 
   const service = new PromotionCampaignService(async () => ({}), fakeRepository);
 
   await assert.rejects(
-    service.retryFailedDeliveries(campaignId, {}),
+    service.retryFailedDeliveries(ownerPrincipal, campaignId, {}),
     (error: any) => {
       assert.ok(error instanceof PromotionCampaignError);
       assert.equal(error.code, "DELIVERY_RETRY_LIMIT_REACHED");

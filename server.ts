@@ -10,7 +10,8 @@ import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
-import { getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
+import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
+import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
@@ -85,6 +86,7 @@ interface CuratorUser {
   username: string;
   passwordHash: string;
   role: 'super-admin' | 'admin';
+  isActive?: boolean;
   createdAt: string;
 }
 
@@ -233,7 +235,7 @@ function hashPassword(pwd: string): string {
   return crypto.createHash("sha256").update(pwd).digest("hex");
 }
 
-async function readDb(): Promise<CuratorSettings> {
+async function readDb(ownerPrincipal?: string): Promise<CuratorSettings> {
   const defaultSettings: CuratorSettings = {
     channels: [
       { username: "techcrunch", name: "TechCrunch", lastFetched: "", status: "idle" },
@@ -261,7 +263,7 @@ async function readDb(): Promise<CuratorSettings> {
 
   if (isSupabaseConfigured) {
     try {
-      const sbData = await readSupabaseDb();
+      const sbData = await readSupabaseDb(ownerPrincipal);
       if (sbData) {
         const destination = sbData.destination || defaultSettings.destination;
         if (!destination.targets) {
@@ -279,7 +281,7 @@ async function readDb(): Promise<CuratorSettings> {
         
         let users = sbData.users || [];
         let didMigrate = false;
-        if (users.length === 0 && sbData.passwordHash) {
+        if (!ownerPrincipal && users.length === 0 && sbData.passwordHash) {
           users.push({
             username: "superadmin",
             passwordHash: sbData.passwordHash,
@@ -300,17 +302,20 @@ async function readDb(): Promise<CuratorSettings> {
         };
 
         if (didMigrate) {
-          await writeSupabaseDb(loadedSettings);
+          await writeSupabaseDb(loadedSettings, ownerPrincipal);
         }
 
         return loadedSettings;
       } else {
         // Bootstrap Supabase with current local file settings if available, else defaults
         const local = readDbLocal(defaultSettings);
-        await writeSupabaseDb(local);
+        await writeSupabaseDb(local, ownerPrincipal);
         return local;
       }
     } catch (e: any) {
+      if (ownerPrincipal && process.env.DATABASE_URL) {
+        throw e;
+      }
       console.error("Supabase read error, falling back to local storage:", e);
     }
   }
@@ -375,12 +380,15 @@ function readDbLocal(defaultSettings: CuratorSettings): CuratorSettings {
   return defaultSettings;
 }
 
-async function writeDb(data: CuratorSettings) {
+async function writeDb(data: CuratorSettings, ownerPrincipal?: string) {
   if (isSupabaseConfigured) {
     try {
-      const success = await writeSupabaseDb(data);
+      const success = await writeSupabaseDb(data, ownerPrincipal);
       if (success) return;
     } catch (e) {
+      if (ownerPrincipal && process.env.DATABASE_URL) {
+        throw e;
+      }
       console.error("Supabase write error, falling back to local storage:", e);
     }
   }
@@ -472,7 +480,7 @@ const requireSuperAdmin = (req: any, res: any, next: any) => {
 const authOrCronMiddleware = async (req: any, res: any, next: any) => {
   try {
     if (await isValidInboxCronSecret(req.get("x-cron-secret"))) {
-      req.user = { username: "system:cron", role: "super-admin" };
+      req.isCron = true;
       return next();
     }
   } catch (error) {
@@ -482,16 +490,13 @@ const authOrCronMiddleware = async (req: any, res: any, next: any) => {
   return authMiddleware(req, res, next);
 };
 
-// Source-channel configuration is infrastructure state and must never be
-// exposed as an unauthenticated database route.
-app.use("/api/channels", authMiddleware, requireSuperAdmin, channelRoutes);
+// Every authenticated account manages its own monitored source channels.
+app.use("/api/channels", authMiddleware, channelRoutes);
 
-// Promotion configuration is server-owned and mounted only after authentication
-// middleware exists. Bot-account mutations and target configuration are further
-// restricted by the promotion router to super-admins.
+// Promotion configuration is mounted only after authentication. Every campaign,
+// destination, bot-account reference, and delivery is scoped to the current user.
 app.use("/api/promotion", createPromotionRouter({
   authMiddleware,
-  requireSuperAdmin,
   readLegacySettings: readDb,
 }));
 
@@ -530,6 +535,7 @@ app.post("/api/auth/status", async (req, res) => {
     role: session?.role ?? null,
     username: session?.username ?? null,
     authProvider: session?.authProvider ?? null,
+    accountKey: session ? ownerPrincipalForUser(session) : null,
   });
 });
 
@@ -562,7 +568,14 @@ app.post("/api/auth/setup", async (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   activeSessions.set(token, { username: newUser.username, role: newUser.role });
 
-  res.json({ success: true, token, role: newUser.role, username: newUser.username, message: "Super-admin account configured successfully!" });
+  res.json({
+    success: true,
+    token,
+    role: newUser.role,
+    username: newUser.username,
+    accountKey: ownerPrincipalForUser({ username: newUser.username, authProvider: "legacy" }),
+    message: "Super-admin account configured successfully!",
+  });
 });
 
 // Login endpoint
@@ -602,6 +615,7 @@ app.post("/api/auth/login", async (req, res) => {
           username: result.user.username,
           email: result.user.email,
           authProvider: "supabase",
+          accountKey: ownerPrincipalForUser(result.user),
         });
       }
     } catch (error: any) {
@@ -635,6 +649,7 @@ app.post("/api/auth/login", async (req, res) => {
     role: user.role,
     username: user.username,
     authProvider: "legacy",
+    accountKey: ownerPrincipalForUser({ username: user.username, authProvider: "legacy" }),
   });
 });
 
@@ -844,8 +859,12 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
 
 // Get current configuration & state
 app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
-  const db = await readDb();
   const isSuper = req.user?.role === "super-admin";
+  const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
+  const ownerPrincipal = usesUserScopedWorkspace
+    ? ownerPrincipalForUser(req.user)
+    : undefined;
+  const db = await readDb(ownerPrincipal);
   
   const { passwordHash, users, ...safeDb } = db as any;
   const legacyUsers = users
@@ -859,7 +878,7 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
 
   let destination = safeDb.destination;
   let posts = safeDb.posts;
-  if (process.env.DATABASE_URL && req.user) {
+  if (usesUserScopedWorkspace) {
     try {
       [destination, posts] = await Promise.all([
         getUserDestinationConfig(req.user),
@@ -895,23 +914,18 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
 // Update configuration & state
 app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
   const incoming = req.body as Partial<CuratorSettings>;
-  const db = await readDb();
   const isSuper = req.user.role === "super-admin";
   const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
+  const ownerPrincipal = usesUserScopedWorkspace
+    ? ownerPrincipalForUser(req.user)
+    : undefined;
+  const db = await readDb(ownerPrincipal);
 
-  // Sources, filters, and AI remain system-wide super-admin configuration.
-  // Destinations and Content Inbox workflow state are personal to every authenticated user.
-  if (!isSuper) {
-    if (incoming.channels || incoming.filters || incoming.aiConfig) {
-      return res.status(403).json({
-        error: "Forbidden. Admins can edit posts and manage only their own Telegram destinations.",
-      });
-    }
-  }
-
-  if (incoming.channels && isSuper) db.channels = incoming.channels;
-  if (incoming.filters && isSuper) db.filters = incoming.filters;
-  if (incoming.aiConfig && isSuper) db.aiConfig = incoming.aiConfig;
+  // Monitoring sources, filters, AI preferences, Inbox state, and destinations
+  // all belong to the authenticated account's private workspace.
+  if (incoming.channels) db.channels = incoming.channels;
+  if (incoming.filters) db.filters = incoming.filters;
+  if (incoming.aiConfig) db.aiConfig = incoming.aiConfig;
 
   if (incoming.posts) {
     if (usesUserScopedWorkspace) {
@@ -943,18 +957,14 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
           error: error?.message || "Your Telegram destinations could not be saved.",
         });
       }
-    } else if (isSuper) {
+    } else {
       // Local-development compatibility when the normalized PostgreSQL backend
       // is not configured.
       db.destination = incoming.destination;
-    } else {
-      return res.status(403).json({
-        error: "Personal destinations require the production database backend.",
-      });
     }
   }
 
-  await writeDb(db);
+  await writeDb(db, ownerPrincipal);
 
   const { passwordHash, users, ...safeDb } = db as any;
   const legacyUsers = users
@@ -1027,12 +1037,12 @@ app.post("/api/supabase/setup-table", authMiddleware, requireSuperAdmin, async (
   res.json(outcome);
 });
 
-// Scrape target channels and parse posts
-app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
-  const db = await readDb();
-  const requestedUsernames = Array.isArray(req.body?.usernames)
-    ? req.body.usernames
-    : null;
+// Scrape one account's monitored channels and persist only that account's posts.
+async function collectPostsForOwner(
+  ownerPrincipal: string | null,
+  requestedUsernames: unknown[] | null
+) {
+  const db = await readDb(ownerPrincipal ?? undefined);
   const usernamesToFetch = requestedUsernames ??
     db.channels.filter(channel => channel.enabled !== false).map(channel => channel.username);
 
@@ -1040,7 +1050,9 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
   const currentPostsMap = new Map(db.posts.map(p => [p.id, p]));
   const dirtyPostsMap = new Map<string, CuratedPost>();
 
-  for (const username of usernamesToFetch) {
+  for (const usernameValue of usernamesToFetch) {
+    if (typeof usernameValue !== "string") continue;
+    const username = usernameValue;
     const cleanUsername = username.trim().replace(/^@/, "").toLowerCase();
     if (!cleanUsername) continue;
 
@@ -1053,13 +1065,15 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       db.channels[channelIdx].status = "fetching";
     }
 
-    await channelRepository.saveScanState({
-      username: cleanUsername,
-      display_name: db.channels[channelIdx].name,
-      enabled: db.channels[channelIdx].enabled !== false,
-      status: "fetching",
-      error_message: null,
-    });
+    if (ownerPrincipal) {
+      await channelRepository.saveScanState(ownerPrincipal, {
+        username: cleanUsername,
+        display_name: db.channels[channelIdx].name,
+        enabled: db.channels[channelIdx].enabled !== false,
+        status: "fetching",
+        error_message: null,
+      });
+    }
 
     try {
       const url = `https://t.me/s/${cleanUsername}`;
@@ -1092,8 +1106,11 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       ));
       const missingPersistedIds = scrapedPostIds.filter(postId => !currentPostsMap.has(postId));
 
-      if (missingPersistedIds.length > 0) {
-        const persistedPosts = await postService.getPostsByIds(missingPersistedIds);
+      if (ownerPrincipal && missingPersistedIds.length > 0) {
+        const persistedPosts = await postService.getPostsByIds(
+          ownerPrincipal,
+          missingPersistedIds
+        );
         for (const persisted of persistedPosts as any[]) {
           currentPostsMap.set(persisted.id, {
             id: persisted.id,
@@ -1270,28 +1287,32 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
         db.channels[channelIdx].name = titleMatch[1];
       }
 
-      await channelRepository.saveScanState({
-        username: cleanUsername,
-        display_name: db.channels[channelIdx].name,
-        enabled: db.channels[channelIdx].enabled !== false,
-        last_scan_at: db.channels[channelIdx].lastFetched,
-        status: "success",
-        error_message: null,
-      });
+      if (ownerPrincipal) {
+        await channelRepository.saveScanState(ownerPrincipal, {
+          username: cleanUsername,
+          display_name: db.channels[channelIdx].name,
+          enabled: db.channels[channelIdx].enabled !== false,
+          last_scan_at: db.channels[channelIdx].lastFetched,
+          status: "success",
+          error_message: null,
+        });
+      }
     } catch (err: any) {
       console.error(`Error fetching channel @${username}:`, err);
       db.channels[channelIdx].status = "error";
       db.channels[channelIdx].lastFetched = new Date().toISOString();
       db.channels[channelIdx].errorMessage = err.message || "Failed to scrape channel";
 
-      await channelRepository.saveScanState({
-        username: cleanUsername,
-        display_name: db.channels[channelIdx].name,
-        enabled: db.channels[channelIdx].enabled !== false,
-        last_scan_at: db.channels[channelIdx].lastFetched,
-        status: "error",
-        error_message: db.channels[channelIdx].errorMessage,
-      });
+      if (ownerPrincipal) {
+        await channelRepository.saveScanState(ownerPrincipal, {
+          username: cleanUsername,
+          display_name: db.channels[channelIdx].name,
+          enabled: db.channels[channelIdx].enabled !== false,
+          last_scan_at: db.channels[channelIdx].lastFetched,
+          status: "error",
+          error_message: db.channels[channelIdx].errorMessage,
+        });
+      }
     }
   }
 
@@ -1313,42 +1334,87 @@ app.post("/api/fetch-posts", authOrCronMiddleware, async (req, res) => {
       posted_at: null,
       error_message: null,
       status: post.status === "archived" ? "archived" : "pending",
-      inbox_default_status: post.status === "archived" ? "archived" : "pending",
+      inbox_default_status: (post.status === "archived" ? "archived" : "pending") as
+        | "archived"
+        | "pending",
     }));
 
-    await postService.savePosts(postEntities);
+    if (ownerPrincipal) {
+      await postService.savePosts(ownerPrincipal, postEntities);
+    } else {
+      db.posts = Array.from(currentPostsMap.values());
+      await writeDb(db);
+    }
     console.log(`Persisted ${postEntities.length} changed inbox posts.`);
   } catch (err) {
     console.error("Failed saving changed inbox posts:", err);
   }
 
-const isCronActor = req.user?.username === "system:cron";
-const latestPosts =
-  process.env.DATABASE_URL && req.user && !isCronActor
-    ? await getUserInboxPosts(req.user, 400)
-    : (await postService.getRecentPosts(400)).map((p: any) => ({
-        id: p.id,
-        channelUsername: p.channel_username,
-        originalText: p.original_text,
-        text: p.original_text,
-        mediaType: p.media_type,
-        photoUrl: p.photo_url,
-        videoUrl: p.video_url,
-        date: p.published_at,
-        url: p.telegram_url,
-        status: p.inbox_default_status === "archived" ? "archived" : "pending",
-      }));
+  const latestPosts = ownerPrincipal
+    ? await getOwnerInboxPosts(ownerPrincipal, 400)
+    : db.posts;
 
-res.json({
-  channels: db.channels,
-  posts: latestPosts,
-  fetchedCount: newlyFetchedCount
-});
+  return {
+    channels: db.channels,
+    posts: latestPosts,
+    fetchedCount: newlyFetchedCount,
+  };
+}
+
+// Manual scans operate on the authenticated account. Scheduled scans enumerate
+// owners with enabled sources and run the same isolated collector once per owner.
+app.post("/api/fetch-posts", authOrCronMiddleware, async (req: any, res: any) => {
+  try {
+    if (req.isCron) {
+      if (!process.env.DATABASE_URL) {
+        return res.status(503).json({
+          error: "Scheduled collection requires the normalized database backend.",
+        });
+      }
+
+      const owners = await channelRepository.listOwnersWithEnabledChannels();
+      let fetchedCount = 0;
+      let failedWorkspaceCount = 0;
+
+      for (const ownerPrincipal of owners) {
+        try {
+          const result = await collectPostsForOwner(ownerPrincipal, null);
+          fetchedCount += result.fetchedCount;
+        } catch (error) {
+          failedWorkspaceCount += 1;
+          console.error(`Scheduled collection failed for owner ${ownerPrincipal}:`, error);
+        }
+      }
+
+      return res.json({
+        workspaceCount: owners.length,
+        failedWorkspaceCount,
+        fetchedCount,
+      });
+    }
+
+    const ownerPrincipal = process.env.DATABASE_URL
+      ? ownerPrincipalForUser(req.user)
+      : null;
+    const requestedUsernames = Array.isArray(req.body?.usernames)
+      ? req.body.usernames
+      : null;
+    const result = await collectPostsForOwner(ownerPrincipal, requestedUsernames);
+    return res.json(result);
+  } catch (error: any) {
+    console.error("Content collection failed:", error);
+    return res.status(500).json({
+      error: error?.message || "Content collection failed.",
+    });
+  }
 });
 
 // Trigger AI Content Curation (Gemini or OpenRouter)
-app.post("/api/ai/curate", authMiddleware, async (req, res) => {
-  const db = await readDb();
+app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
+  const ownerPrincipal = process.env.DATABASE_URL && req.user
+    ? ownerPrincipalForUser(req.user)
+    : undefined;
+  const db = await readDb(ownerPrincipal);
   const aiProvider = db.aiConfig?.provider || "gemini";
   const aiModel = db.aiConfig?.model || "gemini-3.5-flash";
 
@@ -1379,11 +1445,14 @@ app.post("/api/ai/curate", authMiddleware, async (req, res) => {
   res.json({ result: result.result });
 });
 
-// Post curated text directly to target Telegram channels via the shared publisher service.
+// Post curated text directly to this account's Telegram destinations.
 app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   const { postId, text, targetIds } = req.body;
-  const db = await readDb();
   const usesUserScopedWorkspace = !!process.env.DATABASE_URL && !!req.user;
+  const ownerPrincipal = usesUserScopedWorkspace
+    ? ownerPrincipalForUser(req.user)
+    : undefined;
+  const db = await readDb(ownerPrincipal);
 
   let destination = db.destination;
   if (usesUserScopedWorkspace) {

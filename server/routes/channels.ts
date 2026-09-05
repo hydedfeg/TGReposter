@@ -5,9 +5,9 @@ const router = Router();
 const channelService = new ChannelService();
 
 // GET /api/channels
-router.get("/", async (_req, res) => {
+router.get("/", async (req: any, res) => {
   try {
-    const channels = await channelService.list();
+    const channels = await channelService.list(req.user);
     res.json(channels);
   } catch (err: any) {
     console.error(err);
@@ -18,11 +18,11 @@ router.get("/", async (_req, res) => {
 });
 
 // POST /api/channels
-router.post("/", async (req, res) => {
+router.post("/", async (req: any, res) => {
   try {
     const { username } = req.body;
 
-    const channel = await channelService.add(username);
+    const channel = await channelService.add(req.user, username);
 
     res.status(201).json(channel);
   } catch (err: any) {
@@ -35,9 +35,9 @@ router.post("/", async (req, res) => {
 });
 
 // DELETE /api/channels/:username
-router.delete("/:username", async (req, res) => {
+router.delete("/:username", async (req: any, res) => {
   try {
-    await channelService.remove(req.params.username);
+    await channelService.remove(req.user, req.params.username);
 
     res.json({
       success: true,

@@ -1,6 +1,3 @@
--- Lock runtime tables behind the backend and schedule Content Inbox maintenance.
--- The import job expects a Supabase Vault secret named tgreposter_cron_secret.
--- The matching value is provisioned as Railway CRON_SECRET outside of Git.
 
 create extension if not exists pg_net with schema extensions;
 
@@ -18,13 +15,10 @@ revoke all on table public.ai_settings from anon, authenticated;
 revoke all on table public.posts from anon, authenticated;
 revoke all on table public.curator_settings from anon, authenticated;
 
--- Re-applying this migration in a disposable environment should not duplicate jobs.
 select cron.unschedule(jobid)
 from cron.job
 where jobname in ('tgreposter-inbox-import', 'tgreposter-inbox-cleanup');
 
--- Import recent Telegram content every five minutes. The backend applies
--- enabled-channel selection, filtering, deduplication, and the 24-hour cutoff.
 select cron.schedule(
   'tgreposter-inbox-import',
   '*/5 * * * *',
@@ -47,8 +41,6 @@ select cron.schedule(
   $cron$
 );
 
--- Keep the review inbox as a rolling 24-hour window. Published/approved posts
--- and anything referenced by a promotion campaign are intentionally retained.
 select cron.schedule(
   'tgreposter-inbox-cleanup',
   '0 * * * *',
@@ -63,3 +55,4 @@ select cron.schedule(
       );
   $cron$
 );
+

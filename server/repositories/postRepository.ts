@@ -16,18 +16,28 @@ export interface PostEntity {
   inbox_default_status?: "pending" | "archived";
 }
 
+function cleanOwnerPrincipal(value: string): string {
+  const ownerPrincipal = value.trim().toLowerCase();
+  if (!ownerPrincipal) {
+    throw new Error("Post owner principal is required.");
+  }
+  return ownerPrincipal;
+}
+
 export class PostRepository {
-  async upsertMany(posts: PostEntity[]) {
+  async upsertMany(ownerPrincipal: string, posts: PostEntity[]) {
     if (!posts.length) return [];
 
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const pool = getPostgresPool();
     const { rows } = await pool.query(
       `
         insert into public.posts
-          (id, channel_username, original_text, edited_text, media_type,
+          (owner_principal, id, channel_username, original_text, edited_text, media_type,
            photo_url, video_url, telegram_url, published_at, posted_at,
            error_message, status, inbox_default_status, updated_at)
         select
+          $1,
           x.id,
           x.channel_username,
           x.original_text,
@@ -42,7 +52,7 @@ export class PostRepository {
           x.status,
           coalesce(x.inbox_default_status, 'pending'),
           now()
-        from jsonb_to_recordset($1::jsonb) as x(
+        from jsonb_to_recordset($2::jsonb) as x(
           id text,
           channel_username text,
           original_text text,
@@ -57,7 +67,7 @@ export class PostRepository {
           status text,
           inbox_default_status text
         )
-        on conflict (id) do update
+        on conflict (owner_principal, id) do update
         set channel_username = excluded.channel_username,
             original_text = excluded.original_text,
             edited_text = excluded.edited_text,
@@ -73,48 +83,54 @@ export class PostRepository {
             updated_at = now()
         returning *
       `,
-      [JSON.stringify(posts)]
+      [owner, JSON.stringify(posts)]
     );
 
     return rows;
   }
 
-  async getByIds(ids: string[]) {
+  async getByIds(ownerPrincipal: string, ids: string[]) {
     if (!ids.length) return [];
 
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const pool = getPostgresPool();
     const { rows } = await pool.query(
       `
         select *
         from public.posts
-        where id = any($1::text[])
+        where owner_principal = $1
+          and id = any($2::text[])
       `,
-      [ids]
+      [owner, ids]
     );
 
     return rows;
   }
 
-  async getRecent(limit = 400) {
+  async getRecent(ownerPrincipal: string, limit = 400) {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const pool = getPostgresPool();
     const { rows } = await pool.query(
       `
         select *
         from public.posts
-        where coalesce(published_at, created_at) >= now() - interval '24 hours'
+        where owner_principal = $1
+          and coalesce(published_at, created_at) >= now() - interval '24 hours'
         order by published_at desc nulls last, created_at desc
-        limit $1
+        limit $2
       `,
-      [limit]
+      [owner, limit]
     );
 
     return rows;
   }
 
-  async count() {
+  async count(ownerPrincipal: string) {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
     const pool = getPostgresPool();
     const { rows } = await pool.query(
-      `select count(*)::bigint as count from public.posts`
+      `select count(*)::bigint as count from public.posts where owner_principal = $1`,
+      [owner]
     );
 
     return Number(rows[0]?.count ?? 0);

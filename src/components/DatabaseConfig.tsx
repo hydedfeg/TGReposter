@@ -50,9 +50,13 @@ interface DatabaseStatus {
   };
   workspace: {
     ready: boolean;
+    applicationOwnershipReady: boolean;
     destinationOwnershipReady: boolean;
     inboxIsolationReady: boolean;
+    sourceOwners: number;
+    postOwners: number;
     destinationOwners: number;
+    unownedApplicationRows: number;
     unownedDestinationTargets: number;
     inboxOwners: number;
     activeSupabaseUsers: number;
@@ -73,21 +77,21 @@ interface DatabaseStatus {
 }
 
 const tableLabels: Record<string, string> = {
-  source_channels: "Shared Sources",
-  filters: "Shared Filters",
+  source_channels: "Personal Sources",
+  filters: "Personal Filters",
   destination_targets: "Personal Destinations",
-  ai_settings: "Shared AI Settings",
-  posts: "Canonical Source Posts",
+  ai_settings: "Personal AI Settings",
+  posts: "Personal Monitored Posts",
   user_inbox_items: "Personal Inbox State",
   curator_settings: "Legacy Compatibility",
 };
 
-const tableScopes: Record<string, "Shared" | "Personal" | "Compatibility"> = {
-  source_channels: "Shared",
-  filters: "Shared",
+const tableScopes: Record<string, "Personal" | "Compatibility"> = {
+  source_channels: "Personal",
+  filters: "Personal",
   destination_targets: "Personal",
-  ai_settings: "Shared",
-  posts: "Shared",
+  ai_settings: "Personal",
+  posts: "Personal",
   user_inbox_items: "Personal",
   curator_settings: "Compatibility",
 };
@@ -191,7 +195,7 @@ export default function DatabaseConfig() {
       <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-10">
         <RefreshCw className="mb-3 h-8 w-8 animate-spin text-sky-500" aria-hidden="true" />
         <p className="text-sm font-medium text-slate-500">
-          Checking shared platform and workspace isolation...
+          Checking per-user application data isolation...
         </p>
       </div>
     );
@@ -271,16 +275,16 @@ export default function DatabaseConfig() {
               </h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              This page is system-wide and Super-Admin only. It monitors the shared
-              Telegram collection pipeline and verifies that personal publishing data
-              stays isolated by member. Personal bot tokens and destination details are
-              intentionally managed from each member&apos;s My Destinations workspace.
+              This page is system-wide and Super-Admin only. It verifies that every
+              application record—including sources, filters, AI preferences, monitored
+              posts, Inbox state, and destinations—is owned by one member. Credentials
+              remain managed from each member&apos;s My Destinations workspace.
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-800">
             <ShieldCheck className="h-5 w-5 text-indigo-600" aria-hidden="true" />
-            Shared Super-Admin scope
+            System administration scope
           </div>
         </div>
 
@@ -321,16 +325,15 @@ export default function DatabaseConfig() {
           </div>
         ) : null}
 
-        {!health.workspace.inboxIsolationReady ? (
+        {!health.workspace.applicationOwnershipReady ? (
           <div className="mt-5 flex gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-900">
             <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-violet-600" aria-hidden="true" />
             <div>
-              <p className="text-sm font-bold">Personal Content Inbox cutover pending</p>
+              <p className="text-sm font-bold">Full application ownership cutover pending</p>
               <p className="mt-1 text-xs leading-5 text-violet-800">
-                Per-user Destinations ownership is available, but the personal Inbox
-                state table is not active in this database yet. The prepared migration
-                should be applied together with the production backend cutover so the
-                current legacy backend cannot write global review state after backfill.
+                A coordinated database and backend release is still required before every
+                source, filter, AI setting, monitored post, Inbox item, and destination is
+                structurally required to have an owner.
               </p>
             </div>
           </div>
@@ -364,20 +367,24 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-sky-600" aria-hidden="true" />
               <h3 className="font-display text-base font-bold text-slate-950">
-                Shared Platform Data
+                Personal Monitoring Data
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              One canonical collection layer is shared by all members. This prevents
-              duplicate Telegram scraping and media storage.
+              Sources and crawled Telegram posts are stored separately for each member,
+              even when two members monitor the same public channel.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-px bg-slate-100">
-            <Metric label="Source Channels" value={health.counts.sourceChannels} />
             <Metric
-              label="Canonical Posts · 24h"
+              label="Source Channels"
+              value={health.counts.sourceChannels}
+              helper={`${health.workspace.sourceOwners} owner(s)`}
+            />
+            <Metric
+              label="Monitored Posts · 24h"
               value={health.counts.inboxPosts}
-              helper="Available for personalized inbox views"
+              helper={`${health.workspace.postOwners} owner(s)`}
             />
           </div>
         </section>
@@ -391,7 +398,7 @@ export default function DatabaseConfig() {
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Workflow and publishing configuration are stored separately by ownership
+              Inbox workflow and publishing configuration are also separated by ownership
               principal. Counts below are aggregate system health metrics only.
             </p>
           </div>
@@ -422,8 +429,8 @@ export default function DatabaseConfig() {
               helper="Username-owned workspaces"
             />
             <Metric
-              label="Unowned Targets"
-              value={health.workspace.unownedDestinationTargets}
+              label="Unowned App Rows"
+              value={health.workspace.unownedApplicationRows}
               helper="Should remain 0"
             />
           </div>
@@ -439,15 +446,14 @@ export default function DatabaseConfig() {
             </h3>
           </div>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            Shared tables hold canonical platform configuration/content. Personal tables
-            hold member-owned publishing state. Browser clients do not receive direct
-            database write access.
+            All application tables are personal. Only the legacy compatibility record is
+            system-level, and browser clients do not receive direct database write access.
           </p>
         </div>
 
         <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
           {health.runtime.tables.map((table) => {
-            const scope = tableScopes[table.name] || "Shared";
+            const scope = tableScopes[table.name] || "Personal";
             return (
               <div
                 key={table.name}
@@ -495,8 +501,8 @@ export default function DatabaseConfig() {
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              These checks verify the structural requirements introduced by the
-              multi-user publishing model.
+              These checks verify that no application data can exist outside a member
+              workspace.
             </p>
           </div>
 
@@ -504,14 +510,14 @@ export default function DatabaseConfig() {
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4">
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Destination ownership
+                  Complete application ownership
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Targets carry a backend-derived owner principal.
+                  Sources, filters, AI settings, posts, and destinations require an owner.
                 </p>
               </div>
               <HealthBadge
-                healthy={health.workspace.destinationOwnershipReady}
+                healthy={health.workspace.applicationOwnershipReady}
                 healthyText="Ready"
                 unhealthyText="Missing"
               />
@@ -523,7 +529,7 @@ export default function DatabaseConfig() {
                   Content Inbox isolation
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Review/edit/publish state lives in the personal inbox overlay.
+                  Review/edit/publish state joins only to posts owned by the same member.
                 </p>
               </div>
               <HealthBadge
@@ -536,24 +542,24 @@ export default function DatabaseConfig() {
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4">
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Orphan destination check
+                  Orphan application-data check
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Every production destination should have an owner.
+                  Every production application row should have an owner.
                 </p>
               </div>
               <HealthBadge
-                healthy={health.workspace.unownedDestinationTargets === 0}
+                healthy={health.workspace.unownedApplicationRows === 0}
                 healthyText="No orphans"
-                unhealthyText={`${health.workspace.unownedDestinationTargets} unowned`}
+                unhealthyText={`${health.workspace.unownedApplicationRows} unowned`}
               />
             </div>
 
             <div className="rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
               <Inbox className="mr-1 inline h-4 w-4 text-slate-400" aria-hidden="true" />
-              Personal post text, status, publish history, and errors are not treated as
-              global system configuration. Likewise, individual Telegram bot credentials
-              remain in user-scoped Vault secrets and are never displayed here.
+              Source definitions, filters, AI preferences, monitored post text, status,
+              history, and errors are never treated as global configuration. Individual
+              Telegram bot credentials remain in user-scoped Vault secrets.
             </div>
           </div>
         </section>
@@ -567,8 +573,8 @@ export default function DatabaseConfig() {
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Shared source collection runs once for the platform; members receive
-              personalized workflow overlays on top of the canonical posts.
+              The scheduler enumerates owners with enabled sources and runs collection in
+              each isolated workspace using that member&apos;s filters and post records.
             </p>
           </div>
 
@@ -639,10 +645,9 @@ export default function DatabaseConfig() {
               Migration-managed, secure-by-default runtime
             </h3>
             <p className="mt-1 text-xs leading-5 text-emerald-800">
-              Structural changes are versioned through Supabase migrations. Shared system
-              configuration stays separate from member-owned publishing state, and all
-              sensitive writes are handled by authenticated backend routes rather than
-              direct browser database access.
+              Structural changes are versioned through Supabase migrations. All application
+              configuration and content are member-owned, and sensitive writes are handled
+              by authenticated backend routes rather than direct browser database access.
             </p>
           </div>
         </div>

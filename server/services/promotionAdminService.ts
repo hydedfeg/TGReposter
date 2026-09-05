@@ -5,6 +5,7 @@ import promotionRepository, {
   type TelegramBotCredentialSource,
 } from "../repositories/promotionRepository";
 import {
+  isUserTelegramBotTokenConfigured,
   resolveTelegramBotToken,
   type LegacySettingsReader,
 } from "./telegramCredentialService";
@@ -28,11 +29,6 @@ export class PromotionAdminError extends Error {
   }
 }
 
-const credentialSources = new Set<TelegramBotCredentialSource>([
-  "legacy_settings",
-  "environment",
-  "vault",
-]);
 const chatTypes = new Set<PromotionTargetChatType>(["channel", "group", "supergroup"]);
 const envRefPattern = /^[A-Z][A-Z0-9_]{2,127}$/;
 
@@ -67,99 +63,93 @@ export class PromotionAdminService {
     private readonly repository: PromotionRepository = promotionRepository
   ) {}
 
-  private async credentialConfigured(account: TelegramBotAccountRecord): Promise<boolean> {
+  private async credentialConfigured(ownerPrincipal: string, account: TelegramBotAccountRecord): Promise<boolean> {
     if (account.credentialSource === "environment") {
       return envRefPattern.test(account.credentialRef) && !!process.env[account.credentialRef]?.trim();
     }
     if (account.credentialSource === "legacy_settings") {
       if (account.credentialRef !== "destination.botToken") return false;
-      const settings = await this.readLegacySettings();
-      return !!settings.destination?.botToken?.trim();
+      return isUserTelegramBotTokenConfigured(ownerPrincipal);
     }
     return false;
   }
 
-  private async safeBotAccount(account: TelegramBotAccountRecord) {
+  private async safeBotAccount(ownerPrincipal: string, account: TelegramBotAccountRecord) {
     return {
       ...account,
-      credentialConfigured: await this.credentialConfigured(account),
+      credentialConfigured: await this.credentialConfigured(ownerPrincipal, account),
     };
   }
 
-  async listBotAccounts() {
-    const accounts = await this.repository.listBotAccounts();
-    return Promise.all(accounts.map(account => this.safeBotAccount(account)));
+  async listBotAccounts(ownerPrincipal: string) {
+    const accounts = await this.repository.listBotAccounts(ownerPrincipal);
+    return Promise.all(accounts.map(account => this.safeBotAccount(ownerPrincipal, account)));
   }
 
-  async createBotAccount(body: any) {
+  async createBotAccount(ownerPrincipal: string, body: any) {
     const name = requiredText(body?.name, "name");
     const credentialSource = body?.credentialSource as TelegramBotCredentialSource;
-    if (!credentialSources.has(credentialSource)) {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "credentialSource must be legacy_settings, environment, or vault.");
-    }
-
     const credentialRef = requiredText(body?.credentialRef, "credentialRef");
-    if (credentialSource === "legacy_settings" && credentialRef !== "destination.botToken") {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "The supported legacy credential reference is destination.botToken.");
-    }
-    if (credentialSource === "environment" && !envRefPattern.test(credentialRef)) {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "Environment credentialRef must be a valid uppercase environment variable name.");
+    if (credentialSource !== "legacy_settings" || credentialRef !== "destination.botToken") {
+      throw new PromotionAdminError(
+        400,
+        "VALIDATION_ERROR",
+        "Promotion campaigns can only use your personal Destination Bot credential."
+      );
     }
 
     try {
-      const account = await this.repository.createBotAccount({
+      const account = await this.repository.createBotAccount(ownerPrincipal, {
         name,
         botUsername: typeof body?.botUsername === "string" && body.botUsername.trim() ? body.botUsername.trim().replace(/^@/, "") : undefined,
         credentialSource,
         credentialRef,
         enabled: optionalBoolean(body?.enabled, "enabled"),
       });
-      return this.safeBotAccount(account);
+      return this.safeBotAccount(ownerPrincipal, account);
     } catch (error) {
       return mapDatabaseError(error);
     }
   }
 
-  async updateBotAccount(id: string, body: any) {
-    const existing = await this.repository.getBotAccount(id);
+  async createPersonalDestinationBot(ownerPrincipal: string) {
+    return this.createBotAccount(ownerPrincipal, {
+      name: "My Destination Bot",
+      credentialSource: "legacy_settings",
+      credentialRef: "destination.botToken",
+      enabled: true,
+    });
+  }
+
+  async updateBotAccount(ownerPrincipal: string, id: string, body: any) {
+    const existing = await this.repository.getBotAccount(ownerPrincipal, id);
     if (!existing) throw new PromotionAdminError(404, "NOT_FOUND", "Telegram bot account not found.");
 
-    const credentialSource = body?.credentialSource === undefined
-      ? undefined
-      : body.credentialSource as TelegramBotCredentialSource;
-    if (credentialSource !== undefined && !credentialSources.has(credentialSource)) {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "Invalid credentialSource.");
-    }
-
-    const nextSource = credentialSource ?? existing.credentialSource;
-    const credentialRef = body?.credentialRef === undefined ? undefined : requiredText(body.credentialRef, "credentialRef");
-    const nextRef = credentialRef ?? existing.credentialRef;
-    if (nextSource === "legacy_settings" && nextRef !== "destination.botToken") {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "The supported legacy credential reference is destination.botToken.");
-    }
-    if (nextSource === "environment" && !envRefPattern.test(nextRef)) {
-      throw new PromotionAdminError(400, "VALIDATION_ERROR", "Environment credentialRef must be a valid uppercase environment variable name.");
+    if (body?.credentialSource !== undefined || body?.credentialRef !== undefined) {
+      throw new PromotionAdminError(
+        400,
+        "VALIDATION_ERROR",
+        "Promotion bot credentials are managed from your personal Destinations settings."
+      );
     }
 
     try {
-      const account = await this.repository.updateBotAccount(id, {
+      const account = await this.repository.updateBotAccount(ownerPrincipal, id, {
         name: body?.name === undefined ? undefined : requiredText(body.name, "name"),
         botUsername: body?.botUsername === undefined
           ? undefined
           : (typeof body.botUsername === "string" && body.botUsername.trim() ? body.botUsername.trim().replace(/^@/, "") : null),
-        credentialSource,
-        credentialRef,
         enabled: optionalBoolean(body?.enabled, "enabled"),
       });
-      return this.safeBotAccount(account!);
+      return this.safeBotAccount(ownerPrincipal, account!);
     } catch (error) {
       return mapDatabaseError(error);
     }
   }
 
-  async deleteBotAccount(id: string) {
+  async deleteBotAccount(ownerPrincipal: string, id: string) {
     try {
-      const deleted = await this.repository.deleteBotAccount(id);
+      const deleted = await this.repository.deleteBotAccount(ownerPrincipal, id);
       if (!deleted) throw new PromotionAdminError(404, "NOT_FOUND", "Telegram bot account not found.");
       return { success: true };
     } catch (error) {
@@ -168,18 +158,18 @@ export class PromotionAdminService {
     }
   }
 
-  async verifyBotAccount(id: string) {
-    const account = await this.repository.getBotAccount(id);
+  async verifyBotAccount(ownerPrincipal: string, id: string) {
+    const account = await this.repository.getBotAccount(ownerPrincipal, id);
     if (!account) throw new PromotionAdminError(404, "NOT_FOUND", "Telegram bot account not found.");
 
     try {
-      const token = await resolveTelegramBotToken(account, this.readLegacySettings);
+      const token = await resolveTelegramBotToken(account, this.readLegacySettings, ownerPrincipal);
       const bot = await verifyTelegramBot(token);
-      const updated = await this.repository.updateBotAccount(id, { botUsername: bot.username ?? null });
+      const updated = await this.repository.updateBotAccount(ownerPrincipal, id, { botUsername: bot.username ?? null });
       return {
         success: true,
         bot,
-        account: await this.safeBotAccount(updated ?? account),
+        account: await this.safeBotAccount(ownerPrincipal, updated ?? account),
       };
     } catch (error: any) {
       const stage = error instanceof TelegramVerificationError ? error.stage : "credential";
@@ -187,10 +177,10 @@ export class PromotionAdminService {
     }
   }
 
-  async listTargets() {
+  async listTargets(ownerPrincipal: string) {
     const [targets, accounts] = await Promise.all([
-      this.repository.listTargets(),
-      this.repository.listBotAccounts(),
+      this.repository.listTargets(ownerPrincipal),
+      this.repository.listBotAccounts(ownerPrincipal),
     ]);
     const accountsById = new Map(accounts.map(account => [account.id, account]));
 
@@ -208,9 +198,9 @@ export class PromotionAdminService {
     });
   }
 
-  async createTarget(body: any) {
+  async createTarget(ownerPrincipal: string, body: any) {
     const botAccountId = requiredText(body?.botAccountId, "botAccountId");
-    const account = await this.repository.getBotAccount(botAccountId);
+    const account = await this.repository.getBotAccount(ownerPrincipal, botAccountId);
     if (!account) throw new PromotionAdminError(400, "VALIDATION_ERROR", "Selected Telegram bot account does not exist.");
 
     const chatType = body?.chatType as PromotionTargetChatType | undefined;
@@ -219,7 +209,7 @@ export class PromotionAdminService {
     }
 
     try {
-      return await this.repository.createTarget({
+      return await this.repository.createTarget(ownerPrincipal, {
         botAccountId,
         name: requiredText(body?.name, "name"),
         chatId: requiredText(body?.chatId, "chatId"),
@@ -231,12 +221,12 @@ export class PromotionAdminService {
     }
   }
 
-  async updateTarget(id: string, body: any) {
-    const existing = await this.repository.getTarget(id);
+  async updateTarget(ownerPrincipal: string, id: string, body: any) {
+    const existing = await this.repository.getTarget(ownerPrincipal, id);
     if (!existing) throw new PromotionAdminError(404, "NOT_FOUND", "Promotion target not found.");
 
     const botAccountId = body?.botAccountId === undefined ? undefined : requiredText(body.botAccountId, "botAccountId");
-    if (botAccountId !== undefined && !(await this.repository.getBotAccount(botAccountId))) {
+    if (botAccountId !== undefined && !(await this.repository.getBotAccount(ownerPrincipal, botAccountId))) {
       throw new PromotionAdminError(400, "VALIDATION_ERROR", "Selected Telegram bot account does not exist.");
     }
 
@@ -251,7 +241,7 @@ export class PromotionAdminService {
       (chatId !== undefined && chatId !== existing.chatId);
 
     try {
-      return await this.repository.updateTarget(id, {
+      return await this.repository.updateTarget(ownerPrincipal, id, {
         botAccountId,
         name: body?.name === undefined ? undefined : requiredText(body.name, "name"),
         chatId,
@@ -268,9 +258,9 @@ export class PromotionAdminService {
     }
   }
 
-  async deleteTarget(id: string) {
+  async deleteTarget(ownerPrincipal: string, id: string) {
     try {
-      const deleted = await this.repository.deleteTarget(id);
+      const deleted = await this.repository.deleteTarget(ownerPrincipal, id);
       if (!deleted) throw new PromotionAdminError(404, "NOT_FOUND", "Promotion target not found.");
       return { success: true };
     } catch (error) {
@@ -279,29 +269,29 @@ export class PromotionAdminService {
     }
   }
 
-  async testTarget(id: string) {
-    const target = await this.repository.getTarget(id);
+  async testTarget(ownerPrincipal: string, id: string) {
+    const target = await this.repository.getTarget(ownerPrincipal, id);
     if (!target) throw new PromotionAdminError(404, "NOT_FOUND", "Promotion target not found.");
 
-    const account = await this.repository.getBotAccount(target.botAccountId);
+    const account = await this.repository.getBotAccount(ownerPrincipal, target.botAccountId);
     if (!account) throw new PromotionAdminError(409, "REFERENCE_CONFLICT", "Promotion target references a missing bot account.");
 
     const checkedAt = new Date().toISOString();
     try {
-      const token = await resolveTelegramBotToken(account, this.readLegacySettings);
+      const token = await resolveTelegramBotToken(account, this.readLegacySettings, ownerPrincipal);
       const verification = await verifyTelegramTarget(token, target.chatId, true);
       if (!chatTypes.has(verification.target.type as PromotionTargetChatType)) {
         throw new TelegramVerificationError("target", `Unsupported Telegram chat type '${verification.target.type}'. Promotion targets must be channels or groups.`);
       }
 
       const [updatedTarget] = await Promise.all([
-        this.repository.updateTarget(id, {
+        this.repository.updateTarget(ownerPrincipal, id, {
           chatType: verification.target.type as PromotionTargetChatType,
           connectionStatus: "ok",
           lastCheckedAt: checkedAt,
           errorMessage: null,
         }),
-        this.repository.updateBotAccount(account.id, { botUsername: verification.bot.username ?? null }),
+        this.repository.updateBotAccount(ownerPrincipal, account.id, { botUsername: verification.bot.username ?? null }),
       ]);
 
       return {
@@ -313,7 +303,7 @@ export class PromotionAdminService {
       };
     } catch (error: any) {
       const message = error?.message || "Telegram target verification failed.";
-      await this.repository.updateTarget(id, {
+      await this.repository.updateTarget(ownerPrincipal, id, {
         connectionStatus: "error",
         lastCheckedAt: checkedAt,
         errorMessage: message,

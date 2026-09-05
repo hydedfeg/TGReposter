@@ -5,6 +5,8 @@ import { resolveTelegramBotToken } from "../server/services/telegramCredentialSe
 import { PromotionAdminError, PromotionAdminService } from "../server/services/promotionAdminService";
 import type { TelegramBotAccountRecord, PromotionTargetRecord } from "../server/repositories/promotionRepository";
 
+const ownerPrincipal = "legacy:alice";
+
 function botAccount(overrides: Partial<TelegramBotAccountRecord> = {}): TelegramBotAccountRecord {
   return {
     id: "bot-1",
@@ -75,7 +77,7 @@ test("vault references fail closed until a vault resolver exists", async () => {
 test("promotion bot account validation rejects malformed environment references", async () => {
   const service = new PromotionAdminService(async () => ({}), {} as any);
   await assert.rejects(
-    service.createBotAccount({
+    service.createBotAccount(ownerPrincipal, {
       name: "Bad Env",
       credentialSource: "environment",
       credentialRef: "not-valid-env-name",
@@ -93,7 +95,7 @@ test("changing a promotion target connection resets verification state", async (
   const fakeRepository = {
     getTarget: async () => target(),
     getBotAccount: async () => botAccount(),
-    updateTarget: async (_id: string, update: any) => {
+    updateTarget: async (_owner: string, _id: string, update: any) => {
       capturedUpdate = update;
       return target({
         chatId: update.chatId ?? "@partner",
@@ -105,7 +107,7 @@ test("changing a promotion target connection resets verification state", async (
   } as any;
 
   const service = new PromotionAdminService(async () => ({}), fakeRepository);
-  const updated = await service.updateTarget("target-1", { chatId: "@new_partner" });
+  const updated = await service.updateTarget(ownerPrincipal, "target-1", { chatId: "@new_partner" });
 
   assert.equal(capturedUpdate.connectionStatus, "unknown");
   assert.equal(capturedUpdate.lastCheckedAt, null);

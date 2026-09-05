@@ -19,7 +19,8 @@ test("Team explains the new private workspace ownership model", () => {
   assert.match(teamSource, /Team & Workspace Access/);
   assert.match(teamSource, /Private Content Inbox/);
   assert.match(teamSource, /Private Destinations/);
-  assert.match(teamSource, /Shared System Setup/);
+  assert.match(teamSource, /Private Curation Setup/);
+  assert.match(teamSource, /Sources, Filters, AI Configuration, monitored posts/);
   assert.match(teamSource, /Personal workspace isolation enabled/);
 });
 
@@ -43,6 +44,9 @@ test("revoking a legacy member preserves their personal workspace identity", () 
 });
 
 test("navigation reflects the workspace access model", () => {
+  assert.match(appShellSource, /label: "My Sources"/);
+  assert.match(appShellSource, /label: "My Filters"/);
+  assert.match(appShellSource, /label: "My AI Configuration"/);
   assert.match(appShellSource, /label: "Team & Access"/);
   assert.match(appShellSource, /team: "Team & Access"/);
   assert.match(appShellSource, /"Personal workspace"/);

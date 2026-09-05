@@ -81,7 +81,7 @@ export default function UserManagement({
       const ok = await onAddUser(cleanEmail, password, role);
       if (ok) {
         setSuccess(
-          `Workspace member "${cleanEmail}" was provisioned with a private Content Inbox and Destinations workspace.`
+          `Workspace member "${cleanEmail}" was provisioned with a fully private curation and publishing workspace.`
         );
         setEmail("");
         setPassword("");
@@ -98,7 +98,7 @@ export default function UserManagement({
 
   const handleDelete = async (identity: string) => {
     const confirmed = window.confirm(
-      `Revoke access for "${identity}"? Their personal Content Inbox and Destinations data will be retained for audit/recovery, but they will no longer be able to sign in.`
+      `Revoke access for "${identity}"? Their sources, filters, AI preferences, monitored posts, Inbox, Destinations, and publishing history will be retained for audit/recovery, but they will no longer be able to sign in.`
     );
     if (!confirmed) return;
 
@@ -133,10 +133,10 @@ export default function UserManagement({
               </h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Every member has an isolated publishing workspace: their own Content Inbox,
-              review status, publishing history, Telegram bot credential, and Destinations.
-              Sources, Filters, AI Configuration, Team, and System Settings remain shared
-              system controls managed by Super-Admins.
+              Every member has an isolated curation and publishing workspace: their own
+              Sources, Filters, AI Configuration, monitored posts, Content Inbox, review
+              status, publishing history, Telegram bot credential, and Destinations. Only
+              Team and System Settings are Super-Admin controls.
             </p>
           </div>
 
@@ -173,10 +173,10 @@ export default function UserManagement({
           <article className="rounded-xl border border-violet-100 bg-violet-50/70 p-4">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-violet-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Shared System Setup</h3>
+              <h3 className="text-sm font-bold text-slate-900">Private Curation Setup</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Super-Admins control shared sources, filters, AI provider settings, and platform configuration.
+              Every member controls separate sources, filters, AI preferences, and monitored post records.
             </p>
           </article>
         </div>
@@ -277,8 +277,8 @@ export default function UserManagement({
               </p>
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 {role === "super-admin"
-                  ? "Gets a private Inbox and Destinations plus permission to manage shared sources, filters, AI, team members, and system settings."
-                  : "Gets a private Inbox and Destinations and can review, edit, approve, archive, and publish content. Shared system configuration stays read-only/unavailable."}
+                  ? "Gets a fully private curation workspace plus permission to manage team members and system health."
+                  : "Gets private sources, filters, AI preferences, monitored posts, Inbox, Destinations, and publishing history."}
               </p>
             </div>
 

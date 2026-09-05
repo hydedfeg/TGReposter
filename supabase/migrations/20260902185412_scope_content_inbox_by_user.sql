@@ -63,9 +63,6 @@ comment on table public.user_inbox_items is
 comment on column public.user_inbox_items.owner_principal is
   'Server-derived owner key: supabase:<auth-user-uuid> or legacy:<username>.';
 
--- Preserve the current production owner's existing edits, moderation state,
--- publishing history, and error state during the cutover. Other users receive
--- independent default states from the canonical source post.
 do $$
 declare
   initial_owner text;
@@ -117,9 +114,6 @@ alter table public.user_inbox_items enable row level security;
 revoke all on table public.user_inbox_items from anon, authenticated;
 grant select, insert, update, delete on table public.user_inbox_items to service_role;
 
--- Replace the old cleanup policy. A source post can be deleted after the
--- rolling 24-hour review window only when no user needs it for approved or
--- published history and no promotion campaign references it.
 select cron.unschedule(jobid)
 from cron.job
 where jobname = 'tgreposter-inbox-cleanup';

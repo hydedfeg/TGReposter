@@ -40,15 +40,21 @@ export default function PromotionPage() {
       });
       const authData = await safeResponseJson(authResponse);
       if (!authData.authenticated) {
+        const accountKey = localStorage.getItem("curator_account_key")?.trim().toLowerCase();
+        if (accountKey) {
+          localStorage.removeItem(`telegram-curator-settings:${accountKey}`);
+        }
         localStorage.removeItem("curator_token");
         localStorage.removeItem("curator_role");
         localStorage.removeItem("curator_username");
+        localStorage.removeItem("curator_account_key");
         window.location.hash = "";
         return;
       }
 
       setCurrentUsername(authData.username || null);
       setCurrentUserRole(authData.role || null);
+      localStorage.setItem("curator_account_key", authData.accountKey || "");
 
       const settingsResponse = await fetch("/api/settings", {
         headers: { Authorization: `Bearer ${token}` },
@@ -69,6 +75,7 @@ export default function PromotionPage() {
 
   const handleLogout = async () => {
     const token = localStorage.getItem("curator_token");
+    const accountKey = localStorage.getItem("curator_account_key")?.trim().toLowerCase();
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
@@ -76,9 +83,13 @@ export default function PromotionPage() {
         body: JSON.stringify({ token }),
       });
     } catch (_) {}
+    if (accountKey) {
+      localStorage.removeItem(`telegram-curator-settings:${accountKey}`);
+    }
     localStorage.removeItem("curator_token");
     localStorage.removeItem("curator_role");
     localStorage.removeItem("curator_username");
+    localStorage.removeItem("curator_account_key");
     window.location.hash = "";
   };
 

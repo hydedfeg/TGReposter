@@ -1,7 +1,3 @@
--- Move the primary reposting bot credential out of legacy JSON and into Supabase Vault.
--- Idempotent: an existing Vault credential is preserved and the legacy copy is
--- cleared only when the Vault secret exists.
-
 do $$
 declare
   legacy_token text;

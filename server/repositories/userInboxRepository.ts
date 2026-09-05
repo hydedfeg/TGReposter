@@ -91,11 +91,13 @@ export class UserInboxRepository {
           ui.error_message
         from public.posts p
         left join public.user_inbox_items ui
-          on ui.post_id = p.id
-         and ui.owner_principal = $1
-        where
-          coalesce(ui.status, p.inbox_default_status, 'pending') in ('posted', 'approved')
-          or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
+          on ui.owner_principal = p.owner_principal
+         and ui.post_id = p.id
+        where p.owner_principal = $1
+          and (
+            coalesce(ui.status, p.inbox_default_status, 'pending') in ('posted', 'approved')
+            or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
+          )
         order by
           p.published_at desc nulls last,
           p.created_at desc
@@ -132,9 +134,10 @@ export class UserInboxRepository {
           ui.error_message
         from public.posts p
         left join public.user_inbox_items ui
-          on ui.post_id = p.id
-         and ui.owner_principal = $1
-        where p.id = $2
+          on ui.owner_principal = p.owner_principal
+         and ui.post_id = p.id
+        where p.owner_principal = $1
+          and p.id = $2
           and (
             coalesce(ui.status, p.inbox_default_status, 'pending') in ('posted', 'approved')
             or coalesce(p.published_at, p.created_at) >= now() - interval '24 hours'
@@ -165,8 +168,8 @@ export class UserInboxRepository {
 
     const pool = getPostgresPool();
     const existing = await pool.query(
-      `select id from public.posts where id = any($1::text[])`,
-      [uniqueIds]
+      `select id from public.posts where owner_principal = $1 and id = any($2::text[])`,
+      [owner, uniqueIds]
     );
     const existingIds = new Set(existing.rows.map(row => String(row.id)));
     const unknownIds = uniqueIds.filter(id => !existingIds.has(id));

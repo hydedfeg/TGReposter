@@ -4,7 +4,13 @@ import { safeResponseJson } from "../utils/api";
 
 interface LoginProps {
   passwordSet: boolean;
-  onSuccess: (token: string, isNewSetup: boolean, role: 'super-admin' | 'admin', username: string) => void;
+  onSuccess: (
+    token: string,
+    isNewSetup: boolean,
+    role: 'super-admin' | 'admin',
+    username: string,
+    accountKey: string
+  ) => void;
 }
 
 export default function Login({ passwordSet, onSuccess }: LoginProps) {
@@ -63,10 +69,22 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
         if (!passwordSet) {
           setSetupSuccess(true);
           setTimeout(() => {
-            onSuccess(data.token, true, data.role || "super-admin", data.username || username.trim());
+            onSuccess(
+              data.token,
+              true,
+              data.role || "super-admin",
+              data.username || username.trim(),
+              data.accountKey
+            );
           }, 1500);
         } else {
-          onSuccess(data.token, false, data.role || "admin", data.username || username.trim());
+          onSuccess(
+            data.token,
+            false,
+            data.role || "admin",
+            data.username || username.trim(),
+            data.accountKey
+          );
         }
       } else {
         setError(data.error || "Authentication failed. Please verify credentials.");

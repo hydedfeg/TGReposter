@@ -12,7 +12,7 @@ const inboxRepositorySource = fs.readFileSync(
   "utf8"
 );
 const migrationSource = fs.readFileSync(
-  path.join(repoRoot, "supabase/migrations/20260902183000_scope_content_inbox_by_user.sql"),
+  path.join(repoRoot, "supabase/migrations/20260905133955_finalize_personal_reposting_runtime.sql"),
   "utf8"
 );
 
@@ -41,14 +41,18 @@ test("Content Inbox reads and writes are routed through authenticated user-scope
 });
 
 test("inbox repository scopes every personalized row by owner principal", () => {
-  assert.match(inboxRepositorySource, /ui\.owner_principal = \$1/);
+  assert.match(inboxRepositorySource, /where p\.owner_principal = \$1/);
+  assert.match(inboxRepositorySource, /ui\.owner_principal = p\.owner_principal/);
   assert.match(inboxRepositorySource, /owner_principal, post_id/);
   assert.match(inboxRepositorySource, /on conflict \(owner_principal, post_id\)/);
 });
 
-test("Content Inbox migration separates canonical posts from private workflow state", () => {
-  assert.match(migrationSource, /create table if not exists public\.user_inbox_items/);
-  assert.match(migrationSource, /primary key \(owner_principal, post_id\)/);
-  assert.match(migrationSource, /alter table public\.user_inbox_items enable row level security/);
-  assert.match(migrationSource, /ui\.status in \('approved', 'posted'\)/);
+test("Content Inbox migration links workflow state only to owner-scoped posts", () => {
+  assert.match(migrationSource, /primary key \(owner_principal, id\)/);
+  assert.match(
+    migrationSource,
+    /foreign key \(owner_principal, post_id\)[\s\S]*references public\.posts \(owner_principal, id\)/
+  );
+  assert.match(migrationSource, /alter column owner_principal set not null/);
+  assert.match(migrationSource, /ui\.owner_principal = p\.owner_principal/);
 });

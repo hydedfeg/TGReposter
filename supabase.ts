@@ -199,10 +199,10 @@ export async function autoCreateSettingsTable(): Promise<{
 // Runtime settings are assembled from normalized tables whenever the backend
 // PostgreSQL connection is available. REST/JSON remains only as a local-dev
 // compatibility fallback and is not the production source of truth.
-export async function readSupabaseDb(): Promise<any | null> {
+export async function readSupabaseDb(ownerPrincipal?: string): Promise<any | null> {
   if (process.env.DATABASE_URL) {
     try {
-      return await runtimeSettingsRepository.read();
+      return await runtimeSettingsRepository.read(ownerPrincipal);
     } catch (error: any) {
       console.error(
         "Normalized PostgreSQL settings read failed:",
@@ -215,10 +215,13 @@ export async function readSupabaseDb(): Promise<any | null> {
   return readLegacySettingsViaRest();
 }
 
-export async function writeSupabaseDb(settings: any): Promise<boolean> {
+export async function writeSupabaseDb(
+  settings: any,
+  ownerPrincipal?: string
+): Promise<boolean> {
   if (process.env.DATABASE_URL) {
     try {
-      return await runtimeSettingsRepository.write(settings);
+      return await runtimeSettingsRepository.write(settings, ownerPrincipal);
     } catch (error: any) {
       console.error(
         "Normalized PostgreSQL settings write failed:",

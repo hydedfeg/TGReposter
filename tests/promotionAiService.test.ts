@@ -9,6 +9,7 @@ const baseCampaign = {
   createdAt: "2026-08-26T00:00:00.000Z",
   updatedAt: "2026-08-26T00:00:00.000Z",
 };
+const ownerPrincipal = "legacy:alice";
 
 const baseCampaignPost = {
   id: "campaign-post-1",
@@ -50,7 +51,7 @@ test("promotion AI generation reuses configured provider/model and keeps output 
     }) as any
   );
 
-  const result = await service.generate("campaign-1", "campaign-post-1", {
+  const result = await service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", {
     action: "rewrite",
     style: "friendly",
     language: "English",
@@ -82,7 +83,7 @@ test("promotion AI generation is blocked once campaign delivery has started", as
   );
 
   await assert.rejects(
-    () => service.generate("campaign-1", "campaign-post-1", { action: "rewrite" }),
+    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", { action: "rewrite" }),
     (error: any) => {
       assert.equal(error instanceof PromotionAIError, true);
       assert.equal(error.status, 409);
@@ -105,7 +106,7 @@ test("promotion translation requires a target language before provider dispatch"
   );
 
   await assert.rejects(
-    () => service.generate("campaign-1", "campaign-post-1", { action: "translate", language: "" }),
+    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", { action: "translate", language: "" }),
     (error: any) => {
       assert.equal(error.status, 400);
       assert.equal(error.code, "VALIDATION_ERROR");
@@ -124,7 +125,7 @@ test("promotion AI provider failures preserve dispatcher status and stay server-
   );
 
   await assert.rejects(
-    () => service.generate("campaign-1", "campaign-post-1", { action: "teaser" }),
+    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", { action: "teaser" }),
     (error: any) => {
       assert.equal(error.status, 504);
       assert.equal(error.code, "AI_PROVIDER_ERROR");

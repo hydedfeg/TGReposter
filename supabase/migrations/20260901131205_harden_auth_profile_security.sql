@@ -1,6 +1,3 @@
--- Harden Supabase Auth profile bootstrap and make profile RLS policies cheaper.
--- Keeps the existing AFTER INSERT trigger behavior unchanged.
-
 alter function public.handle_new_user()
   set search_path = pg_catalog, public;
 

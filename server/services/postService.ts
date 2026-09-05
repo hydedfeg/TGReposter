@@ -1,22 +1,22 @@
 import postRepository, { PostEntity } from "../repositories/postRepository";
 
 export class PostService {
-  async savePosts(posts: PostEntity[]) {
+  async savePosts(ownerPrincipal: string, posts: PostEntity[]) {
     if (!posts.length) return [];
 
-    return await postRepository.upsertMany(posts);
+    return await postRepository.upsertMany(ownerPrincipal, posts);
   }
 
-  async getPostsByIds(ids: string[]) {
-    return await postRepository.getByIds(ids);
+  async getPostsByIds(ownerPrincipal: string, ids: string[]) {
+    return await postRepository.getByIds(ownerPrincipal, ids);
   }
 
-  async getRecentPosts(limit = 400) {
-    return await postRepository.getRecent(limit);
+  async getRecentPosts(ownerPrincipal: string, limit = 400) {
+    return await postRepository.getRecent(ownerPrincipal, limit);
   }
 
-  async countPosts() {
-    return await postRepository.count();
+  async countPosts(ownerPrincipal: string) {
+    return await postRepository.count(ownerPrincipal);
   }
 }
 
