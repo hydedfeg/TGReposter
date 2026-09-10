@@ -1,5 +1,22 @@
 -- Enable UUID support
 create extension if not exists "pgcrypto";
+create extension if not exists pg_cron with schema pg_catalog;
+
+grant usage on schema cron to postgres;
+grant all privileges on all tables in schema cron to postgres;
+
+-- Legacy settings are retained as a compatibility source while normalized
+-- tables are populated by later migrations. Production already had this table;
+-- defining it here makes a clean migration run self-contained.
+create table if not exists public.curator_settings (
+    id text primary key default 'default',
+    data jsonb not null,
+    updated_at timestamptz not null default now()
+);
+
+insert into public.curator_settings (id, data)
+values ('default', '{}'::jsonb)
+on conflict (id) do nothing;
 
 -- User profiles (linked to Supabase Auth)
 create table if not exists public.profiles (
