@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import AppShell, { type WorkspaceView } from "./components/AppShell";
 import PromotionCenter from "./components/PromotionCenter";
 import type { CuratorSettings } from "./types";
 import { safeResponseJson } from "./utils/api";
 
+import { WorkspaceSession } from "./utils/workspaceSession";
+
 type UserRole = "super-admin" | "admin" | null;
 
 export default function PromotionPage() {
+  const session = useRef(new WorkspaceSession()).current;
+  const sessionToken = useRef(localStorage.getItem("curator_token")).current;
+  const isCurrent = session.capture(sessionToken);
   const [settings, setSettings] = useState<CuratorSettings | null>(null);
   const [currentUsername, setCurrentUsername] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>(null);
@@ -16,16 +21,17 @@ export default function PromotionPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   const showToast = (message: string, type: "success" | "error" = "success") => {
+    if (!isCurrent()) return;
     if (type === "success") {
       setSuccessToast(message);
-      setTimeout(() => setSuccessToast(""), 4000);
+      setTimeout(() => { if (isCurrent()) setSuccessToast(""); }, 4000);
     } else {
       setErrorMessage(message);
-      setTimeout(() => setErrorMessage(""), 5000);
+      setTimeout(() => { if (isCurrent()) setErrorMessage(""); }, 5000);
     }
   };
 
-  const load = async () => {
+  const load = async (current: () => boolean) => {
     const token = localStorage.getItem("curator_token");
     if (!token) {
       window.location.hash = "";
@@ -39,6 +45,7 @@ export default function PromotionPage() {
         body: JSON.stringify({ token }),
       });
       const authData = await safeResponseJson(authResponse);
+      if (!current()) return;
       if (!authData.authenticated) {
         const accountKey = localStorage.getItem("curator_account_key")?.trim().toLowerCase();
         if (accountKey) {
@@ -60,29 +67,37 @@ export default function PromotionPage() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const settingsData = await safeResponseJson(settingsResponse);
+      if (!current()) return;
       if (!settingsResponse.ok) throw new Error(settingsData.error || "Unable to load curator settings.");
       setSettings(settingsData);
     } catch (error: any) {
+      if (!current()) return;
       setErrorMessage(error.message || "Unable to initialize Promotion Center.");
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
     }
   };
 
   useEffect(() => {
-    load();
+    load(session.capture(sessionToken));
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "curator_token" || event.key === "curator_account_key") {
+        session.invalidate();
+        setSettings(null);
+        window.location.hash = "";
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      session.invalidate();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   const handleLogout = async () => {
+    if (!isCurrent()) return;
     const token = localStorage.getItem("curator_token");
     const accountKey = localStorage.getItem("curator_account_key")?.trim().toLowerCase();
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-    } catch (_) {}
     if (accountKey) {
       localStorage.removeItem(`telegram-curator-settings:${accountKey}`);
     }
@@ -90,7 +105,20 @@ export default function PromotionPage() {
     localStorage.removeItem("curator_role");
     localStorage.removeItem("curator_username");
     localStorage.removeItem("curator_account_key");
+    session.invalidate();
+    setSettings(null);
+    setCurrentUsername(null);
+    setCurrentUserRole(null);
+    setSuccessToast("");
+    setErrorMessage("");
     window.location.hash = "";
+    try {
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+    } catch (_) {}
   };
 
   const handleNavigate = (view: WorkspaceView) => {

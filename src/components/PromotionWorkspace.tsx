@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -184,8 +184,21 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const [targetChatType, setTargetChatType] = useState<"channel" | "group" | "supergroup">("channel");
   const [targetBotAccountId, setTargetBotAccountId] = useState("");
 
+  const requestToken = useRef(localStorage.getItem("curator_token")).current;
+  const requestsActive = useRef(true);
+  useEffect(() => {
+    requestsActive.current = true;
+    return () => { requestsActive.current = false; };
+  }, []);
+  const requireCurrentSession = () => {
+    if (!requestsActive.current || localStorage.getItem("curator_token") !== requestToken) {
+      throw new Error("Session changed. Please reopen your workspace.");
+    }
+  };
+
   const authFetch = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem("curator_token");
+    requireCurrentSession();
+    const token = requestToken;
     const headers = {
       "Content-Type": "application/json",
       ...options.headers,
@@ -197,6 +210,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const requestJson = async (url: string, options: RequestInit = {}) => {
     const response = await authFetch(url, options);
     const data = await safeResponseJson(response);
+    requireCurrentSession();
     if (!response.ok) {
       const message = data?.error || `Promotion request failed (${response.status}).`;
       throw new Error(message);

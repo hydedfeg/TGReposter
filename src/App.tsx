@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import Header from "./components/Header";
 import AppShell, { type WorkspaceView } from "./components/AppShell";
@@ -13,6 +13,8 @@ import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
+
+import { WorkspaceSession } from "./utils/workspaceSession";
 
 const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
 
@@ -37,8 +39,8 @@ function initialWorkspaceView(): WorkspaceView {
   return stored && validViews.includes(stored) ? stored : "dashboard";
 }
 
-export default function App() {
-  const [settings, setSettings] = useState<CuratorSettings>({
+function emptyWorkspace(): CuratorSettings {
+  return {
     channels: [],
     filters: {
       positiveKeywords: [],
@@ -49,11 +51,17 @@ export default function App() {
     destination: {
       botToken: "",
       channelId: "",
-      connected: false
+      connected: false,
+      targets: []
     },
     posts: [],
     users: []
-  });
+  };
+}
+
+export default function App() {
+  const session = useRef(new WorkspaceSession()).current;
+  const [settings, setSettings] = useState<CuratorSettings>(emptyWorkspace);
 
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceView>(initialWorkspaceView);
   const [isLoading, setIsLoading] = useState(true);
@@ -65,6 +73,7 @@ export default function App() {
 
   // Authentication State
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem("curator_token"));
+  const isCurrent = session.capture(authToken);
   const [passwordSet, setPasswordSet] = useState<boolean | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
@@ -82,128 +91,135 @@ export default function App() {
     }
   }, [activeWorkspaceTab, currentUserRole]);
 
-  // Authentication validation helper
-  const checkAuth = async (tokenToCheck: string | null) => {
+  const resetWorkspace = () => {
+    session.invalidate();
+    setSettings(emptyWorkspace());
+    setGeminiActive(false);
+    setOpenrouterActive(false);
+    setIsScraping(false);
+    setErrorMessage("");
+    setSuccessToast("");
+  };
+
+  const clearSession = () => {
+    resetWorkspace();
+    localStorage.removeItem(settingsCacheKey());
+    for (const key of ["curator_token", "curator_role", "curator_username", "curator_account_key"]) {
+      localStorage.removeItem(key);
+    }
+    setAuthToken(null);
+    setCurrentUserRole(null);
+    setCurrentUsername(null);
+    setIsAuthenticated(false);
+    setIsLoading(false);
+    setAuthChecking(false);
+  };
+
+  const loadSettings = async (token: string | null, current = isCurrent) => {
+    if (!current()) return;
+    const cacheKey = settingsCacheKey();
+    setIsLoading(true);
     try {
-      const res = await fetch("/api/auth/status", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    token: tokenToCheck
-  })
-});
-      const data = await safeResponseJson(res);
+      const response = await fetch("/api/settings", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!current()) return;
+      if (response.status === 401) {
+        clearSession();
+        return;
+      }
+      if (!response.ok) throw new Error("Failed to load settings from server");
+      const data = await safeResponseJson(response);
+      if (!current()) return;
+      const safeData = sanitizeClientSettings(data);
+      setSettings(safeData);
+      localStorage.setItem(cacheKey, JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
-      if (data.authenticated && tokenToCheck) {
+      setGeminiActive(!!data.geminiActive);
+      setOpenrouterActive(!!data.openrouterActive);
+    } catch (err) {
+      if (!current()) return;
+      console.error("Error loading configuration:", err);
+      let fallback = emptyWorkspace();
+      let cached = false;
+      try {
+        const local = localStorage.getItem(cacheKey);
+        if (local) {
+          fallback = sanitizeClientSettings(JSON.parse(local));
+          cached = true;
+        }
+      } catch (_) {}
+      setSettings(fallback);
+      setErrorMessage(cached
+        ? "Unable to fetch settings from server. Showing your saved workspace."
+        : "Unable to load your workspace. Please sign in again to retry.");
+    } finally {
+      if (current()) setIsLoading(false);
+    }
+  };
+
+  // The effect owns its own guard so StrictMode cleanup and route unmounts also
+  // invalidate initialization, without allowing a late status response to log in.
+  useEffect(() => {
+    const current = session.capture();
+    const savedToken = localStorage.getItem("curator_token");
+    const initialize = async () => {
+      try {
+        const response = await fetch("/api/auth/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: savedToken }),
+        });
+        const data = await safeResponseJson(response);
+        if (!current()) return;
+        if (!response.ok) throw new Error("Unable to verify session");
+        setPasswordSet(data.passwordSet);
+        if (!data.authenticated || !savedToken || !data.accountKey) {
+          clearSession();
+          return;
+        }
         setIsAuthenticated(true);
-        setAuthToken(tokenToCheck);
+        setAuthToken(savedToken);
         setCurrentUserRole(data.role);
         setCurrentUsername(data.username);
         localStorage.setItem("curator_role", data.role || "");
         localStorage.setItem("curator_username", data.username || "");
-        localStorage.setItem("curator_account_key", data.accountKey || "");
-        return true;
-      } else {
+        localStorage.setItem("curator_account_key", data.accountKey);
+        await loadSettings(savedToken, current);
+      } catch (error) {
+        if (!current()) return;
+        clearSession();
+        setPasswordSet(true);
+        setErrorMessage("Unable to verify your session. Please sign in again.");
+      } finally {
+        if (current()) setAuthChecking(false);
+      }
+    };
+    void initialize();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "curator_token" || event.key === "curator_account_key") {
+        // A different tab changed identity. Unmount private children and require
+        // revalidation; do not remove the other tab's newly saved credentials.
+        resetWorkspace();
         setIsAuthenticated(false);
-        setAuthToken(null);
+        setAuthToken(localStorage.getItem("curator_token"));
         setCurrentUserRole(null);
         setCurrentUsername(null);
-        localStorage.removeItem(settingsCacheKey());
-        localStorage.removeItem("curator_role");
-        localStorage.removeItem("curator_username");
-        localStorage.removeItem("curator_account_key");
-        if (data.passwordSet) {
-          localStorage.removeItem("curator_token");
-        }
-        return false;
-      }
-    } catch (e) {
-      console.error("Auth status verification failed:", e);
-      return false;
-    } finally {
-      setAuthChecking(false);
-    }
-  };
-
-  const loadSettings = async (token?: string | null) => {
-    setIsLoading(true);
-    const activeToken = token !== undefined ? token : authToken;
-    try {
-      const response = await fetch("/api/settings", {
-        headers: {
-          ...(activeToken ? { "Authorization": `Bearer ${activeToken}` } : {})
-        }
-      });
-      if (response.status === 401) {
-        setIsAuthenticated(false);
+        setAuthChecking(false);
         setIsLoading(false);
-        return;
       }
-      if (!response.ok) {
-        throw new Error("Failed to load settings from server");
-      }
-      const data = await safeResponseJson(response);
-      const safeData = sanitizeClientSettings(data);
-      setSettings(safeData);
-      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
-      setPasswordSet(data.passwordSet);
-      setGeminiActive(!!data.geminiActive);
-      setOpenrouterActive(!!data.openrouterActive);
-      if (data.passwordSet && activeToken) {
-        setIsAuthenticated(true);
-      }
-    } catch (err: any) {
-      console.error("Error loading configuration:", err);
-      // Fallback to client localStorage if server is temporarily unreachable
-      const local = localStorage.getItem(settingsCacheKey());
-      if (local) {
-        try {
-          const safeLocal = sanitizeClientSettings(JSON.parse(local));
-          setSettings(safeLocal);
-          localStorage.setItem(settingsCacheKey(), JSON.stringify(safeLocal));
-        } catch (_) {}
-      }
-      setErrorMessage("Unable to fetch settings from server. Reverting to local cache.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Perform security checks & configuration loads on mount
-  useEffect(() => {
-    const savedToken = localStorage.getItem("curator_token");
-    checkAuth(savedToken).then((authenticated) => {
-      // If authenticated, or if no master password has been set up yet, read settings.
-      // If we need authentication, the loader stops and redirects to login layout.
-      if (authenticated) {
-        loadSettings(savedToken);
-      } else {
-        // Query again to verify if we can proceed passwordless or if we must gate
-        fetch("/api/auth/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: null })
-        })
-        .then(r => safeResponseJson(r))
-        .then(data => {
-          setPasswordSet(data.passwordSet);
-          if (!data.passwordSet) {
-            // Bypass login since no password exists yet
-            loadSettings(null);
-          } else {
-            setIsLoading(false);
-          }
-        })
-        .catch(() => {
-          setIsLoading(false);
-        });
-      }
-    });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      session.invalidate();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
 
   // Generic authenticated fetch helper
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    const savedToken = localStorage.getItem("curator_token");
+    if (!isCurrent()) throw new Error("Session changed");
+    const savedToken = authToken;
     const headers = {
       ...options.headers,
       "Content-Type": "application/json",
@@ -217,10 +233,12 @@ export default function App() {
     updated: CuratorSettings,
     serverPatch: Partial<CuratorSettings> = updated
   ) => {
+    if (!isCurrent()) return false;
+    const cacheKey = settingsCacheKey();
     const safeUpdated = sanitizeClientSettings(updated);
 
     // Keep a token-free local fallback only.
-    localStorage.setItem(settingsCacheKey(), JSON.stringify(safeUpdated));
+    localStorage.setItem(cacheKey, JSON.stringify(safeUpdated));
     setSettings(safeUpdated);
 
     try {
@@ -232,13 +250,15 @@ export default function App() {
         throw new Error("Failed to save settings on server");
       }
       const data = await safeResponseJson(response);
+      if (!isCurrent()) return false;
       const safeData = sanitizeClientSettings(data);
       setSettings(safeData);
-      localStorage.setItem(settingsCacheKey(), JSON.stringify(safeData));
+      localStorage.setItem(cacheKey, JSON.stringify(safeData));
       setPasswordSet(data.passwordSet);
       setGeminiActive(!!data.geminiActive);
       setOpenrouterActive(!!data.openrouterActive);
     } catch (err: any) {
+      if (!isCurrent()) return false;
       console.error("Error saving configuration:", err);
       showToast("Config saved locally, but server failed to persist.", "error");
     }
@@ -251,6 +271,8 @@ export default function App() {
     username: string,
     accountKey: string
   ) => {
+    if (!isCurrent()) return;
+    resetWorkspace();
     localStorage.setItem("curator_token", token);
     localStorage.setItem("curator_role", role);
     localStorage.setItem("curator_username", username);
@@ -260,33 +282,28 @@ export default function App() {
     setCurrentUsername(username);
     setIsAuthenticated(true);
     setPasswordSet(true);
-    showToast(isNewSetup ? "Super-admin account set! Workspace unlocked." : `Welcome, ${username}! Workspace unlocked.`);
-    loadSettings(token);
+    setSuccessToast(isNewSetup ? "Super-admin account set! Workspace unlocked." : `Welcome, ${username}! Workspace unlocked.`);
+    loadSettings(token, session.capture());
   };
 
   const handleLogout = async () => {
+    if (!isCurrent()) return;
+    const token = authToken;
+    // Clear private state before waiting for the network.
+    clearSession();
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: authToken })
+        body: JSON.stringify({ token }),
       });
-    } catch (e) {
-      console.error("Logout notification failed:", e);
+    } catch (error) {
+      console.error("Logout notification failed:", error);
     }
-    localStorage.removeItem(settingsCacheKey());
-    localStorage.removeItem("curator_token");
-    localStorage.removeItem("curator_role");
-    localStorage.removeItem("curator_username");
-    localStorage.removeItem("curator_account_key");
-    setAuthToken(null);
-    setCurrentUserRole(null);
-    setCurrentUsername(null);
-    setIsAuthenticated(false);
-    showToast("Workspace locked.");
   };
 
   const handleAddUser = async (username: string, password: string, role: "super-admin" | "admin"): Promise<boolean> => {
+    if (!isCurrent()) return false;
     try {
       const response = await fetchWithAuth("/api/users/add", {
         method: "POST",
@@ -294,19 +311,23 @@ export default function App() {
       });
       if (!response.ok) {
         const data = await safeResponseJson(response);
+        if (!isCurrent()) return false;
         throw new Error(data.error || "Failed to add user");
       }
       const data = await safeResponseJson(response);
+      if (!isCurrent()) return false;
       setSettings(prev => ({ ...prev, users: data.users }));
       showToast(`User "${username}" successfully registered.`);
       return true;
     } catch (err: any) {
+      if (!isCurrent()) return false;
       showToast(err.message || "Unable to add user", "error");
       return false;
     }
   };
 
   const handleDeleteUser = async (username: string): Promise<boolean> => {
+    if (!isCurrent()) return false;
     try {
       const response = await fetchWithAuth("/api/users/delete", {
         method: "POST",
@@ -314,25 +335,29 @@ export default function App() {
       });
       if (!response.ok) {
         const data = await safeResponseJson(response);
+        if (!isCurrent()) return false;
         throw new Error(data.error || "Failed to revoke user access");
       }
       const data = await safeResponseJson(response);
+      if (!isCurrent()) return false;
       setSettings(prev => ({ ...prev, users: data.users }));
       showToast(`User "${username}" access revoked.`);
       return true;
     } catch (err: any) {
+      if (!isCurrent()) return false;
       showToast(err.message || "Unable to revoke user access", "error");
       return false;
     }
   };
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
+    if (!isCurrent()) return;
     if (type === "success") {
       setSuccessToast(msg);
-      setTimeout(() => setSuccessToast(""), 4000);
+      setTimeout(() => { if (isCurrent()) setSuccessToast(""); }, 4000);
     } else {
       setErrorMessage(msg);
-      setTimeout(() => setErrorMessage(""), 5000);
+      setTimeout(() => { if (isCurrent()) setErrorMessage(""); }, 5000);
     }
   };
 
@@ -352,31 +377,38 @@ export default function App() {
 
   // 1. Channel actions
   const handleAddChannel = async (username: string) => {
+    if (!isCurrent()) return;
     const cleanUsername = username.trim().toLowerCase();
     const updatedChannels = [...settings.channels, { username: cleanUsername, status: "idle" as const }];
     const updated = { ...settings, channels: updatedChannels };
     await saveSettingsToServer(updated, { channels: updatedChannels });
+    if (!isCurrent()) return;
     showToast(`Added channel @${cleanUsername}! Automatically fetching posts...`);
     // Auto fetch the newly added channel
     handleFetchChannel(cleanUsername);
   };
 
   const handleRemoveChannel = async (username: string) => {
+    if (!isCurrent()) return;
     const updatedChannels = settings.channels.filter(c => c.username !== username);
     const updated = { ...settings, channels: updatedChannels };
     await saveSettingsToServer(updated, { channels: updatedChannels });
+    if (!isCurrent()) return;
     showToast(`Removed channel @${username}`);
   };
 
   // 2. Filter actions
   const handleUpdateFilters = async (updatedFilters: IFilterConfig) => {
+    if (!isCurrent()) return;
     const updated = { ...settings, filters: updatedFilters };
     await saveSettingsToServer(updated, { filters: updatedFilters });
+    if (!isCurrent()) return;
     showToast("Filtering criteria updated successfully.");
   };
 
   // 3. Destination configuration actions
   const handleSaveDestination = async (botToken: string, targets: DestinationTarget[]): Promise<boolean> => {
+    if (!isCurrent()) return false;
     let botTokenConfigured = !!settings.destination.botTokenConfigured;
 
     if (botToken.trim()) {
@@ -386,6 +418,7 @@ export default function App() {
           body: JSON.stringify({ botToken: botToken.trim() }),
         });
         const tokenResult = await safeResponseJson(tokenResponse);
+        if (!isCurrent()) return false;
 
         if (!tokenResponse.ok || !tokenResult.success) {
           throw new Error(tokenResult.error || "Unable to store Telegram bot token.");
@@ -393,6 +426,7 @@ export default function App() {
 
         botTokenConfigured = true;
       } catch (err: any) {
+        if (!isCurrent()) return false;
         showToast(err?.message || "Unable to store Telegram bot token.", "error");
         return false;
       }
@@ -410,18 +444,22 @@ export default function App() {
 
     const updated = { ...settings, destination: updatedDestination };
     await saveSettingsToServer(updated, { destination: updatedDestination });
+    if (!isCurrent()) return false;
     showToast(botToken.trim() ? "Telegram bot token stored securely and destinations updated." : "Telegram destinations updated.");
     return true;
   };
 
   const handleUpdateAI = async (updatedAI: IAIConfig) => {
+    if (!isCurrent()) return;
     const updated = { ...settings, aiConfig: updatedAI };
     await saveSettingsToServer(updated, { aiConfig: updatedAI });
+    if (!isCurrent()) return;
     showToast("AI configuration updated successfully.");
   };
 
   // 4. Manual Post Tweaks or status changes
   const handleUpdatePost = async (postId: string, updatedFields: Partial<CuratedPost>) => {
+    if (!isCurrent()) return;
     let changedPost: CuratedPost | null = null;
     const updatedPosts = settings.posts.map(post => {
       if (post.id === postId) {
@@ -440,51 +478,57 @@ export default function App() {
 
   // 5. Scraper triggers
   const handleFetchChannel = async (username: string) => {
+    if (!isCurrent()) return;
+    const cacheKey = settingsCacheKey();
     setIsScraping(true);
     showToast(`Fetching feed for @${username}...`);
     try {
-  const response = await fetch("/api/fetch-posts", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${authToken}`,
-    },
-    body: JSON.stringify({
-      usernames: [username],
-    }),
-  });
+      const response = await fetch("/api/fetch-posts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          usernames: [username],
+        }),
+      });
 
-  if (!response.ok) {
-    throw new Error("Server failed to scrape channel.");
-  }
+      if (!response.ok) {
+        throw new Error("Server failed to scrape channel.");
+      }
 
-  const data = await safeResponseJson(response);
+      const data = await safeResponseJson(response);
+      if (!isCurrent()) return;
 
-  setSettings(prev => ({
-    ...prev,
-    channels: data.channels,
-    posts: data.posts,
-  }));
+      setSettings(prev => ({
+        ...prev,
+        channels: data.channels,
+        posts: data.posts,
+      }));
 
-  localStorage.setItem(
-    settingsCacheKey(),
-    JSON.stringify({
-      ...settings,
-      channels: data.channels,
-      posts: data.posts,
-    })
-  );
+      localStorage.setItem(
+        cacheKey,
+        JSON.stringify({
+          ...settings,
+          channels: data.channels,
+          posts: data.posts,
+        })
+      );
 
-  showToast(`Scrape completed! Collected posts for @${username}.`);
+      showToast(`Scrape completed! Collected posts for @${username}.`);
     } catch (err: any) {
+      if (!isCurrent()) return;
       console.error(err);
       showToast(`Scrape failed for @${username}: ${err.message}`, "error");
     } finally {
-      setIsScraping(false);
+      if (isCurrent()) setIsScraping(false);
     }
   };
 
   const handleFetchAll = async () => {
+    if (!isCurrent()) return;
+    const cacheKey = settingsCacheKey();
     setIsScraping(true);
     showToast("Initiating scraping for all target feeds...");
     try {
@@ -504,6 +548,7 @@ export default function App() {
       }
 
       const data = await safeResponseJson(response);
+      if (!isCurrent()) return;
       setSettings(prev => ({
         ...prev,
         channels: data.channels,
@@ -511,7 +556,7 @@ export default function App() {
       }));
 
       // Persist latest state
-      localStorage.setItem(settingsCacheKey(), JSON.stringify({
+      localStorage.setItem(cacheKey, JSON.stringify({
         ...settings,
         channels: data.channels,
         posts: data.posts
@@ -519,15 +564,17 @@ export default function App() {
 
       showToast(`Feed scrape complete! Found ${data.fetchedCount} new posts matching rules.`);
     } catch (err: any) {
+      if (!isCurrent()) return;
       console.error(err);
       showToast(`Scrape error: ${err.message}`, "error");
     } finally {
-      setIsScraping(false);
+      if (isCurrent()) setIsScraping(false);
     }
   };
 
   // 6. Post to Telegram Bot dispatch
   const handlePostToTelegram = async (postId: string, text: string, photoUrl?: string): Promise<boolean> => {
+    if (!isCurrent()) return false;
     try {
       const res = await fetch("/api/post-telegram", {
   method: "POST",
@@ -543,6 +590,7 @@ export default function App() {
 });
 
       const data = await safeResponseJson(res);
+      if (!isCurrent()) return false;
       if (res.ok && data.success) {
         // Replace in state
         setSettings(prev => ({
@@ -556,6 +604,7 @@ export default function App() {
         throw new Error(data.error || "Telegram failed to post message.");
       }
     } catch (err: any) {
+      if (!isCurrent()) return false;
       console.error(err);
       showToast(`Telegram Bot Error: ${err.message}`, "error");
       
