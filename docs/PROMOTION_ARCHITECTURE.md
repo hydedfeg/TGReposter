@@ -15,6 +15,9 @@ This is separate from the existing curation/reposting workflow. Promotion campai
 5. Prevent duplicate campaign delivery with database uniqueness constraints.
 6. Preserve delivery attempts for retry/audit history.
 7. Keep promotion tables outside the legacy curator_settings JSON document.
+8. Resolve every selected bot account through the authenticated owner's
+   credential scope before campaign state or delivery rows are created,
+   including retry operations.
 
 ## Promotion Data Model
 

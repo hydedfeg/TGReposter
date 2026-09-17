@@ -133,6 +133,60 @@ test("campaign launch rejects an empty campaign before any target publishing wor
   );
 });
 
+test("campaign launch rejects a missing bot credential before mutating campaign state", async () => {
+  const targetId = "33333333-3333-4333-8333-333333333333";
+  const missingCredentialRef = "PROMOTION_TEST_MISSING_TOKEN";
+  delete process.env[missingCredentialRef];
+  let preparedLaunch = false;
+
+  const campaignRepository = {
+    getCampaign: async () => campaign(),
+    listCampaignPosts: async () => [campaignPost()],
+    getSourcePost: async () => sourcePost(),
+    prepareLaunch: async () => {
+      preparedLaunch = true;
+      throw new Error("prepareLaunch must not run without a credential");
+    },
+  } as any;
+  const adminRepository = {
+    listTargets: async () => [{
+      id: targetId,
+      botAccountId: "44444444-4444-4444-8444-444444444444",
+      name: "Partner group",
+      chatId: "-100123456789",
+      chatType: "supergroup",
+      enabled: true,
+      connectionStatus: "ok",
+    }],
+    listBotAccounts: async () => [{
+      id: "44444444-4444-4444-8444-444444444444",
+      name: "Owner bot",
+      credentialSource: "environment",
+      credentialRef: missingCredentialRef,
+      enabled: true,
+    }],
+  } as any;
+  const service = new PromotionCampaignService(
+    async () => ({}),
+    campaignRepository,
+    adminRepository
+  );
+
+  await assert.rejects(
+    service.launchCampaign(ownerPrincipal, campaign().id, { targetIds: [targetId] }),
+    (error: any) => {
+      assert.ok(error instanceof PromotionCampaignError);
+      assert.equal(error.code, "INVALID_TARGETS");
+      assert.deepEqual(error.details?.targets, [{
+        targetId,
+        reason: `Telegram credential environment variable '${missingCredentialRef}' is not configured.`,
+      }]);
+      return true;
+    }
+  );
+  assert.equal(preparedLaunch, false);
+});
+
 test("retry validates every requested delivery before acquiring running state", async () => {
   let markedRunning = false;
   const validDeliveryId = "44444444-4444-4444-8444-444444444444";

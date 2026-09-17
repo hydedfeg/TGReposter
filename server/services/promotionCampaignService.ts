@@ -1,4 +1,5 @@
 import promotionRepository, {
+  type PromotionRepository,
   type TelegramBotAccountRecord,
 } from "../repositories/promotionRepository";
 import promotionCampaignRepository, {
@@ -170,7 +171,8 @@ function shouldQuarantineDelivery(result: {
 export class PromotionCampaignService {
   constructor(
     private readonly readLegacySettings: LegacySettingsReader,
-    private readonly repository: PromotionCampaignRepository = promotionCampaignRepository
+    private readonly repository: PromotionCampaignRepository = promotionCampaignRepository,
+    private readonly adminRepository: PromotionRepository = promotionRepository
   ) {}
 
   async listCampaigns(ownerPrincipal: string) {
@@ -315,12 +317,13 @@ export class PromotionCampaignService {
 
   private async validateTargets(ownerPrincipal: string, targetIds: string[]) {
     const [targets, accounts] = await Promise.all([
-      promotionRepository.listTargets(ownerPrincipal),
-      promotionRepository.listBotAccounts(ownerPrincipal),
+      this.adminRepository.listTargets(ownerPrincipal),
+      this.adminRepository.listBotAccounts(ownerPrincipal),
     ]);
     const targetById = new Map(targets.map(target => [target.id, target]));
     const accountById = new Map(accounts.map(account => [account.id, account]));
     const problems: Array<{ targetId: string; reason: string }> = [];
+    const readyTargets: Array<{ targetId: string; account: TelegramBotAccountRecord }> = [];
 
     for (const id of targetIds) {
       const target = targetById.get(id);
@@ -333,6 +336,29 @@ export class PromotionCampaignService {
       else if (target.connectionStatus !== "ok") problems.push({ targetId: id, reason: "Target has not passed its Telegram connection test." });
       else if (!account) problems.push({ targetId: id, reason: "Target bot account does not exist." });
       else if (!account.enabled) problems.push({ targetId: id, reason: "Target bot account is disabled." });
+      else readyTargets.push({ targetId: id, account });
+    }
+
+    // A previously verified target can outlive its owner's Vault secret (for
+    // example after the personal Destination Bot is removed). Resolve each
+    // distinct account before prepareLaunch mutates campaign or delivery state.
+    const credentialProblems = new Map<string, string>();
+    await Promise.all(Array.from(new Map(
+      readyTargets.map(({ account }) => [account.id, account])
+    ).values()).map(async account => {
+      try {
+        await resolveTelegramBotToken(account, this.readLegacySettings, ownerPrincipal);
+      } catch (error: any) {
+        credentialProblems.set(
+          account.id,
+          error?.message || "Telegram bot credential is not configured."
+        );
+      }
+    }));
+
+    for (const { targetId, account } of readyTargets) {
+      const reason = credentialProblems.get(account.id);
+      if (reason) problems.push({ targetId, reason });
     }
 
     if (problems.length) {
