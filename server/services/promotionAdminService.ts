@@ -238,7 +238,8 @@ export class PromotionAdminService {
     const chatId = body?.chatId === undefined ? undefined : requiredText(body.chatId, "chatId");
     const connectionChanged =
       (botAccountId !== undefined && botAccountId !== existing.botAccountId) ||
-      (chatId !== undefined && chatId !== existing.chatId);
+      (chatId !== undefined && chatId !== existing.chatId) ||
+      (chatType !== undefined && chatType !== existing.chatType);
 
     try {
       return await this.repository.updateTarget(ownerPrincipal, id, {

@@ -114,3 +114,30 @@ test("changing a promotion target connection resets verification state", async (
   assert.equal(capturedUpdate.errorMessage, null);
   assert.equal(updated?.chatId, "@new_partner");
 });
+
+test("changing a verified target chat type requires Telegram verification again", async () => {
+  let capturedUpdate: any = null;
+  const fakeRepository = {
+    getTarget: async () => target({ chatType: "channel" }),
+    getBotAccount: async () => botAccount(),
+    updateTarget: async (_owner: string, _id: string, update: any) => {
+      capturedUpdate = update;
+      return target({
+        chatType: update.chatType ?? "channel",
+        connectionStatus: update.connectionStatus ?? "ok",
+        lastCheckedAt: update.lastCheckedAt ?? undefined,
+        errorMessage: update.errorMessage ?? undefined,
+      });
+    },
+  } as any;
+
+  const service = new PromotionAdminService(async () => ({}), fakeRepository);
+  const updated = await service.updateTarget(ownerPrincipal, "target-1", {
+    chatType: "supergroup",
+  });
+
+  assert.equal(capturedUpdate.connectionStatus, "unknown");
+  assert.equal(capturedUpdate.lastCheckedAt, null);
+  assert.equal(capturedUpdate.errorMessage, null);
+  assert.equal(updated?.chatType, "supergroup");
+});

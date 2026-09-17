@@ -18,6 +18,8 @@ This is separate from the existing curation/reposting workflow. Promotion campai
 8. Resolve every selected bot account through the authenticated owner's
    credential scope before campaign state or delivery rows are created,
    including retry operations.
+9. Treat bot account, chat identifier, and Telegram chat type as verified
+   connection metadata; changing any of them requires a new target test.
 
 ## Promotion Data Model
 
