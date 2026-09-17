@@ -191,6 +191,91 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
     assert.equal((await api(bob, `/api/promotion/campaigns/${bobCampaign}/posts`, { postId: "alice-only/1" })).status, 404);
   });
 
+  await t.test("hourly cleanup preserves owner-specific inbox and campaign history", async () => {
+    const cleanupJob = await db!.query(
+      "select command from cron.job where jobname='tgreposter-inbox-cleanup'"
+    );
+    assert.equal(cleanupJob.rowCount, 1);
+    const cleanupCommand = String(cleanupJob.rows[0].command);
+
+    await db!.query("begin");
+    try {
+      await db!.query(
+        `
+          insert into posts
+            (owner_principal, id, channel_username, original_text, published_at, created_at)
+          values
+            ($1, 'retention/approved', 'retention', 'approved', now() - interval '48 hours', now() - interval '48 hours'),
+            ($2, 'retention/approved', 'retention', 'pending', now() - interval '48 hours', now() - interval '48 hours'),
+            ($1, 'retention/posted', 'retention', 'posted', now() - interval '48 hours', now() - interval '48 hours'),
+            ($2, 'retention/posted', 'retention', 'archived', now() - interval '48 hours', now() - interval '48 hours'),
+            ($1, 'retention/campaign', 'retention', 'campaign', now() - interval '48 hours', now() - interval '48 hours'),
+            ($2, 'retention/campaign', 'retention', 'unlinked', now() - interval '48 hours', now() - interval '48 hours'),
+            ($1, 'retention/recent', 'retention', 'recent', now() - interval '1 hour', now() - interval '1 hour'),
+            ($2, 'retention/recent', 'retention', 'recent', now() - interval '1 hour', now() - interval '1 hour'),
+            ($1, 'retention/expired', 'retention', 'expired', now() - interval '48 hours', now() - interval '48 hours'),
+            ($2, 'retention/expired', 'retention', 'expired', now() - interval '48 hours', now() - interval '48 hours')
+        `,
+        [owner(aliceId), owner(bobId)]
+      );
+      await db!.query(
+        `
+          insert into user_inbox_items (owner_principal, post_id, status)
+          values
+            ($1, 'retention/approved', 'approved'),
+            ($2, 'retention/approved', 'pending'),
+            ($1, 'retention/posted', 'posted'),
+            ($2, 'retention/posted', 'archived')
+        `,
+        [owner(aliceId), owner(bobId)]
+      );
+      await db!.query(
+        `
+          insert into promotion_campaign_posts
+            (owner_principal, campaign_id, post_id, content_mode, position)
+          values ($1, $2, 'retention/campaign', 'original', 1)
+        `,
+        [owner(aliceId), aliceCampaign]
+      );
+
+      await db!.query(cleanupCommand);
+
+      const retained = await db!.query(
+        `
+          select owner_principal, id
+          from posts
+          where id like 'retention/%'
+          order by owner_principal, id
+        `
+      );
+      assert.deepEqual(retained.rows, [
+        { owner_principal: owner(aliceId), id: "retention/approved" },
+        { owner_principal: owner(aliceId), id: "retention/campaign" },
+        { owner_principal: owner(aliceId), id: "retention/posted" },
+        { owner_principal: owner(aliceId), id: "retention/recent" },
+        { owner_principal: owner(bobId), id: "retention/recent" },
+      ]);
+      assert.deepEqual(
+        (await db!.query(
+          "select owner_principal, post_id from user_inbox_items where post_id like 'retention/%' order by owner_principal, post_id"
+        )).rows,
+        [
+          { owner_principal: owner(aliceId), post_id: "retention/approved" },
+          { owner_principal: owner(aliceId), post_id: "retention/posted" },
+        ]
+      );
+      assert.equal(
+        (await db!.query(
+          "select count(*)::int as count from promotion_campaign_posts where owner_principal=$1 and campaign_id=$2 and post_id='retention/campaign'",
+          [owner(aliceId), aliceCampaign]
+        )).rows[0].count,
+        1
+      );
+    } finally {
+      await db!.query("rollback");
+    }
+  });
+
   await t.test("cross-owner campaign reads, mutations, AI, launches and retries are rejected without sending", async () => {
     const count = (await outbound()).length;
     for (const [token, campaign, post, target, account] of [[bob,aliceCampaign,alicePost,aliceTarget,aliceBot], [alice,bobCampaign,bobPost,bobTarget,bobBot]]) {

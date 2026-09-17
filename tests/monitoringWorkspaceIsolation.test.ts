@@ -97,3 +97,13 @@ test("scheduled collection resolves its application URL per environment", () => 
   assert.match(environmentCronMigrationSource, /where name = 'tgreposter_cron_secret'/);
   assert.doesNotMatch(environmentCronMigrationSource, /tgreposter-staging-production/);
 });
+
+test("hourly cleanup preserves history within the matching owner workspace", () => {
+  assert.match(migrationSource, /'tgreposter-inbox-cleanup',[\s\S]*?'0 \* \* \* \*'/);
+  assert.match(migrationSource, /now\(\) - interval '24 hours'/);
+  assert.match(migrationSource, /ui\.owner_principal = p\.owner_principal/);
+  assert.match(migrationSource, /ui\.post_id = p\.id/);
+  assert.match(migrationSource, /ui\.status in \('approved', 'posted'\)/);
+  assert.match(migrationSource, /campaign_post\.owner_principal = p\.owner_principal/);
+  assert.match(migrationSource, /campaign_post\.post_id = p\.id/);
+});

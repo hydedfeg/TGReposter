@@ -65,6 +65,20 @@ to authenticate scheduled requests.
 the matching request ID in `net._http_response` to verify the actual HTTP status
 and response body; a queued request can still return `401` or another error.
 
+## Owner-specific 24-hour retention
+
+The hourly `tgreposter-inbox-cleanup` job removes source posts older than 24
+hours only when the same owner has neither an `approved`/`posted` inbox state
+nor a campaign link. Both retention subqueries match `owner_principal` and the
+Telegram post ID, so one user's workflow state cannot preserve or delete another
+user's copy of the same Telegram post.
+
+The integration suite executes the registered cron command inside a rolled-back
+transaction. Its two-user matrix verifies approved, posted, campaign-linked,
+recent, and expired cases, including cascading removal of pending/archived inbox
+state. Hosted staging was checked with the same rollback-only matrix; no
+synthetic post, inbox item, campaign, or campaign link was committed.
+
 ## Packaged database correction — not deployed
 
 The legacy promotion owner-derivation triggers overwrite an explicitly supplied
