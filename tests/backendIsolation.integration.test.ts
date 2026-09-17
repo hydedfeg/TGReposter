@@ -150,6 +150,15 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
   });
 
   await t.test("destination IDs, credential writes and reposting use only the session owner", async () => {
+    let count = (await outbound()).length;
+    const unconfiguredPendingPublish = await api(bob, "/api/post-telegram", {
+      postId: "shared/1",
+      targetIds: ["same-target"],
+    });
+    assert.equal(unconfiguredPendingPublish.status, 409);
+    assert.equal(unconfiguredPendingPublish.data.code, "POST_NOT_APPROVED");
+    assert.equal((await outbound()).length, count);
+
     for (const [token, name] of [[alice, "alice"], [bob, "bob"]]) {
       await ok(api(token, "/api/destination/bot-token", { botToken: bot(name), ownerPrincipal: owner(aliceId) }));
       await ok(api(token, "/api/settings", { destination: { targets: [
@@ -157,9 +166,23 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
         ...(name === "alice" ? [{ id: "alice-only", name, channelId: "@alice-only", enabled: true }] : []),
       ] } }));
     }
-    let count = (await outbound()).length;
-    assert.equal((await api(bob, "/api/post-telegram", { postId: "shared/1", targetIds: ["alice-only"] })).status, 400);
+    count = (await outbound()).length;
     assert.equal((await api(bob, "/api/post-telegram", { postId: "alice-only/1", targetIds: ["same-target"] })).status, 404);
+    assert.equal((await outbound()).length, count);
+
+    const pendingPublish = await api(bob, "/api/post-telegram", {
+      postId: "shared/1",
+      text: "Bob publishes",
+      targetIds: ["same-target"],
+    });
+    assert.equal(pendingPublish.status, 409);
+    assert.equal(pendingPublish.data.code, "POST_NOT_APPROVED");
+    assert.equal((await outbound()).length, count);
+
+    await ok(api(bob, "/api/settings", {
+      posts: [{ id: "shared/1", text: "Bob publishes", status: "approved" }],
+    }));
+    assert.equal((await api(bob, "/api/post-telegram", { postId: "shared/1", targetIds: ["alice-only"] })).status, 400);
     assert.equal((await outbound()).length, count);
     await ok(api(bob, "/api/post-telegram", { postId: "shared/1", text: "Bob publishes", targetIds: ["same-target"], ownerPrincipal: owner(aliceId) }));
     const sends = (await outbound()).slice(count);

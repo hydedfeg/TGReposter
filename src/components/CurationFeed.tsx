@@ -260,6 +260,10 @@ export default function CurationFeed({
 
   const publishPost = async () => {
     if (!selectedPost) return;
+    if (selectedPost.status !== "approved") {
+      setFeedback({ message: "Approve this post before publishing.", type: "error" });
+      return;
+    }
     if (!isBotConfigured) {
       setFeedback({ message: "Configure and enable a Telegram destination before publishing.", type: "error" });
       return;
@@ -452,7 +456,7 @@ export default function CurationFeed({
         <button type="button" onClick={approvePost} disabled={selectedPost.status === "posted"} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:border-slate-300 disabled:bg-slate-300">
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> Approve
         </button>
-        <button type="button" onClick={publishPost} disabled={publishing || selectedPost.status === "posted"} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-bold text-white shadow-sm hover:bg-sky-700 disabled:bg-slate-300">
+        <button type="button" onClick={publishPost} disabled={publishing || selectedPost.status !== "approved"} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-bold text-white shadow-sm hover:bg-sky-700 disabled:bg-slate-300">
           {publishing ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4 -rotate-12" aria-hidden="true" />}
           {publishing ? "Publishing" : "Publish"}
         </button>

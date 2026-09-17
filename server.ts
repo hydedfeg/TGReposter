@@ -1454,6 +1454,29 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     : undefined;
   const db = await readDb(ownerPrincipal);
 
+  const usesUserScopedInbox = !!process.env.DATABASE_URL && !!req.user;
+  let postIdx = -1;
+  let post: CuratedPost | null = null;
+
+  if (usesUserScopedInbox) {
+    post = await getUserInboxPost(req.user, String(postId ?? ""));
+  } else {
+    postIdx = db.posts.findIndex(p => p.id === postId);
+    post = postIdx >= 0 ? db.posts[postIdx] : null;
+  }
+
+  if (!post) {
+    return res.status(404).json({ error: "Post not found in your Content Inbox." });
+  }
+
+  if (post.status !== "approved") {
+    return res.status(409).json({
+      error: "Approve this Content Inbox post before publishing it.",
+      code: "POST_NOT_APPROVED",
+      status: post.status,
+    });
+  }
+
   let destination = db.destination;
   if (usesUserScopedWorkspace) {
     try {
@@ -1576,21 +1599,6 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
 
   if (activeTargets.length === 0) {
     return res.status(400).json({ error: "No enabled Telegram targets found to publish to." });
-  }
-
-  const usesUserScopedInbox = !!process.env.DATABASE_URL && !!req.user;
-  let postIdx = -1;
-  let post: CuratedPost | null = null;
-
-  if (usesUserScopedInbox) {
-    post = await getUserInboxPost(req.user, String(postId ?? ""));
-  } else {
-    postIdx = db.posts.findIndex(p => p.id === postId);
-    post = postIdx >= 0 ? db.posts[postIdx] : null;
-  }
-
-  if (!post) {
-    return res.status(404).json({ error: "Post not found in your Content Inbox." });
   }
 
   const formattedText =

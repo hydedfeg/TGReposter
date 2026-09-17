@@ -15,6 +15,7 @@ const postRepositorySource = read("server/repositories/postRepository.ts");
 const appSource = read("src/App.tsx");
 const shellSource = read("src/components/AppShell.tsx");
 const loginSource = read("src/components/Login.tsx");
+const curationFeedSource = read("src/components/CurationFeed.tsx");
 const migrationSource = read(
   "supabase/migrations/20260905133955_finalize_personal_reposting_runtime.sql"
 );
@@ -106,4 +107,27 @@ test("hourly cleanup preserves history within the matching owner workspace", () 
   assert.match(migrationSource, /ui\.status in \('approved', 'posted'\)/);
   assert.match(migrationSource, /campaign_post\.owner_principal = p\.owner_principal/);
   assert.match(migrationSource, /campaign_post\.post_id = p\.id/);
+});
+
+test("personal reposting requires approval before Telegram dispatch", () => {
+  const publishRouteStart = serverSource.indexOf('app.post("/api/post-telegram"');
+  const publishRouteEnd = serverSource.indexOf('app.post("/api/destination/bot-token"');
+  const publishRouteSource = serverSource.slice(publishRouteStart, publishRouteEnd);
+
+  assert.ok(publishRouteStart >= 0 && publishRouteEnd > publishRouteStart);
+  assert.match(serverSource, /if \(post\.status !== "approved"\)/);
+  assert.match(serverSource, /code: "POST_NOT_APPROVED"/);
+  assert.ok(
+    publishRouteSource.indexOf('post.status !== "approved"') <
+      publishRouteSource.indexOf("getUserDestinationConfig")
+  );
+  assert.ok(
+    publishRouteSource.indexOf('post.status !== "approved"') <
+      publishRouteSource.indexOf("getUserTelegramBotToken")
+  );
+  assert.match(curationFeedSource, /if \(selectedPost\.status !== "approved"\)/);
+  assert.match(
+    curationFeedSource,
+    /disabled=\{publishing \|\| selectedPost\.status !== "approved"\}/
+  );
 });

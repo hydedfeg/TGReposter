@@ -79,6 +79,23 @@ recent, and expired cases, including cascading removal of pending/archived inbox
 state. Hosted staging was checked with the same rollback-only matrix; no
 synthetic post, inbox item, campaign, or campaign link was committed.
 
+## Approval-gated personal publishing
+
+The personal reposting endpoint resolves the authenticated user's Content Inbox
+post before loading destinations or Vault credentials. A missing owner-scoped
+post returns `404`; `pending`, `archived`, and already `posted` posts return
+`409 POST_NOT_APPROVED`. Only an `approved` post can reach Telegram.
+
+After approval, the endpoint loads only that owner's enabled destination IDs and
+hashed Vault credential name. Foreign or disabled target IDs are rejected before
+Telegram is called. The integration suite proves that a pending Bob post causes
+no outbound request, then approves and publishes it with Bob's bot and target
+while Alice's same-ID post, destination status, and inbox state remain unchanged.
+
+Hosted staging currently has one enabled destination and one pending post for
+each test account, but neither account has a destination bot credential or an
+approved post. No real Telegram message was sent during this verification.
+
 ## Packaged database correction — not deployed
 
 The legacy promotion owner-derivation triggers overwrite an explicitly supplied

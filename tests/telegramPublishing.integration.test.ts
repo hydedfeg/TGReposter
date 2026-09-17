@@ -31,7 +31,7 @@ function makePost(overrides: Record<string, unknown> = {}) {
     text: "hello",
     date: new Date().toISOString(),
     url: "https://t.me/source/1",
-    status: "pending",
+    status: "approved",
     ...overrides
   };
 }
@@ -181,6 +181,24 @@ test("Telegram publishing route regression suite", { timeout: 45_000 }, async t 
   } catch (error) {
     throw new Error(`${String(error)}\nServer output:\n${serverOutput}`);
   }
+
+  await t.test("only approved inbox posts can reach Telegram", async () => {
+    for (const status of ["pending", "archived", "posted"]) {
+      writeState(tempDir, [targetA], makePost({ status }));
+      writeControl(tempDir, { targets: { "@alpha": { sendMessage: "success" } } });
+      clearCalls(tempDir);
+
+      const { response, body } = await postTelegram({
+        postId: "source/1",
+        targetIds: ["a"]
+      });
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "POST_NOT_APPROVED");
+      assert.equal(body.status, status);
+      assert.deepEqual(readCalls(tempDir), []);
+    }
+  });
 
   await t.test("disabled target selection is rejected before Telegram is called", async () => {
     writeState(tempDir, [targetA, disabledTarget]);
