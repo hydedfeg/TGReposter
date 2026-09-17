@@ -48,6 +48,23 @@ Checks include:
 - Direct database access restrictions and profile RLS for the authenticated role.
 - Immediate API denial after a profile is deactivated.
 
+## Environment-specific scheduler endpoint
+
+`supabase/migrations/20260915125102_configure_environment_specific_inbox_cron_url.sql`
+reschedules the five-minute Content Inbox import using the optional
+`tgreposter_app_url` Supabase Vault secret. The value is normalized by trimming
+whitespace and trailing slashes before `/api/fetch-posts` is appended.
+
+Set this Vault value independently in every non-production environment. Do not
+commit an environment URL or cron credential to the repository. When the URL
+secret is absent or empty, the job retains `https://api.tgreposter.com` as the
+production fallback. The separate `tgreposter_cron_secret` Vault value continues
+to authenticate scheduled requests.
+
+`cron.job_run_details` confirms only that `pg_cron` queued the SQL command. Use
+the matching request ID in `net._http_response` to verify the actual HTTP status
+and response body; a queued request can still return `401` or another error.
+
 ## Packaged database correction — not deployed
 
 The legacy promotion owner-derivation triggers overwrite an explicitly supplied

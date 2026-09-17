@@ -18,6 +18,9 @@ const loginSource = read("src/components/Login.tsx");
 const migrationSource = read(
   "supabase/migrations/20260905133955_finalize_personal_reposting_runtime.sql"
 );
+const environmentCronMigrationSource = read(
+  "supabase/migrations/20260915125102_configure_environment_specific_inbox_cron_url.sql"
+);
 
 test("monitoring repositories require an owner for every application read and write", () => {
   assert.match(channelRepositorySource, /where owner_principal = \$1/);
@@ -84,4 +87,13 @@ test("finalize migration eliminates shared application identifiers and orphan ro
   assert.match(migrationSource, /foreign key \(owner_principal, post_id\)/);
   assert.match(migrationSource, /campaign_post\.owner_principal = p\.owner_principal/);
   assert.match(migrationSource, /ui\.owner_principal = p\.owner_principal/);
+});
+
+test("scheduled collection resolves its application URL per environment", () => {
+  assert.match(environmentCronMigrationSource, /where name = 'tgreposter_app_url'/);
+  assert.match(environmentCronMigrationSource, /nullif\(rtrim\(btrim\(decrypted_secret\), '\/'\), ''\)/);
+  assert.match(environmentCronMigrationSource, /'https:\/\/api\.tgreposter\.com'/);
+  assert.match(environmentCronMigrationSource, /\|\| '\/api\/fetch-posts'/);
+  assert.match(environmentCronMigrationSource, /where name = 'tgreposter_cron_secret'/);
+  assert.doesNotMatch(environmentCronMigrationSource, /tgreposter-staging-production/);
 });
