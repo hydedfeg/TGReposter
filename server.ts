@@ -26,7 +26,9 @@ dotenv.config();
 
 const app = express();
 const portFlagIndex = process.argv.indexOf("--port");
-const requestedPort = portFlagIndex >= 0 ? process.argv[portFlagIndex + 1] : process.env.PORT;
+// Railway networking for both production domains targets port 3000. Only the
+// supervised local preview needs to override it through the forwarded flag.
+const requestedPort = portFlagIndex >= 0 ? process.argv[portFlagIndex + 1] : "3000";
 const PORT = Number.parseInt(requestedPort || "3000", 10) || 3000;
 const channelRepository = new ChannelRepository();
 
