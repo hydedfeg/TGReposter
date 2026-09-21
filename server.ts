@@ -25,7 +25,9 @@ import { isSupabaseConfigured, readSupabaseDb, writeSupabaseDb, checkTableExists
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const portFlagIndex = process.argv.indexOf("--port");
+const requestedPort = portFlagIndex >= 0 ? process.argv[portFlagIndex + 1] : process.env.PORT;
+const PORT = Number.parseInt(requestedPort || "3000", 10) || 3000;
 const channelRepository = new ChannelRepository();
 
 // Shared interfaces match src/types.ts
@@ -1961,7 +1963,7 @@ app.post("/api/test-bot", authMiddleware, async (req: any, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: ["terminal.local"] },
       appType: "spa",
     });
     app.use(vite.middlewares);
