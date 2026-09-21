@@ -98,6 +98,25 @@ test("personal promotion credentials resolve through the owner's Vault token", (
   assert.doesNotMatch(workspaceSource, /currentUserRole !== "super-admin"/);
 });
 
+test("Vault credential writes serialize without requiring raw table update privileges", () => {
+  assert.match(
+    credentialSource,
+    /select pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/
+  );
+  assert.match(
+    credentialSource,
+    /lockVaultSecretMutation\(client, MAIN_BOT_SECRET_NAME\)/
+  );
+  assert.match(
+    credentialSource,
+    /lockVaultSecretMutation\(client, secretName\)/
+  );
+  assert.doesNotMatch(
+    credentialSource,
+    /from vault\.secrets[\s\S]{0,160}for update/
+  );
+});
+
 test("promotion finalization makes ownership mandatory and rejects cross-owner relationships", () => {
   const tables = [
     "telegram_bot_accounts",

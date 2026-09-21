@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import type { PoolClient } from "pg";
 import type { TelegramBotAccountRecord } from "../repositories/promotionRepository";
 import { getPostgresPool } from "../utils/postgresPool";
 
@@ -70,6 +71,22 @@ export async function resolveTelegramBotToken(
 
 
 const MAIN_BOT_SECRET_NAME = "tgreposter_main_bot_token";
+
+async function lockVaultSecretMutation(
+  client: PoolClient,
+  secretName: string
+): Promise<void> {
+  // Supabase Vault deliberately permits the postgres application role to read
+  // secret metadata and execute its SECURITY DEFINER helpers, but not to update
+  // vault.secrets directly. SELECT ... FOR UPDATE therefore fails because
+  // PostgreSQL also requires UPDATE privilege for a locking read. A
+  // transaction-scoped advisory lock serializes this app's writes by secret
+  // name without broadening Vault table permissions.
+  await client.query(
+    "select pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [secretName]
+  );
+}
 
 function cleanMainBotToken(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -145,6 +162,7 @@ export async function saveMainTelegramBotToken(rawToken: unknown): Promise<void>
 
   try {
     await client.query("begin");
+    await lockVaultSecretMutation(client, MAIN_BOT_SECRET_NAME);
 
     const existing = await client.query(
       `
@@ -152,7 +170,6 @@ export async function saveMainTelegramBotToken(rawToken: unknown): Promise<void>
         from vault.secrets
         where name = $1
         limit 1
-        for update
       `,
       [MAIN_BOT_SECRET_NAME]
     );
@@ -268,6 +285,7 @@ export async function saveUserTelegramBotToken(
 
   try {
     await client.query("begin");
+    await lockVaultSecretMutation(client, secretName);
 
     const existing = await client.query(
       `
@@ -275,7 +293,6 @@ export async function saveUserTelegramBotToken(
         from vault.secrets
         where name = $1
         limit 1
-        for update
       `,
       [secretName]
     );
