@@ -12,8 +12,8 @@ const inbox = {
     mediaOnly: "This Telegram post contains media without a text caption.",
     attachmentAlt: "Telegram post attachment",
     summary: "Original content summary",
-    characters_one: "{{count}} character",
-    characters_other: "{{count}} characters",
+    characters_one: "{{formattedCount}} character",
+    characters_other: "{{formattedCount}} characters",
     mediaAttached: "media attached",
   },
   preview: {
@@ -73,14 +73,16 @@ const inbox = {
     destinationRequired: "Configure and enable a Telegram destination before publishing.",
     publishSuccess: "Published successfully to the selected Telegram destinations.",
     publishFailed: "Publishing failed. Review the destination error and try again.",
+    aiCurationError: "AI could not process this post. Check the provider configuration and try again.",
+    aiConnectionError: "Could not contact the configured AI provider. Please try again.",
     suggestionApplied: "AI suggestion applied. Save or approve when ready.",
   },
   destinations: {
-    selected_one: "{{count}} destination selected",
-    selected_other: "{{count}} destinations selected",
+    selected_one: "{{formattedCount}} destination selected",
+    selected_other: "{{formattedCount}} destinations selected",
     noneEnabled: "No Telegram destinations enabled",
-    publishingTo_one: "Publishing to {{count}} destination",
-    publishingTo_other: "Publishing to {{count}} destinations",
+    publishingTo_one: "Publishing to {{formattedCount}} destination",
+    publishingTo_other: "Publishing to {{formattedCount}} destinations",
     configureToPublish: "Configure a Telegram destination to publish",
   },
   actions: {
@@ -103,7 +105,7 @@ const inbox = {
   },
   queue: {
     title: "Post queue",
-    count: "{{count}} {{status}}",
+    count: "{{formattedCount}} {{status}}",
     mediaPost: "Media post",
   },
   mobile: {
