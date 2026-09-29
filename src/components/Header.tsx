@@ -1,6 +1,7 @@
 import { CheckCircle2, LogOut, Megaphone, Send, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { DestinationTarget } from "../types";
+import LanguageSelector from "./LanguageSelector";
 
 interface HeaderProps {
   channelId?: string;
@@ -30,6 +31,7 @@ export default function Header({ connected, currentUsername, currentUserRole, on
         </div>
 
         <div className="flex items-center gap-2">
+          <LanguageSelector compact />
           {currentUsername ? (
             <div className="hidden min-h-10 items-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-700 sm:flex">
               <span>{currentUsername}</span>
