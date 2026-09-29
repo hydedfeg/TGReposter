@@ -216,7 +216,7 @@ export default function UserManagement({
                 Email address
               </label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <Mail className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
                   type="email"
                   required
@@ -224,7 +224,7 @@ export default function UserManagement({
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                   placeholder="member@example.com"
-                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-10 pe-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
                 />
               </div>
               <p className="mt-1.5 text-xs leading-5 text-slate-400">
@@ -237,7 +237,7 @@ export default function UserManagement({
                 Temporary password
               </label>
               <div className="relative">
-                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <LockKeyhole className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
                   type="password"
                   required
@@ -246,7 +246,7 @@ export default function UserManagement({
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="Minimum 8 characters"
-                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-10 pe-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
                 />
               </div>
             </div>
