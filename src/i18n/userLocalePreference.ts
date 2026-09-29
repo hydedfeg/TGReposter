@@ -1,6 +1,8 @@
 import i18n, { changeAppLocale, normalizeAppLocale, type AppLocale } from "./index";
 import { isAppLocale } from "./locales";
 
+let localePersistenceQueue: Promise<void> = Promise.resolve();
+
 function browserToken(): string {
   if (typeof window === "undefined") return "";
   try {
@@ -10,27 +12,37 @@ function browserToken(): string {
   }
 }
 
-export async function persistAuthenticatedAppLocale(
+export function persistAuthenticatedAppLocale(
   locale: AppLocale,
   token = browserToken(),
 ): Promise<boolean> {
-  if (!token || typeof fetch === "undefined") return false;
+  if (!token || typeof fetch === "undefined") return Promise.resolve(false);
 
-  try {
-    const response = await fetch("/api/auth/ui-locale", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ locale }),
+  let resolveResult: (value: boolean) => void = () => {};
+  const result = new Promise<boolean>((resolve) => {
+    resolveResult = resolve;
+  });
+
+  localePersistenceQueue = localePersistenceQueue
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        const response = await fetch("/api/auth/ui-locale", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ locale }),
+        });
+        resolveResult(response.ok);
+      } catch {
+        // localStorage remains the durable offline/pre-login fallback.
+        resolveResult(false);
+      }
     });
 
-    return response.ok;
-  } catch {
-    // localStorage remains the durable offline/pre-login fallback.
-    return false;
-  }
+  return result;
 }
 
 export async function changeAndPersistAppLocale(locale: AppLocale): Promise<void> {
