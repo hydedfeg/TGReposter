@@ -711,6 +711,7 @@ export default function App() {
         {activeWorkspaceTab === "feed" || activeWorkspaceTab === "history" ? (
           <CurationFeed
             initialTab={activeWorkspaceTab === "history" ? "posted" : "pending"}
+            mode={activeWorkspaceTab === "history" ? "history" : "review"}
             posts={settings.posts}
             onUpdatePost={handleUpdatePost}
             onPostToTelegram={handlePostToTelegram}
