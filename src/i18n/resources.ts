@@ -9,6 +9,7 @@ import arFilters from "./locales/ar/filters";
 import arSources from "./locales/ar/sources";
 import arTeam from "./locales/ar/team";
 import arSystem from "./locales/ar/system";
+import arPromotion from "./locales/ar/promotion";
 import arNavigation from "./locales/ar/navigation";
 import enAi from "./locales/en/ai";
 import enAuth from "./locales/en/auth";
@@ -21,6 +22,7 @@ import enFilters from "./locales/en/filters";
 import enSources from "./locales/en/sources";
 import enTeam from "./locales/en/team";
 import enSystem from "./locales/en/system";
+import enPromotion from "./locales/en/promotion";
 import enNavigation from "./locales/en/navigation";
 import faAi from "./locales/fa/ai";
 import faAuth from "./locales/fa/auth";
@@ -33,6 +35,7 @@ import faFilters from "./locales/fa/filters";
 import faSources from "./locales/fa/sources";
 import faTeam from "./locales/fa/team";
 import faSystem from "./locales/fa/system";
+import faPromotion from "./locales/fa/promotion";
 import faNavigation from "./locales/fa/navigation";
 import ruAi from "./locales/ru/ai";
 import ruAuth from "./locales/ru/auth";
@@ -45,6 +48,7 @@ import ruFilters from "./locales/ru/filters";
 import ruSources from "./locales/ru/sources";
 import ruTeam from "./locales/ru/team";
 import ruSystem from "./locales/ru/system";
+import ruPromotion from "./locales/ru/promotion";
 import ruNavigation from "./locales/ru/navigation";
 import type { AppLocale } from "./locales";
 
@@ -60,12 +64,13 @@ type LocaleResources = {
   sources: Record<string, unknown>;
   team: Record<string, unknown>;
   system: Record<string, unknown>;
+  promotion: Record<string, unknown>;
   navigation: Record<string, unknown>;
 };
 
 export const i18nResources: Record<AppLocale, LocaleResources> = {
-  en: { ai: enAi, auth: enAuth, common: enCommon, dashboard: enDashboard, destinations: enDestinations, inbox: enInbox, history: enHistory, filters: enFilters, sources: enSources, team: enTeam, system: enSystem, navigation: enNavigation },
-  ru: { ai: ruAi, auth: ruAuth, common: ruCommon, dashboard: ruDashboard, destinations: ruDestinations, inbox: ruInbox, history: ruHistory, filters: ruFilters, sources: ruSources, team: ruTeam, system: ruSystem, navigation: ruNavigation },
-  ar: { ai: arAi, auth: arAuth, common: arCommon, dashboard: arDashboard, destinations: arDestinations, inbox: arInbox, history: arHistory, filters: arFilters, sources: arSources, team: arTeam, system: arSystem, navigation: arNavigation },
-  fa: { ai: faAi, auth: faAuth, common: faCommon, dashboard: faDashboard, destinations: faDestinations, inbox: faInbox, history: faHistory, filters: faFilters, sources: faSources, team: faTeam, system: faSystem, navigation: faNavigation },
+  en: { ai: enAi, auth: enAuth, common: enCommon, dashboard: enDashboard, destinations: enDestinations, inbox: enInbox, history: enHistory, filters: enFilters, sources: enSources, team: enTeam, system: enSystem, promotion: enPromotion, navigation: enNavigation },
+  ru: { ai: ruAi, auth: ruAuth, common: ruCommon, dashboard: ruDashboard, destinations: ruDestinations, inbox: ruInbox, history: ruHistory, filters: ruFilters, sources: ruSources, team: ruTeam, system: ruSystem, promotion: ruPromotion, navigation: ruNavigation },
+  ar: { ai: arAi, auth: arAuth, common: arCommon, dashboard: arDashboard, destinations: arDestinations, inbox: arInbox, history: arHistory, filters: arFilters, sources: arSources, team: arTeam, system: arSystem, promotion: arPromotion, navigation: arNavigation },
+  fa: { ai: faAi, auth: faAuth, common: faCommon, dashboard: faDashboard, destinations: faDestinations, inbox: faInbox, history: faHistory, filters: faFilters, sources: faSources, team: faTeam, system: faSystem, promotion: faPromotion, navigation: faNavigation },
 };
