@@ -12,8 +12,8 @@ const inbox = {
     mediaOnly: "این پست تلگرام فقط رسانه دارد و توضیح متنی ندارد.",
     attachmentAlt: "پیوست پست تلگرام",
     summary: "خلاصه محتوای اصلی",
-    characters_one: "{{count}} نویسه",
-    characters_other: "{{count}} نویسه",
+    characters_one: "{{formattedCount}} نویسه",
+    characters_other: "{{formattedCount}} نویسه",
     mediaAttached: "رسانه پیوست شده",
   },
   preview: {
@@ -73,14 +73,16 @@ const inbox = {
     destinationRequired: "پیش از انتشار یک مقصد تلگرام را تنظیم و فعال کنید.",
     publishSuccess: "پست با موفقیت در مقصدهای انتخاب‌شده تلگرام منتشر شد.",
     publishFailed: "انتشار ناموفق بود. خطای مقصد را بررسی و دوباره تلاش کنید.",
+    aiCurationError: "هوش مصنوعی نتوانست این پست را پردازش کند. تنظیمات ارائه‌دهنده را بررسی و دوباره تلاش کنید.",
+    aiConnectionError: "ارتباط با ارائه‌دهنده هوش مصنوعی تنظیم‌شده برقرار نشد. دوباره تلاش کنید.",
     suggestionApplied: "پیشنهاد هوش مصنوعی اعمال شد. پس از آماده شدن، پست را ذخیره یا تأیید کنید.",
   },
   destinations: {
-    selected_one: "{{count}} مقصد انتخاب شده است",
-    selected_other: "{{count}} مقصد انتخاب شده است",
+    selected_one: "{{formattedCount}} مقصد انتخاب شده است",
+    selected_other: "{{formattedCount}} مقصد انتخاب شده است",
     noneEnabled: "هیچ مقصد تلگرامی فعالی وجود ندارد",
-    publishingTo_one: "انتشار در {{count}} مقصد",
-    publishingTo_other: "انتشار در {{count}} مقصد",
+    publishingTo_one: "انتشار در {{formattedCount}} مقصد",
+    publishingTo_other: "انتشار در {{formattedCount}} مقصد",
     configureToPublish: "برای انتشار یک مقصد تلگرام تنظیم کنید",
   },
   actions: {
@@ -103,7 +105,7 @@ const inbox = {
   },
   queue: {
     title: "صف پست‌ها",
-    count: "{{count}} · {{status}}",
+    count: "{{formattedCount}} · {{status}}",
     mediaPost: "پست رسانه‌ای",
   },
   mobile: {
