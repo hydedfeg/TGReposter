@@ -56,9 +56,9 @@ const system = {
     owners_zero: "لا يوجد مالكون",
     owners_one: "مالك واحد",
     owners_two: "مالكان",
-    owners_few: "{{count}} مالكين",
-    owners_many: "{{count}} مالكًا",
-    owners_other: "{{count}} مالك",
+    owners_few: "{{formattedCount}} مالكين",
+    owners_many: "{{formattedCount}} مالكًا",
+    owners_other: "{{formattedCount}} مالك",
   },
   runtime: {
     title: "حدود بيانات التشغيل",
