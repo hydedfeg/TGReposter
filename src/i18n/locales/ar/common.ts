@@ -8,6 +8,9 @@ const common = {
     ar: "العربية",
     fa: "الفارسية",
   },
+  languageSelector: {
+    label: "لغة الواجهة",
+  },
 } as const;
 
 export default common;
