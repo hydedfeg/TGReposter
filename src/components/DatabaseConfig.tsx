@@ -556,7 +556,7 @@ export default function DatabaseConfig() {
             </div>
 
             <div className="rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
-              <Inbox className="mr-1 inline h-4 w-4 text-slate-400" aria-hidden="true" />
+              <Inbox className="me-1 inline h-4 w-4 text-slate-400" aria-hidden="true" />
               Source definitions, filters, AI preferences, monitored post text, status,
               history, and errors are never treated as global configuration. Individual
               Telegram bot credentials remain in user-scoped Vault secrets.
@@ -625,7 +625,7 @@ export default function DatabaseConfig() {
                       {formatLastRun(job.lastRunAt)}
                     </span>
                     {job.lastReturnMessage ? (
-                      <span className="ml-2 text-slate-400">
+                      <span className="ms-2 text-slate-400">
                         · {job.lastReturnMessage}
                       </span>
                     ) : null}
