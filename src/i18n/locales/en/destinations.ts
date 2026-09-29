@@ -44,6 +44,9 @@ const destinations = {
     networkError: "An unexpected network error occurred.",
     enterToken: "Enter a Telegram Bot Token before saving.",
     tokenStored: "Bot token stored securely for your account.",
+    tokenSaveFailed: "The bot token could not be saved. Please try again.",
+    targetNameRequired: "Enter a friendly name for the destination.",
+    channelIdRequired: "Enter a Telegram channel ID or username.",
   },
   guide: {
     title: "Multiple Destination Guide",
