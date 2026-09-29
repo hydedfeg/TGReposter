@@ -44,6 +44,9 @@ const destinations = {
     networkError: "حدث خطأ غير متوقع في الشبكة.",
     enterToken: "أدخل رمز بوت تيليجرام قبل الحفظ.",
     tokenStored: "تم حفظ رمز البوت بأمان لحسابك.",
+    tokenSaveFailed: "تعذر حفظ رمز البوت. حاول مرة أخرى.",
+    targetNameRequired: "أدخل اسمًا واضحًا للوجهة.",
+    channelIdRequired: "أدخل معرّف قناة تيليجرام أو اسم المستخدم.",
   },
   guide: {
     title: "دليل الوجهات المتعددة",
