@@ -136,7 +136,7 @@ export default function PromotionPage() {
           <Loader2 className="w-9 h-9 text-sky-500 animate-spin mx-auto" />
           <h2 className="font-display font-bold text-slate-800 text-lg mt-4">{t("page.opening")}</h2>
           <p className="text-xs text-slate-500 mt-1">{t("page.loading")}</p>
-          {errorMessage && <p className="text-xs text-rose-600 mt-4">{errorMessage}</p>}
+          {errorMessage && <p className="text-xs text-rose-600 mt-4" dir="auto">{errorMessage}</p>}
         </div>
       </div>
     );
@@ -154,14 +154,14 @@ export default function PromotionPage() {
     >
       <div className="space-y-5">
         {successToast && (
-          <div className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md" role="status">
+          <div className="rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md" role="status" dir="auto">
             {successToast}
           </div>
         )}
         {errorMessage && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-800 shadow-sm" role="alert">
             <p className="font-bold">{t("page.notice")}</p>
-            <p className="mt-0.5 text-rose-700">{errorMessage}</p>
+            <p className="mt-0.5 text-rose-700" dir="auto">{errorMessage}</p>
           </div>
         )}
 
