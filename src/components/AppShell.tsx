@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { DestinationTarget } from "../types";
+import LanguageSelector from "./LanguageSelector";
 
 export type WorkspaceView =
   | "dashboard"
@@ -305,6 +306,7 @@ export default function AppShell({
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
+              <LanguageSelector compact />
               <div
                 className={`hidden min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold sm:flex ${
                   connected
