@@ -53,8 +53,8 @@ const system = {
     durableIdentities: "هویت‌های پایدار فعال",
     usernameOwned: "فضاهای کاری متعلق به نام کاربری",
     shouldRemainZero: "باید ۰ باقی بماند",
-    owners_one: "{{count}} مالک",
-    owners_other: "{{count}} مالک",
+    owners_one: "{{formattedCount}} مالک",
+    owners_other: "{{formattedCount}} مالک",
   },
   runtime: {
     title: "مرزهای داده در زمان اجرا",
