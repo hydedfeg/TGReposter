@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
   ArrowLeft,
@@ -33,6 +34,7 @@ import type {
   PromotionDeliveryAttempt,
   PromotionTarget,
 } from "../types";
+import { normalizeAppLocale } from "../i18n";
 import { safeResponseJson } from "../utils/api";
 
 type UserRole = "super-admin" | "admin" | null;
@@ -104,11 +106,11 @@ const emptySummary: DeliverySummary = {
   warnings: 0,
 };
 
-const contentModeLabels: Record<PromotionContentMode, string> = {
-  original: "Original",
-  teaser: "Teaser",
-  ai: "AI prepared",
-  custom: "Custom",
+const contentModeKeys: Record<PromotionContentMode, string> = {
+  original: "common.contentMode.original",
+  teaser: "common.contentMode.teaser",
+  ai: "common.contentMode.ai",
+  custom: "common.contentMode.custom",
 };
 
 const statusClasses: Record<PromotionCampaign["status"], string> = {
@@ -121,19 +123,15 @@ const statusClasses: Record<PromotionCampaign["status"], string> = {
   cancelled: "bg-slate-100 text-slate-500 border-slate-200",
 };
 
-function campaignDate(value?: string) {
+function campaignDate(value: string | undefined, locale: string) {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : new Intl.DateTimeFormat(undefined, {
+    : new Intl.DateTimeFormat(`${locale}-u-ca-gregory`, {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(date);
-}
-
-function campaignStatusLabel(status: PromotionCampaign["status"]) {
-  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function deliveryStatusIcon(status: PromotionDelivery["status"]) {
@@ -155,7 +153,10 @@ function getRenderedPreview(campaignPost: CampaignDetailPost) {
   return parts.join("\n\n").trim();
 }
 
-export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspaceProps) {
+export default function PromotionWorkspace({ posts, currentUserRole, onToast }: PromotionWorkspaceProps) {
+  const { t, i18n } = useTranslation("promotion");
+  const locale = normalizeAppLocale(i18n.language);
+  const numberFormatter = new Intl.NumberFormat(locale);
   const [section, setSection] = useState<PromotionSection>("overview");
   const [campaigns, setCampaigns] = useState<PromotionCampaign[]>([]);
   const [targets, setTargets] = useState<PromotionApiTarget[]>([]);
@@ -192,7 +193,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   }, []);
   const requireCurrentSession = () => {
     if (!requestsActive.current || localStorage.getItem("curator_token") !== requestToken) {
-      throw new Error("Session changed. Please reopen your workspace.");
+      throw new Error(t("workspace.feedback.sessionChanged"));
     }
   };
 
@@ -212,7 +213,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
     const data = await safeResponseJson(response);
     requireCurrentSession();
     if (!response.ok) {
-      const message = data?.error || `Promotion request failed (${response.status}).`;
+      const message = data?.error || t("workspace.feedback.requestFailed", { status: response.status });
       throw new Error(message);
     }
     return data;
@@ -256,9 +257,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
     try {
       await loadCampaignsAndTargets();
       if (selectedCampaignId) await loadCampaignDetail(selectedCampaignId);
-      if (showSuccess) onToast("Promotion workspace refreshed.");
+      if (showSuccess) onToast(t("workspace.feedback.refreshed"));
     } catch (error: any) {
-      setLocalError(error.message || "Unable to load promotion data.");
+      setLocalError(error.message || t("workspace.feedback.loadFailed"));
     } finally {
       setIsLoading(false);
     }
@@ -306,7 +307,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
     try {
       await loadCampaignDetail(campaignId);
     } catch (error: any) {
-      setLocalError(error.message || "Unable to load campaign.");
+      setLocalError(error.message || t("workspace.feedback.campaignLoadFailed"));
     } finally {
       setIsActionLoading(false);
     }
@@ -314,7 +315,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
 
   const createCampaign = async () => {
     if (!createName.trim()) {
-      onToast("Campaign name is required.", "error");
+      onToast(t("workspace.feedback.nameRequired"), "error");
       return;
     }
     setIsActionLoading(true);
@@ -328,9 +329,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       await loadCampaignsAndTargets();
       await loadCampaignDetail(data.campaign.id);
       setSection("campaigns");
-      onToast("Promotion campaign created.");
+      onToast(t("workspace.feedback.created"));
     } catch (error: any) {
-      onToast(error.message || "Unable to create campaign.", "error");
+      onToast(error.message || t("workspace.feedback.createFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -345,16 +346,16 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
         body: JSON.stringify({ status }),
       });
       await Promise.all([loadCampaignDetail(detail.campaign.id), loadCampaignsAndTargets()]);
-      onToast(`Campaign marked ${status}.`);
+      onToast(t("workspace.feedback.marked", { status: t(`common.status.${status}`) }));
     } catch (error: any) {
-      onToast(error.message || "Unable to update campaign.", "error");
+      onToast(error.message || t("workspace.feedback.updateFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
   };
 
   const deleteCampaign = async () => {
-    if (!detail || !window.confirm(`Delete draft campaign “${detail.campaign.name}”?`)) return;
+    if (!detail || !window.confirm(t("workspace.feedback.deleteConfirm", { name: detail.campaign.name }))) return;
     setIsActionLoading(true);
     try {
       await requestJson(`/api/promotion/campaigns/${detail.campaign.id}`, { method: "DELETE" });
@@ -362,9 +363,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       setSelectedCampaignId(null);
       await loadCampaignsAndTargets();
       setSection("overview");
-      onToast("Campaign deleted.");
+      onToast(t("workspace.feedback.deleted"));
     } catch (error: any) {
-      onToast(error.message || "Unable to delete campaign.", "error");
+      onToast(error.message || t("workspace.feedback.deleteFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -372,7 +373,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
 
   const attachPost = async () => {
     if (!detail || !selectedPostId) {
-      onToast("Choose a collected post first.", "error");
+      onToast(t("workspace.feedback.choosePost"), "error");
       return;
     }
     setIsActionLoading(true);
@@ -388,9 +389,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       setSelectedPostId("");
       setPostSearch("");
       await loadCampaignDetail(detail.campaign.id);
-      onToast("Post added to promotion campaign.");
+      onToast(t("workspace.feedback.postAdded"));
     } catch (error: any) {
-      onToast(error.message || "Unable to attach post.", "error");
+      onToast(error.message || t("workspace.feedback.attachFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -407,7 +408,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const saveCampaignPost = async () => {
     if (!detail || !editingPostId) return;
     if (editMode !== "original" && !editPromotionText.trim()) {
-      onToast(`${contentModeLabels[editMode]} mode requires promotion text before launch.`, "error");
+      onToast(t("workspace.feedback.modeNeedsText", { mode: t(contentModeKeys[editMode]) }), "error");
       return;
     }
     setIsActionLoading(true);
@@ -423,25 +424,25 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       });
       setEditingPostId(null);
       await loadCampaignDetail(detail.campaign.id);
-      onToast("Promotion copy saved.");
+      onToast(t("workspace.feedback.copySaved"));
     } catch (error: any) {
-      onToast(error.message || "Unable to update promotion copy.", "error");
+      onToast(error.message || t("workspace.feedback.copySaveFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
   };
 
   const removeCampaignPost = async (campaignPostId: string) => {
-    if (!detail || !window.confirm("Remove this post from the campaign?")) return;
+    if (!detail || !window.confirm(t("workspace.feedback.removePostConfirm"))) return;
     setIsActionLoading(true);
     try {
       await requestJson(`/api/promotion/campaigns/${detail.campaign.id}/posts/${campaignPostId}`, {
         method: "DELETE",
       });
       await loadCampaignDetail(detail.campaign.id);
-      onToast("Post removed from campaign.");
+      onToast(t("workspace.feedback.postRemoved"));
     } catch (error: any) {
-      onToast(error.message || "Unable to remove campaign post.", "error");
+      onToast(error.message || t("workspace.feedback.removePostFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -454,9 +455,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
         method: "POST",
       });
       await loadCampaignsAndTargets();
-      onToast("Your saved Destination Bot is now available for personal campaigns.");
+      onToast(t("workspace.feedback.botRegistered"));
     } catch (error: any) {
-      onToast(error.message || "Unable to register your Destination Bot for campaigns.", "error");
+      onToast(error.message || t("workspace.feedback.botRegisterFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -464,7 +465,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
 
   const createPromotionTarget = async () => {
     if (!targetName.trim() || !targetChatId.trim() || !targetBotAccountId) {
-      onToast("Target name, Telegram chat ID, and bot account are required.", "error");
+      onToast(t("workspace.feedback.targetRequired"), "error");
       return;
     }
 
@@ -483,9 +484,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       setTargetName("");
       setTargetChatId("");
       await loadCampaignsAndTargets();
-      onToast("Promotion destination created. Test the connection before campaign use.");
+      onToast(t("workspace.feedback.targetCreated"));
     } catch (error: any) {
-      onToast(error.message || "Unable to create promotion destination.", "error");
+      onToast(error.message || t("workspace.feedback.targetCreateFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -496,10 +497,10 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
     try {
       await requestJson(`/api/promotion/targets/${targetId}/test`, { method: "POST" });
       await loadCampaignsAndTargets();
-      onToast("Promotion destination verified and ready for campaigns.");
+      onToast(t("workspace.feedback.targetVerified"));
     } catch (error: any) {
       await loadCampaignsAndTargets().catch(() => undefined);
-      onToast(error.message || "Promotion destination verification failed.", "error");
+      onToast(error.message || t("workspace.feedback.targetVerificationFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -513,25 +514,25 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
         body: JSON.stringify({ enabled }),
       });
       await loadCampaignsAndTargets();
-      onToast(enabled ? "Promotion destination enabled." : "Promotion destination disabled.");
+      onToast(enabled ? t("workspace.feedback.targetEnabled") : t("workspace.feedback.targetDisabled"));
     } catch (error: any) {
-      onToast(error.message || "Unable to update promotion destination.", "error");
+      onToast(error.message || t("workspace.feedback.targetUpdateFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
   };
 
   const deletePromotionTarget = async (target: PromotionApiTarget) => {
-    if (!window.confirm(`Delete promotion destination “${target.name}”? Existing delivery history will prevent deletion when required for audit.`)) return;
+    if (!window.confirm(t("workspace.feedback.targetDeleteConfirm", { name: target.name }))) return;
 
     setIsActionLoading(true);
     try {
       await requestJson(`/api/promotion/targets/${target.id}`, { method: "DELETE" });
       setSelectedTargetIds(current => current.filter(id => id !== target.id));
       await loadCampaignsAndTargets();
-      onToast("Promotion destination deleted.");
+      onToast(t("workspace.feedback.targetDeleted"));
     } catch (error: any) {
-      onToast(error.message || "Unable to delete promotion destination.", "error");
+      onToast(error.message || t("workspace.feedback.targetDeleteFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -547,7 +548,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const launchCampaign = async () => {
     if (!detail) return;
     if (selectedTargetIds.length === 0) {
-      onToast("Select at least one verified promotion target.", "error");
+      onToast(t("workspace.feedback.selectTarget"), "error");
       return;
     }
     if (!launchArmed) {
@@ -566,11 +567,11 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       await loadCampaignsAndTargets();
       onToast(
         data.campaign?.status === "completed"
-          ? "Promotion campaign delivered successfully."
-          : "Campaign finished with delivery results. Review the report below."
+          ? t("workspace.feedback.delivered")
+          : t("workspace.feedback.deliveryResults")
       );
     } catch (error: any) {
-      onToast(error.message || "Unable to launch promotion campaign.", "error");
+      onToast(error.message || t("workspace.feedback.launchFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
@@ -579,7 +580,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const retryFailed = async (onlySelected: boolean) => {
     if (!detail) return;
     if (onlySelected && selectedFailedDeliveryIds.length === 0) {
-      onToast("Select failed deliveries to retry.", "error");
+      onToast(t("workspace.feedback.selectFailed"), "error");
       return;
     }
     setIsActionLoading(true);
@@ -591,9 +592,9 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       setDetail(data);
       setSelectedFailedDeliveryIds([]);
       await loadCampaignsAndTargets();
-      onToast("Retry finished. Delivery report updated.");
+      onToast(t("workspace.feedback.retryFinished"));
     } catch (error: any) {
-      onToast(error.message || "Unable to retry failed deliveries.", "error");
+      onToast(error.message || t("workspace.feedback.retryFailed"), "error");
     } finally {
       setIsActionLoading(false);
     }
