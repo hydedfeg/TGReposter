@@ -113,7 +113,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
       } else {
         setErrorKey(getAuthErrorKey(data.error));
       }
-    } catch (err: any) {
+    } catch {
       setErrorKey("errors.network");
     } finally {
       setIsSubmitting(false);
@@ -178,6 +178,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={passwordSet ? t("placeholders.usernameOrEmail") : t("placeholders.ownerUsername")}
                   autoComplete="username"
+                  dir="auto"
                   className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />
               </div>
@@ -194,6 +195,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete={passwordSet ? "current-password" : "new-password"}
+                    dir="ltr"
                     className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-3.5 pe-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                   <button
@@ -224,6 +226,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete="new-password"
+                    dir="ltr"
                     className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                 </div>
