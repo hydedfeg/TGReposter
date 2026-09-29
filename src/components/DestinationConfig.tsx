@@ -187,12 +187,12 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                     value={botToken}
                     disabled={readOnly}
                     onChange={(e) => setBotToken(e.target.value)}
-                    className="w-full pl-3.5 pr-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800 disabled:opacity-85 disabled:cursor-not-allowed"
+                    className="w-full ps-3.5 pe-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800 disabled:opacity-85 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-600 transition-colors"
+                    className="absolute end-3.5 top-2.5 text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -325,7 +325,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+                      <div className="flex items-center gap-2 shrink-0 ms-auto sm:ms-0">
                         {/* Status indicators */}
                         {target.status === "success" && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">
