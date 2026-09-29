@@ -70,7 +70,7 @@ export default function SourceChannelsConfig({
         <form onSubmit={handleSubmit} className="mb-6">
           <div className="flex gap-2">
             <div className="relative flex-1">
-              <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-medium">@</span>
+              <span className="absolute start-3 top-2.5 text-slate-400 text-sm font-medium">@</span>
               <input
                 type="text"
                 placeholder="durov or techcrunch"
@@ -79,7 +79,7 @@ export default function SourceChannelsConfig({
                   setNewUsername(e.target.value);
                   setInputError("");
                 }}
-                className="w-full pl-7 pr-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50 focus:bg-white placeholder-slate-400 transition-all font-sans outline-hidden"
+                className="w-full ps-7 pe-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50 focus:bg-white placeholder-slate-400 transition-all font-sans outline-hidden"
               />
             </div>
             <button
@@ -91,7 +91,7 @@ export default function SourceChannelsConfig({
             </button>
           </div>
           {inputError && (
-            <p className="text-rose-500 text-xs font-medium mt-1.5 ml-1">{inputError}</p>
+            <p className="text-rose-500 text-xs font-medium mt-1.5 ms-1">{inputError}</p>
           )}
         </form>
       )}
@@ -106,7 +106,7 @@ export default function SourceChannelsConfig({
           </p>
         </div>
       ) : (
-        <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+        <div className="space-y-3 max-h-[380px] overflow-y-auto pe-1">
           {channels.map((channel) => {
             const isFetching = channel.status === "fetching";
             const isSuccess = channel.status === "success";
@@ -124,7 +124,7 @@ export default function SourceChannelsConfig({
                       {(channel.name || channel.username).substring(0, 2).toUpperCase()}
                     </div>
                     <span
-                      className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
+                      className={`absolute bottom-0 end-0 w-3 h-3 rounded-full border-2 border-white ${
                         isFetching
                           ? "bg-amber-400 animate-ping"
                           : isSuccess
