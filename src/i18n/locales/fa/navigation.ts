@@ -44,7 +44,7 @@ const navigation = {
     admin: "مدیر",
   },
   status: {
-    workspace: "فضای کاری TGReposter",
+    workspace: "مدیریت محتوای تلگرام با هوش مصنوعی",
     publishingSetupRequired: "تنظیمات انتشار لازم است",
     publishingTargetsReady_one: "{{count}} مقصد انتشار آماده است",
     publishingTargetsReady_other: "{{count}} مقصد انتشار آماده است",
