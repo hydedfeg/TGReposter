@@ -441,7 +441,7 @@ export default function CurationFeed({
         <span className="block text-sm font-bold text-slate-900">{enabledTargets.length} destination{enabledTargets.length === 1 ? "" : "s"} selected</span>
         <span className="block truncate text-xs text-slate-500">{enabledTargets.length > 0 ? enabledTargets.map((target) => target.name).join(", ") : "No Telegram destinations enabled"}</span>
       </span>
-      <ChevronRight className="h-5 w-5 text-slate-400" aria-hidden="true" />
+      <ChevronRight className="rtl-mirror h-5 w-5 text-slate-400" aria-hidden="true" />
     </div>
   );
 
@@ -538,7 +538,7 @@ export default function CurationFeed({
               <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-start shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
                 <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-base font-bold text-slate-900">@{post.channelUsername}</span><span className="shrink-0 text-sm text-slate-400">{formatDate(post.date)}</span></span><span className="mt-2 line-clamp-3 text-[15px] leading-6 text-slate-600">{post.originalText || "Media post"}</span><span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClasses(post.status)}`}>{tabLabels[post.status]}</span></span>
-                {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
+                {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="rtl-mirror mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
               </button>
             ))}
           </section>
@@ -548,7 +548,7 @@ export default function CurationFeed({
       {mobileReviewOpen && selectedPost ? (
         <div role="dialog" aria-modal="true" aria-label="Review post" className="fixed inset-0 z-[80] flex flex-col bg-slate-50 xl:hidden">
           <header className="flex min-h-16 items-center justify-between border-b border-slate-200 bg-white px-3 pt-[env(safe-area-inset-top)]">
-            <button type="button" autoFocus onClick={() => setMobileReviewOpen(false)} aria-label="Back to post list" className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" aria-hidden="true" /></button>
+            <button type="button" autoFocus onClick={() => setMobileReviewOpen(false)} aria-label="Back to post list" className="flex h-11 w-11 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100"><ArrowLeft className="rtl-mirror h-5 w-5" aria-hidden="true" /></button>
             <div className="text-center"><h1 className="font-display text-lg font-bold text-slate-950">Review post</h1><p className="text-xs font-semibold text-slate-500">{filteredPosts.findIndex((post) => post.id === selectedPost.id) + 1} of {filteredPosts.length}</p></div>
             <span className="h-11 w-11" aria-hidden="true" />
           </header>
