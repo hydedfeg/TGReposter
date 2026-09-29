@@ -44,7 +44,7 @@ const navigation = {
     admin: "Admin",
   },
   status: {
-    workspace: "TGReposter workspace",
+    workspace: "AI Powered Telegram content operations",
     publishingSetupRequired: "Publishing setup required",
     publishingTargetsReady_one: "{{count}} publishing target ready",
     publishingTargetsReady_other: "{{count}} publishing targets ready",
