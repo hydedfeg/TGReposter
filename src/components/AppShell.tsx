@@ -219,7 +219,7 @@ export default function AppShell({
             aria-expanded="true"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white"
           >
-            <PanelLeftClose className="h-5 w-5" aria-hidden="true" />
+            <PanelLeftClose className="rtl-mirror h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -292,7 +292,7 @@ export default function AppShell({
                   aria-expanded="false"
                   className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 lg:flex"
                 >
-                  <PanelLeftOpen className="h-5 w-5" aria-hidden="true" />
+                  <PanelLeftOpen className="rtl-mirror h-5 w-5" aria-hidden="true" />
                 </button>
               ) : null}
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sky-500 text-white lg:hidden">
