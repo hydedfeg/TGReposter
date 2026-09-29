@@ -16,7 +16,8 @@ test("generic AI branding is provider-neutral while provider configuration stays
     "src/components/Header.tsx",
     "src/components/CurationFeed.tsx",
     "src/components/AIConfig.tsx",
-    "src/App.tsx"
+    "src/App.tsx",
+    "src/i18n/locales/en/navigation.ts"
   ].map(readSource).join("\n");
 
   for (const staleCopy of [
