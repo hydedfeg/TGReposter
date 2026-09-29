@@ -161,7 +161,7 @@ export default function MarketingHome() {
             <img
               src="/brand/tgreposter-flow.webp"
               alt={t("marketing:accessibility.flowImage")}
-              className={`${isRtl ? "mr-auto object-[32%_center]" : "ml-auto object-[68%_center]"} h-full w-full object-cover opacity-45 saturate-125 sm:w-[88%] sm:opacity-70 lg:w-[78%] lg:object-center lg:opacity-100`}
+              className={`${isRtl ? "object-[32%_center]" : "object-[68%_center]"} ms-auto h-full w-full object-cover opacity-45 saturate-125 sm:w-[88%] sm:opacity-70 lg:w-[78%] lg:object-center lg:opacity-100`}
             />
             <div
               className={`absolute inset-0 ${
