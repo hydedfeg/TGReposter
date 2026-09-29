@@ -53,8 +53,8 @@ const system = {
     durableIdentities: "Active durable identities",
     usernameOwned: "Username-owned workspaces",
     shouldRemainZero: "Should remain 0",
-    owners_one: "{{count}} owner",
-    owners_other: "{{count}} owners",
+    owners_one: "{{formattedCount}} owner",
+    owners_other: "{{formattedCount}} owners",
   },
   runtime: {
     title: "Runtime Data Boundaries",
