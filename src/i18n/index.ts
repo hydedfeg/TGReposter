@@ -2,6 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import {
   APP_LOCALES,
+  APP_LOCALE_DEFINITIONS,
   APP_LOCALE_STORAGE_KEY,
   DEFAULT_APP_LOCALE,
   getLocaleDirection,
@@ -66,6 +67,7 @@ export async function changeAppLocale(locale: AppLocale): Promise<void> {
 
 export {
   APP_LOCALES,
+  APP_LOCALE_DEFINITIONS,
   APP_LOCALE_STORAGE_KEY,
   DEFAULT_APP_LOCALE,
   getLocaleDirection,
