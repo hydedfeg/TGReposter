@@ -139,7 +139,7 @@ export default function Dashboard({ isSyncing, onNavigate, onSync, settings }: D
                   type="button"
                   key={post.id}
                   onClick={() => onNavigate("feed")}
-                  className="flex min-h-20 w-full items-center gap-3 px-5 py-3 text-left hover:bg-slate-50"
+                  className="flex min-h-20 w-full items-center gap-3 px-5 py-3 text-start hover:bg-slate-50"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
                     {post.channelUsername.slice(0, 2).toUpperCase()}
@@ -166,7 +166,7 @@ export default function Dashboard({ isSyncing, onNavigate, onSync, settings }: D
         <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <h2 className="font-display text-lg font-bold text-slate-950">Publishing health</h2>
           <div className="mt-5 grid grid-cols-3 divide-x divide-slate-100">
-            <div className="pr-3">
+            <div className="pe-3">
               <CheckCircle2 className="h-6 w-6 text-emerald-500" aria-hidden="true" />
               <p className="mt-3 text-xl font-bold sm:text-2xl">{successRate}%</p>
               <p className="text-sm text-slate-500">Success rate</p>
@@ -176,7 +176,7 @@ export default function Dashboard({ isSyncing, onNavigate, onSync, settings }: D
               <p className="mt-3 text-xl font-bold sm:text-2xl">{activeTargets}</p>
               <p className="text-sm text-slate-500">Active targets</p>
             </div>
-            <div className="pl-3">
+            <div className="ps-3">
               {failed > 0 ? <AlertCircle className="h-6 w-6 text-rose-500" aria-hidden="true" /> : <Clock3 className="h-6 w-6 text-slate-400" aria-hidden="true" />}
               <p className="mt-3 text-xl font-bold sm:text-2xl">{failed}</p>
               <p className="text-sm text-slate-500">Need attention</p>
