@@ -299,7 +299,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-3xs">
         <Loader2 className="w-8 h-8 text-violet-500 animate-spin mx-auto" />
-        <p className="text-sm font-bold text-slate-800 mt-3">Loading Promotion AI Studio</p>
+        <p className="text-sm font-bold text-slate-800 mt-3">{t("ai.loading")}</p>
       </div>
     );
   }
@@ -307,19 +307,19 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
   return (
     <div className="space-y-5">
       <section className="relative overflow-hidden bg-gradient-to-br from-violet-950 via-slate-950 to-slate-900 rounded-2xl border border-violet-900/50 p-6 sm:p-7 text-white shadow-sm">
-        <div className="absolute -right-20 -top-24 w-72 h-72 rounded-full bg-violet-500/15 blur-3xl" />
+        <div className="absolute -end-20 -top-24 w-72 h-72 rounded-full bg-violet-500/15 blur-3xl" />
         <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
           <div>
             <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] font-bold text-violet-300 mb-3">
-              <BrainCircuit className="w-3.5 h-3.5" /> AI Promotion Engine
+              <BrainCircuit className="w-3.5 h-3.5" /> {t("ai.heroEyebrow")}
             </div>
-            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">Generate, review, then save</h2>
+            <h2 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">{t("ai.heroTitle")}</h2>
             <p className="text-sm text-slate-300 mt-2 max-w-2xl leading-relaxed">
-              Generate promotion-specific copy with the configured Gemini or OpenRouter model. Results stay editable and are never published automatically.
+              {t("ai.heroDescription")}
             </p>
           </div>
           <button onClick={refresh} className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-xs font-bold">
-            <RefreshCw className="w-4 h-4" /> Refresh
+            <RefreshCw className="w-4 h-4" /> {t("common.refresh")}
           </button>
         </div>
       </section>
@@ -327,72 +327,76 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
       {error && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex gap-3 text-rose-800">
           <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-          <div><p className="text-sm font-bold">AI operation failed</p><p className="text-xs mt-1">{error}</p></div>
+          <div><p className="text-sm font-bold">{t("ai.operationFailed")}</p><p className="text-xs mt-1" dir="auto">{error}</p></div>
         </div>
       )}
 
       <div className="grid xl:grid-cols-[0.86fr_1.14fr] gap-5 items-start">
         <div className="space-y-5">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-            <div className="flex items-center gap-2 mb-4"><FileText className="w-4.5 h-4.5 text-violet-500" /><h3 className="text-sm font-bold text-slate-900">Campaign post</h3></div>
+            <div className="flex items-center gap-2 mb-4"><FileText className="w-4.5 h-4.5 text-violet-500" /><h3 className="text-sm font-bold text-slate-900">{t("ai.campaignPost")}</h3></div>
             <div className="space-y-3">
               <label className="block">
-                <span className="text-[10px] font-bold text-slate-600">Campaign</span>
+                <span className="text-[10px] font-bold text-slate-600">{t("ai.campaign")}</span>
                 <select value={campaignId} onChange={event => setCampaignId(event.target.value)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">
-                  <option value="">Select campaign</option>
-                  {campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {campaign.status}</option>)}
+                  <option value="">{t("ai.selectCampaign")}</option>
+                  {campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name} · {t(`common.status.${campaign.status}`)}</option>)}
                 </select>
               </label>
               <label className="block">
-                <span className="text-[10px] font-bold text-slate-600">Post</span>
+                <span className="text-[10px] font-bold text-slate-600">{t("ai.post")}</span>
                 <select value={campaignPostId} onChange={event => setCampaignPostId(event.target.value)} disabled={!detail} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white disabled:bg-slate-50">
-                  <option value="">Select campaign post</option>
-                  {(detail?.posts || []).map(post => <option key={post.id} value={post.id}>@{post.sourcePost?.channelUsername || "unknown"} — {(post.sourcePost?.originalText || post.postId).slice(0, 90)}</option>)}
+                  <option value="">{t("ai.selectPost")}</option>
+                  {(detail?.posts || []).map(post => <option key={post.id} value={post.id}>@{post.sourcePost?.channelUsername || t("common.unknownChannel")} — {(post.sourcePost?.originalText || post.postId).slice(0, 90)}</option>)}
                 </select>
               </label>
               {detail && (
                 <div className={`rounded-xl border p-3 text-xs ${editableCampaign ? "bg-emerald-50 border-emerald-100 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
-                  <b>{detail.campaign.status}</b> campaign · {editableCampaign ? "AI editing enabled" : "read-only after publishing starts"} · role {currentUserRole || "unknown"}
+                  {t("ai.campaignState", {
+                    status: t(`common.status.${detail.campaign.status}`),
+                    editing: editableCampaign ? t("ai.editingEnabled") : t("ai.readOnly"),
+                    role: currentUserRole === "super-admin" ? "Super-Admin" : currentUserRole === "admin" ? "Admin" : t("common.unknown"),
+                  })}
                 </div>
               )}
             </div>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-            <div className="flex items-center gap-2 mb-4"><WandSparkles className="w-4.5 h-4.5 text-violet-500" /><h3 className="text-sm font-bold text-slate-900">Generation controls</h3></div>
+            <div className="flex items-center gap-2 mb-4"><WandSparkles className="w-4.5 h-4.5 text-violet-500" /><h3 className="text-sm font-bold text-slate-900">{t("ai.generationControls")}</h3></div>
             <div className="space-y-3">
-              <label className="block"><span className="text-[10px] font-bold text-slate-600">AI action</span><select value={action} onChange={event => setAction(event.target.value as PromotionAIAction)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">{actions.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><p className="text-[10px] text-slate-400 mt-1">{selectedAction.help}</p></label>
+              <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.action")}</span><select value={action} onChange={event => setAction(event.target.value as PromotionAIAction)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">{actions.map(item => <option key={item.value} value={item.value}>{t(item.labelKey)}</option>)}</select><p className="text-[10px] text-slate-400 mt-1">{t(selectedAction.helpKey)}</p></label>
               <div className="grid sm:grid-cols-2 gap-3">
-                <label><span className="text-[10px] font-bold text-slate-600">Writing style</span><select value={style} onChange={event => setStyle(event.target.value as PromotionAIStyle)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white capitalize">{styles.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
-                <label><span className="text-[10px] font-bold text-slate-600">Output language</span><input value={language} onChange={event => setLanguage(event.target.value)} placeholder="English" className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-400" /></label>
+                <label><span className="text-[10px] font-bold text-slate-600">{t("ai.writingStyle")}</span><select value={style} onChange={event => setStyle(event.target.value as PromotionAIStyle)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white capitalize">{styles.map(item => <option key={item} value={item}>{t(`ai.styles.${item}`)}</option>)}</select></label>
+                <label><span className="text-[10px] font-bold text-slate-600">{t("ai.outputLanguage")}</span><input value={language} dir="auto" onChange={event => setLanguage(event.target.value)} placeholder="English" className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-400" /></label>
               </div>
-              <label className="block"><span className="text-[10px] font-bold text-slate-600">Extra instructions <span className="font-normal text-slate-400">optional</span></span><textarea value={instructions} onChange={event => setInstructions(event.target.value)} rows={3} maxLength={600} placeholder="Audience, emphasis, length preference..." className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs resize-y outline-none focus:border-violet-400" /></label>
-              <button onClick={generate} disabled={busy || !selectedPost || !editableCampaign} className="w-full inline-flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white rounded-xl px-4 py-3 text-xs font-bold transition-colors">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}Generate {selectedAction.label}</button>
-              <p className="text-[9px] text-slate-400 leading-relaxed">Provider and API keys are resolved on the backend from the existing AI configuration. Source text is treated as untrusted material, not model instructions.</p>
+              <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.extraInstructions")} <span className="font-normal text-slate-400">{t("common.optional")}</span></span><textarea value={instructions} dir="auto" onChange={event => setInstructions(event.target.value)} rows={3} maxLength={600} placeholder={t("ai.instructionsPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs resize-y outline-none focus:border-violet-400" /></label>
+              <button onClick={generate} disabled={busy || !selectedPost || !editableCampaign} className="w-full inline-flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white rounded-xl px-4 py-3 text-xs font-bold transition-colors">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}{t("ai.generate", { action: t(selectedAction.labelKey) })}</button>
+              <p className="text-[9px] text-slate-400 leading-relaxed">{t("ai.backendNote")}</p>
             </div>
           </div>
         </div>
 
         <div className="space-y-5">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-            <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">Generated result</h3><p className="text-[10px] text-slate-500 mt-0.5">Review before applying it to campaign copy.</p></div>{providerInfo && <span className="text-[9px] font-mono bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1">{providerInfo}</span>}</div>
-            <textarea value={generatedResult} onChange={event => setGeneratedResult(event.target.value)} rows={8} placeholder="AI output will appear here..." className="w-full border border-slate-200 rounded-xl px-3.5 py-3 text-xs leading-relaxed resize-y outline-none focus:border-violet-400" />
-            <button onClick={applyGenerated} disabled={!generatedResult.trim()} className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 disabled:text-slate-300 disabled:border-slate-200 disabled:bg-slate-50 text-xs font-bold"><CheckCircle2 className="w-4 h-4" />Apply result to editor</button>
+            <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">{t("ai.generatedTitle")}</h3><p className="text-[10px] text-slate-500 mt-0.5">{t("ai.generatedDescription")}</p></div>{providerInfo && <span className="text-[9px] font-mono bg-violet-50 text-violet-700 border border-violet-100 rounded-full px-2.5 py-1" dir="ltr">{providerInfo}</span>}</div>
+            <textarea value={generatedResult} dir="auto" onChange={event => setGeneratedResult(event.target.value)} rows={8} placeholder={t("ai.generatedPlaceholder")} className="w-full border border-slate-200 rounded-xl px-3.5 py-3 text-xs leading-relaxed resize-y outline-none focus:border-violet-400" />
+            <button onClick={applyGenerated} disabled={!generatedResult.trim()} className="mt-3 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-violet-50 border border-violet-200 text-violet-700 disabled:text-slate-300 disabled:border-slate-200 disabled:bg-slate-50 text-xs font-bold"><CheckCircle2 className="w-4 h-4" />{t("ai.apply")}</button>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-            <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">Campaign copy editor</h3><p className="text-[10px] text-slate-500 mt-0.5">This is what will be saved for later Telegram publishing.</p></div></div>
+            <div className="flex items-center justify-between gap-3 mb-4"><div><h3 className="text-sm font-bold text-slate-900">{t("ai.editorTitle")}</h3><p className="text-[10px] text-slate-500 mt-0.5">{t("ai.editorDescription")}</p></div></div>
             <div className="space-y-3">
-              <label className="block"><span className="text-[10px] font-bold text-slate-600">Content mode</span><select value={saveMode} onChange={event => setSaveMode(event.target.value as PromotionContentMode)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">{Object.entries(modeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              {saveMode !== "original" && <label className="block"><span className="text-[10px] font-bold text-slate-600">Promotion text</span><textarea value={draftText} onChange={event => setDraftText(event.target.value)} rows={8} className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-3 text-xs leading-relaxed resize-y outline-none focus:border-sky-400" /></label>}
-              <label className="block"><span className="text-[10px] font-bold text-slate-600">Call to action</span><input value={ctaText} onChange={event => setCtaText(event.target.value)} placeholder="Read more / Join the channel..." className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-sky-400" /></label>
-              <button onClick={save} disabled={busy || !selectedPost || !editableCampaign} className="inline-flex items-center gap-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-xl px-5 py-3 text-xs font-bold"><Save className="w-4 h-4" />Save to campaign</button>
+              <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.contentMode")}</span><select value={saveMode} onChange={event => setSaveMode(event.target.value as PromotionContentMode)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">{Object.entries(modeKeys).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}</select></label>
+              {saveMode !== "original" && <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.promotionText")}</span><textarea value={draftText} dir="auto" onChange={event => setDraftText(event.target.value)} rows={8} className="mt-1 w-full border border-slate-200 rounded-xl px-3.5 py-3 text-xs leading-relaxed resize-y outline-none focus:border-sky-400" /></label>}
+              <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.cta")}</span><input value={ctaText} dir="auto" onChange={event => setCtaText(event.target.value)} placeholder={t("ai.ctaPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-sky-400" /></label>
+              <button onClick={save} disabled={busy || !selectedPost || !editableCampaign} className="inline-flex items-center gap-2 bg-slate-900 disabled:bg-slate-300 text-white rounded-xl px-5 py-3 text-xs font-bold"><Save className="w-4 h-4" />{t("ai.save")}</button>
             </div>
           </div>
 
           <div className="rounded-2xl bg-sky-50/60 border border-sky-100 p-5">
-            <p className="text-[9px] uppercase tracking-widest font-bold text-sky-500 mb-2">Telegram preview</p>
-            <p className={`text-xs whitespace-pre-wrap leading-relaxed ${renderedPreview ? "text-slate-700" : "text-slate-400"}`}>{renderedPreview || "Select a campaign post to preview the final promotion copy."}</p>
+            <p className="text-[9px] uppercase tracking-widest font-bold text-sky-500 mb-2">{t("ai.preview")}</p>
+            <p dir="auto" className={`text-xs whitespace-pre-wrap leading-relaxed ${renderedPreview ? "text-slate-700" : "text-slate-400"}`}>{renderedPreview || t("ai.previewEmpty")}</p>
           </div>
         </div>
       </div>
