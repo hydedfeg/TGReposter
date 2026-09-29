@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import MarketingHome from './MarketingHome.tsx';
 import PromotionPage from './PromotionPage.tsx';
+import './i18n';
 import './index.css';
 
 function Root() {
