@@ -44,7 +44,7 @@ const navigation = {
     admin: "المشرف",
   },
   status: {
-    workspace: "مساحة عمل TGReposter",
+    workspace: "عمليات محتوى تيليجرام مدعومة بالذكاء الاصطناعي",
     publishingSetupRequired: "يلزم إعداد النشر",
     publishingTargetsReady_zero: "لا توجد وجهات نشر جاهزة",
     publishingTargetsReady_one: "وجهة نشر واحدة جاهزة",
