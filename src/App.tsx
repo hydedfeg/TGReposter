@@ -13,6 +13,7 @@ import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
+import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
@@ -178,6 +179,8 @@ export default function App() {
           clearSession();
           return;
         }
+        await reconcileAuthenticatedAppLocale(data.uiLocale, savedToken);
+        if (!current()) return;
         setIsAuthenticated(true);
         setAuthToken(savedToken);
         setCurrentUserRole(data.role);
@@ -264,14 +267,16 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = (
+  const handleLoginSuccess = async (
     token: string,
     isNewSetup: boolean,
     role: 'super-admin' | 'admin',
     username: string,
-    accountKey: string
+    accountKey: string,
+    uiLocale: string | null
   ) => {
     if (!isCurrent()) return;
+    await reconcileAuthenticatedAppLocale(uiLocale, token);
     resetWorkspace();
     localStorage.setItem("curator_token", token);
     localStorage.setItem("curator_role", role);
