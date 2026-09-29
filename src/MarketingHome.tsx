@@ -2,7 +2,9 @@ import {
   ArrowRight,
   Bot,
   Check,
+  ChevronDown,
   Filter,
+  Globe2,
   Inbox,
   LockKeyhole,
   Menu,
@@ -12,44 +14,16 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  getInitialMarketingLocale,
+  marketingCopy,
+  persistMarketingLocale,
+  supportedLocales,
+  type AppLocale,
+} from "./i18n/marketing";
 
 const dashboardUrl = "https://api.tgreposter.com";
-
-const workflow = [
-  {
-    number: "01",
-    title: "Collect",
-    copy: "Watch the public Telegram channels that matter to you.",
-    icon: Radio,
-  },
-  {
-    number: "02",
-    title: "Filter",
-    copy: "Keep useful posts and remove noise with your own rules.",
-    icon: Filter,
-  },
-  {
-    number: "03",
-    title: "Refine",
-    copy: "Rewrite, summarize, translate, and create hashtags with AI.",
-    icon: Sparkles,
-  },
-  {
-    number: "04",
-    title: "Publish",
-    copy: "Review once, then send to one or many Telegram destinations.",
-    icon: Send,
-  },
-];
-
-const capabilities = [
-  "Private content inbox for every user",
-  "Gemini and OpenRouter support",
-  "Human review before publishing",
-  "Parallel multi-destination delivery",
-  "Channel, group, and supergroup campaigns",
-  "Role-based team access",
-];
+const workflowIcons = [Radio, Filter, Sparkles, Send];
 
 function BrandMark({ inverse = false }: { inverse?: boolean }) {
   return (
@@ -68,8 +42,64 @@ function BrandMark({ inverse = false }: { inverse?: boolean }) {
   );
 }
 
+function LanguageSelector({
+  locale,
+  label,
+  onChange,
+  compact = false,
+}: {
+  locale: AppLocale;
+  label: string;
+  onChange: (locale: AppLocale) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`relative flex items-center gap-2 border border-white/15 bg-white/[0.04] text-white ${
+        compact ? "min-h-12 w-full rounded-xl px-3.5" : "h-11 rounded-full px-3.5"
+      }`}
+    >
+      <Globe2 className="h-4 w-4 shrink-0 text-cyan-200" aria-hidden="true" />
+      <label className="sr-only" htmlFor={compact ? "marketing-language-mobile" : "marketing-language-desktop"}>
+        {label}
+      </label>
+      <select
+        id={compact ? "marketing-language-mobile" : "marketing-language-desktop"}
+        value={locale}
+        onChange={(event) => onChange(event.target.value as AppLocale)}
+        className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent pe-6 text-sm font-semibold text-white outline-none"
+        aria-label={label}
+      >
+        {Object.entries(supportedLocales).map(([code, localeInfo]) => (
+          <option key={code} value={code} className="bg-[#061725] text-white">
+            {localeInfo.nativeName}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute end-3 h-4 w-4 text-slate-400" aria-hidden="true" />
+    </div>
+  );
+}
+
 export default function MarketingHome() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [locale, setLocale] = useState<AppLocale>(getInitialMarketingLocale);
+  const copy = marketingCopy[locale];
+  const direction = supportedLocales[locale].direction;
+  const isRtl = direction === "rtl";
+  const arrowClass = `h-4 w-4 ${isRtl ? "rotate-180" : ""}`;
+  const largeArrowClass = `h-5 w-5 ${isRtl ? "rotate-180" : ""}`;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.lang = locale;
+    root.dir = direction;
+    document.title = copy.meta.title;
+    persistMarketingLocale(locale);
+
+    const description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    if (description) description.content = copy.meta.description;
+  }, [copy.meta.description, copy.meta.title, direction, locale]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -80,27 +110,33 @@ export default function MarketingHome() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
 
+  const handleLocaleChange = (nextLocale: AppLocale) => {
+    setLocale(nextLocale);
+    setMenuOpen(false);
+  };
+
   return (
     <div className="marketing-page min-h-screen overflow-x-hidden bg-[#f3f7f9] text-[#0b2232]">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#061725]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-[76px] max-w-[1240px] items-center justify-between px-5 sm:px-8">
-          <a href="#top" aria-label="TGReposter home">
+          <a href="#top" aria-label={copy.a11y.home}>
             <BrandMark inverse />
           </a>
 
           <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
-            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#workflow">How it works</a>
-            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#capabilities">Capabilities</a>
-            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#security">Security</a>
+            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#workflow">{copy.nav.workflow}</a>
+            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#capabilities">{copy.nav.capabilities}</a>
+            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#security">{copy.nav.security}</a>
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
+            <LanguageSelector locale={locale} label={copy.languageLabel} onChange={handleLocaleChange} />
             <a
               href={dashboardUrl}
               className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-[#071827] transition hover:bg-cyan-50"
             >
-              Open dashboard
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              {copy.nav.dashboard}
+              <ArrowRight className={arrowClass} aria-hidden="true" />
             </a>
           </div>
 
@@ -108,7 +144,7 @@ export default function MarketingHome() {
             type="button"
             className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-white md:hidden"
             onClick={() => setMenuOpen((open) => !open)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-label={menuOpen ? copy.a11y.closeMenu : copy.a11y.openMenu}
             aria-expanded={menuOpen}
           >
             {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -118,17 +154,23 @@ export default function MarketingHome() {
         {menuOpen ? (
           <div className="border-t border-white/10 bg-[#061725] px-5 py-5 md:hidden">
             <nav className="mx-auto grid max-w-[1240px] gap-2" aria-label="Mobile navigation">
+              <LanguageSelector
+                locale={locale}
+                label={copy.languageLabel}
+                onChange={handleLocaleChange}
+                compact
+              />
               {[
-                ["How it works", "#workflow"],
-                ["Capabilities", "#capabilities"],
-                ["Security", "#security"],
+                [copy.nav.workflow, "#workflow"],
+                [copy.nav.capabilities, "#capabilities"],
+                [copy.nav.security, "#security"],
               ].map(([label, href]) => (
                 <a key={href} href={href} onClick={() => setMenuOpen(false)} className="rounded-xl px-3 py-3 text-base font-semibold text-slate-200">
                   {label}
                 </a>
               ))}
               <a href={dashboardUrl} className="mt-2 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#08a9ed] px-5 font-bold text-white">
-                Open dashboard <ArrowRight className="h-4 w-4" />
+                {copy.nav.dashboard} <ArrowRight className={arrowClass} />
               </a>
             </nav>
           </div>
@@ -140,10 +182,16 @@ export default function MarketingHome() {
           <div className="absolute inset-0">
             <img
               src="/brand/tgreposter-flow.webp"
-              alt="Abstract content flow moving through AI processing to Telegram destinations"
-              className="ml-auto h-full w-full object-cover object-[68%_center] opacity-45 saturate-125 sm:w-[88%] sm:opacity-70 lg:w-[78%] lg:object-center lg:opacity-100"
+              alt={copy.a11y.flowImageAlt}
+              className={`${isRtl ? "mr-auto object-[32%_center]" : "ml-auto object-[68%_center]"} h-full w-full object-cover opacity-45 saturate-125 sm:w-[88%] sm:opacity-70 lg:w-[78%] lg:object-center lg:opacity-100`}
             />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,#061725_0%,#061725_31%,rgba(6,23,37,0.88)_45%,rgba(6,23,37,0.18)_72%,rgba(6,23,37,0.04)_100%)]" />
+            <div
+              className={`absolute inset-0 ${
+                isRtl
+                  ? "bg-[linear-gradient(270deg,#061725_0%,#061725_31%,rgba(6,23,37,0.88)_45%,rgba(6,23,37,0.18)_72%,rgba(6,23,37,0.04)_100%)]"
+                  : "bg-[linear-gradient(90deg,#061725_0%,#061725_31%,rgba(6,23,37,0.88)_45%,rgba(6,23,37,0.18)_72%,rgba(6,23,37,0.04)_100%)]"
+              }`}
+            />
             <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_58%,#061725_100%)]" />
           </div>
 
@@ -151,40 +199,40 @@ export default function MarketingHome() {
             <div className="max-w-[640px]">
               <div className="mb-8 inline-flex items-center gap-2.5 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-4 py-2 text-sm font-semibold text-cyan-100 backdrop-blur-md">
                 <span className="h-2 w-2 rounded-full bg-[#b7f52c] shadow-[0_0_16px_#b7f52c]" />
-                AI-powered Telegram content operations
+                {copy.hero.badge}
               </div>
               <h1 className="font-display text-[3.25rem] font-bold leading-[0.98] tracking-[-0.06em] text-white sm:text-[4.6rem] lg:text-[5.25rem]">
-                Turn Telegram noise into a publishing signal.
+                {copy.hero.title}
               </h1>
               <p className="mt-7 max-w-xl text-lg leading-8 text-slate-300 sm:text-xl">
-                Monitor the channels that matter, refine posts with AI, and publish approved content to every Telegram destination from one private workspace.
+                {copy.hero.body}
               </p>
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <a
                   href={dashboardUrl}
                   className="inline-flex min-h-14 items-center justify-center gap-2.5 rounded-full bg-[#08a9ed] px-7 text-base font-bold text-white shadow-[0_18px_50px_rgba(8,169,237,0.26)] transition hover:-translate-y-0.5 hover:bg-[#16b8f5]"
                 >
-                  Open your workspace
-                  <ArrowRight className="h-5 w-5" aria-hidden="true" />
+                  {copy.hero.primary}
+                  <ArrowRight className={largeArrowClass} aria-hidden="true" />
                 </a>
                 <a
                   href="#workflow"
                   className="inline-flex min-h-14 items-center justify-center rounded-full border border-white/20 bg-white/5 px-7 text-base font-bold text-white backdrop-blur-sm transition hover:bg-white/10"
                 >
-                  See the workflow
+                  {copy.hero.secondary}
                 </a>
               </div>
               <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium text-slate-400">
-                <span className="flex items-center gap-2"><Check className="h-4 w-4 text-[#b7f52c]" /> Human-approved publishing</span>
-                <span className="flex items-center gap-2"><Check className="h-4 w-4 text-[#b7f52c]" /> User-isolated workspaces</span>
+                <span className="flex items-center gap-2"><Check className="h-4 w-4 text-[#b7f52c]" /> {copy.hero.proofApproval}</span>
+                <span className="flex items-center gap-2"><Check className="h-4 w-4 text-[#b7f52c]" /> {copy.hero.proofIsolation}</span>
               </div>
             </div>
           </div>
 
-          <div className="absolute bottom-0 left-0 right-0">
+          <div className="absolute bottom-0 inset-x-0">
             <div className="mx-auto max-w-[1240px] px-5 sm:px-8">
               <div className="flex flex-wrap items-center gap-x-9 gap-y-4 border-t border-white/10 py-6 text-sm font-semibold text-slate-400">
-                <span className="mr-2 text-xs uppercase tracking-[0.18em] text-slate-500">Built for your stack</span>
+                <span className="me-2 text-xs uppercase tracking-[0.18em] text-slate-500">{copy.hero.stackLabel}</span>
                 <span>Telegram</span>
                 <span>Google Gemini</span>
                 <span>OpenRouter</span>
@@ -198,23 +246,23 @@ export default function MarketingHome() {
           <div className="mx-auto max-w-[1240px]">
             <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#078fc9]">One continuous workflow</p>
+                <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#078fc9]">{copy.workflow.eyebrow}</p>
                 <h2 className="mt-4 max-w-xl font-display text-4xl font-bold leading-[1.04] tracking-[-0.045em] text-[#071827] sm:text-5xl">
-                  From source channel to published post.
+                  {copy.workflow.title}
                 </h2>
               </div>
               <p className="max-w-2xl text-lg leading-8 text-slate-600 lg:justify-self-end">
-                TGReposter keeps collection, filtering, AI enhancement, editorial review, and delivery in one traceable flow—without handing publishing decisions to automation.
+                {copy.workflow.body}
               </p>
             </div>
 
             <div className="mt-14 grid overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_22px_80px_rgba(7,24,39,0.08)] md:grid-cols-2 xl:grid-cols-4">
-              {workflow.map((step, index) => {
-                const Icon = step.icon;
+              {copy.workflow.steps.map((step, index) => {
+                const Icon = workflowIcons[index];
                 return (
-                  <article key={step.number} className={`relative min-h-[290px] p-7 sm:p-8 ${index ? "border-t border-slate-200 md:border-l md:border-t-0 xl:border-l" : ""} ${index === 2 ? "md:border-l-0 md:border-t xl:border-l xl:border-t-0" : ""}`}>
+                  <article key={step.title} className={`relative min-h-[290px] p-7 sm:p-8 ${index ? "border-t border-slate-200 md:border-s md:border-t-0 xl:border-s" : ""} ${index === 2 ? "md:border-s-0 md:border-t xl:border-s xl:border-t-0" : ""}`}>
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-sm font-semibold text-slate-400">{step.number}</span>
+                      <span className="font-mono text-sm font-semibold text-slate-400">{String(index + 1).padStart(2, "0")}</span>
                       <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-50 text-[#079bd8]">
                         <Icon className="h-5 w-5" aria-hidden="true" />
                       </span>
@@ -231,29 +279,25 @@ export default function MarketingHome() {
         <section id="capabilities" className="scroll-mt-20 bg-white px-5 py-24 sm:px-8 lg:py-32">
           <div className="mx-auto grid max-w-[1240px] gap-14 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
             <div className="relative overflow-hidden rounded-[32px] bg-[#071827] p-6 text-white sm:p-9">
-              <div className="absolute right-0 top-0 h-56 w-56 rounded-full bg-cyan-400/15 blur-3xl" />
+              <div className="absolute end-0 top-0 h-56 w-56 rounded-full bg-cyan-400/15 blur-3xl" />
               <div className="relative rounded-[24px] border border-white/10 bg-[#0b2232]/90 p-5 shadow-2xl sm:p-7">
                 <div className="flex items-center justify-between border-b border-white/10 pb-5">
                   <div className="flex items-center gap-3">
                     <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#08a9ed]"><Inbox className="h-5 w-5" /></span>
-                    <div><p className="font-display text-lg font-bold">Content Inbox</p><p className="text-sm text-slate-400">Ready for review</p></div>
+                    <div><p className="font-display text-lg font-bold">{copy.inbox.title}</p><p className="text-sm text-slate-400">{copy.inbox.status}</p></div>
                   </div>
-                  <span className="rounded-full bg-[#b7f52c]/15 px-3 py-1.5 text-xs font-bold text-[#d7ff74]">12 matched</span>
+                  <span className="rounded-full bg-[#b7f52c]/15 px-3 py-1.5 text-xs font-bold text-[#d7ff74]">{copy.inbox.matched}</span>
                 </div>
 
                 <div className="mt-5 space-y-3">
-                  {[
-                    ["@futuretech", "AI infrastructure update", "News"],
-                    ["@digitalbrief", "Open source model release", "Translate"],
-                    ["@industrywire", "Telegram ecosystem report", "Summary"],
-                  ].map(([source, title, action], index) => (
-                    <div key={source} className={`rounded-2xl border p-4 ${index === 0 ? "border-cyan-400/40 bg-cyan-400/10" : "border-white/8 bg-white/[0.035]"}`}>
+                  {copy.inbox.items.map((item, index) => (
+                    <div key={item.source} className={`rounded-2xl border p-4 ${index === 0 ? "border-cyan-400/40 bg-cyan-400/10" : "border-white/8 bg-white/[0.035]"}`}>
                       <div className="flex items-start gap-3">
                         <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-xs font-bold">{index + 1}</span>
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-bold text-white">{source}</span><span className="text-xs text-slate-500">Now</span></div>
-                          <p className="mt-1 text-sm text-slate-300">{title}</p>
-                          <span className="mt-3 inline-flex rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-cyan-200">{action}</span>
+                          <div className="flex flex-wrap items-center justify-between gap-2"><span dir="ltr" className="text-sm font-bold text-white">{item.source}</span><span className="text-xs text-slate-500">{copy.inbox.now}</span></div>
+                          <p className="mt-1 text-sm text-slate-300">{item.title}</p>
+                          <span className="mt-3 inline-flex rounded-full border border-white/10 px-2.5 py-1 text-xs font-semibold text-cyan-200">{item.action}</span>
                         </div>
                       </div>
                     </div>
@@ -263,15 +307,15 @@ export default function MarketingHome() {
             </div>
 
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#078fc9]">Your editorial control room</p>
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[#078fc9]">{copy.capabilities.eyebrow}</p>
               <h2 className="mt-4 font-display text-4xl font-bold leading-[1.04] tracking-[-0.045em] text-[#071827] sm:text-5xl">
-                Automation where it helps. Human judgment where it matters.
+                {copy.capabilities.title}
               </h2>
               <p className="mt-6 text-lg leading-8 text-slate-600">
-                Use AI to move faster without losing control of your voice. Every post stays editable and reviewable before it reaches your audience.
+                {copy.capabilities.body}
               </p>
               <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                {capabilities.map((capability) => (
+                {copy.capabilities.list.map((capability) => (
                   <div key={capability} className="flex items-start gap-3 text-[15px] font-semibold leading-6 text-slate-700">
                     <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#dff8a0] text-[#315800]"><Check className="h-3.5 w-3.5" strokeWidth={3} /></span>
                     {capability}
@@ -287,16 +331,16 @@ export default function MarketingHome() {
             <div className="grid gap-5 lg:grid-cols-2">
               <article className="group min-h-[460px] overflow-hidden rounded-[32px] bg-[#0a9bd8] p-8 text-white sm:p-11">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15"><Inbox className="h-7 w-7" /></div>
-                <p className="mt-16 text-sm font-bold uppercase tracking-[0.18em] text-cyan-100">Content curation</p>
-                <h3 className="mt-4 max-w-md font-display text-4xl font-bold leading-[1.05] tracking-[-0.04em]">Build a focused feed from the channels you monitor.</h3>
-                <p className="mt-5 max-w-lg text-lg leading-8 text-cyan-50">Collect matching posts, remove unwanted promotions, improve the writing, and publish only what deserves attention.</p>
+                <p className="mt-16 text-sm font-bold uppercase tracking-[0.18em] text-cyan-100">{copy.featureCards.curation.eyebrow}</p>
+                <h3 className="mt-4 max-w-md font-display text-4xl font-bold leading-[1.05] tracking-[-0.04em]">{copy.featureCards.curation.title}</h3>
+                <p className="mt-5 max-w-lg text-lg leading-8 text-cyan-50">{copy.featureCards.curation.body}</p>
               </article>
 
               <article className="group min-h-[460px] overflow-hidden rounded-[32px] bg-[#071827] p-8 text-white sm:p-11">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#b7f52c] text-[#1e3600]"><Bot className="h-7 w-7" /></div>
-                <p className="mt-16 text-sm font-bold uppercase tracking-[0.18em] text-slate-400">Campaign distribution</p>
-                <h3 className="mt-4 max-w-md font-display text-4xl font-bold leading-[1.05] tracking-[-0.04em]">Carry one approved message across your Telegram network.</h3>
-                <p className="mt-5 max-w-lg text-lg leading-8 text-slate-300">Coordinate delivery to channels, groups, and supergroups while keeping destination results independent.</p>
+                <p className="mt-16 text-sm font-bold uppercase tracking-[0.18em] text-slate-400">{copy.featureCards.campaign.eyebrow}</p>
+                <h3 className="mt-4 max-w-md font-display text-4xl font-bold leading-[1.05] tracking-[-0.04em]">{copy.featureCards.campaign.title}</h3>
+                <p className="mt-5 max-w-lg text-lg leading-8 text-slate-300">{copy.featureCards.campaign.body}</p>
               </article>
             </div>
           </div>
@@ -307,23 +351,23 @@ export default function MarketingHome() {
             <div className="flex items-center gap-5">
               <span className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[24px] bg-[#071827] text-[#b7f52c]"><LockKeyhole className="h-9 w-9" /></span>
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#4b6c09]">Private by design</p>
-                <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em] text-[#132700] sm:text-4xl">Your workspace is yours.</h2>
+                <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#4b6c09]">{copy.security.eyebrow}</p>
+                <h2 className="mt-2 font-display text-3xl font-bold tracking-[-0.04em] text-[#132700] sm:text-4xl">{copy.security.title}</h2>
               </div>
             </div>
             <p className="text-lg leading-8 text-[#355000]">
-              Sources, filters, inbox posts, destinations, campaigns, and AI preferences are isolated per user. Sensitive credentials stay on the backend, protected by authenticated, role-aware access.
+              {copy.security.body}
             </p>
           </div>
         </section>
 
         <section className="bg-[#061725] px-5 py-24 text-white sm:px-8 lg:py-32">
           <div className="mx-auto max-w-[940px] text-center">
-            <p className="text-sm font-bold uppercase tracking-[0.22em] text-cyan-300">Ready when you are</p>
-            <h2 className="mt-5 font-display text-4xl font-bold leading-[1.02] tracking-[-0.05em] sm:text-6xl">Make your Telegram workflow feel intentional.</h2>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-300">Open your private dashboard to configure sources, review your content inbox, and publish with confidence.</p>
+            <p className="text-sm font-bold uppercase tracking-[0.22em] text-cyan-300">{copy.cta.eyebrow}</p>
+            <h2 className="mt-5 font-display text-4xl font-bold leading-[1.02] tracking-[-0.05em] sm:text-6xl">{copy.cta.title}</h2>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-300">{copy.cta.body}</p>
             <a href={dashboardUrl} className="mt-9 inline-flex min-h-14 items-center justify-center gap-2.5 rounded-full bg-[#08a9ed] px-8 text-base font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#16b8f5]">
-              Go to dashboard <ArrowRight className="h-5 w-5" />
+              {copy.cta.button} <ArrowRight className={largeArrowClass} />
             </a>
           </div>
         </section>
@@ -333,12 +377,12 @@ export default function MarketingHome() {
         <div className="mx-auto flex max-w-[1240px] flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <BrandMark inverse />
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
-            <a href="#workflow" className="hover:text-white">Workflow</a>
-            <a href="#capabilities" className="hover:text-white">Capabilities</a>
-            <a href="#security" className="hover:text-white">Security</a>
-            <a href={dashboardUrl} className="hover:text-white">Dashboard</a>
+            <a href="#workflow" className="hover:text-white">{copy.footer.workflow}</a>
+            <a href="#capabilities" className="hover:text-white">{copy.footer.capabilities}</a>
+            <a href="#security" className="hover:text-white">{copy.footer.security}</a>
+            <a href={dashboardUrl} className="hover:text-white">{copy.footer.dashboard}</a>
           </div>
-          <p className="text-sm">© 2026 TGReposter</p>
+          <p dir="ltr" className="text-sm">© 2026 TGReposter</p>
         </div>
       </footer>
     </div>
