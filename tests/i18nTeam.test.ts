@@ -97,7 +97,7 @@ test("UI-generated team feedback is localized while backend errors remain verbat
 test("revoke confirmation follows the selected UI language", () => {
   const source = readFileSync(resolve(root, "src/components/UserManagement.tsx"), "utf8");
 
-  assert.match(source, /window\.confirm\(/[);
+  assert.match(source, /window\.confirm\(/);
   assert.match(source, /t\("feedback\.revokeConfirm", \{ identity \}\)/);
 });
 
