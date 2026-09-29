@@ -44,7 +44,7 @@ const navigation = {
     admin: "Администратор",
   },
   status: {
-    workspace: "Рабочее пространство TGReposter",
+    workspace: "Операции с Telegram-контентом на базе ИИ",
     publishingSetupRequired: "Требуется настройка публикации",
     publishingTargetsReady_one: "{{count}} канал назначения готов",
     publishingTargetsReady_few: "{{count}} канала назначения готовы",
