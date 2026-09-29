@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 import AppShell, { type WorkspaceView } from "./components/AppShell";
 import PromotionCenter from "./components/PromotionCenter";
@@ -10,6 +11,7 @@ import { WorkspaceSession } from "./utils/workspaceSession";
 type UserRole = "super-admin" | "admin" | null;
 
 export default function PromotionPage() {
+  const { t } = useTranslation("promotion");
   const session = useRef(new WorkspaceSession()).current;
   const sessionToken = useRef(localStorage.getItem("curator_token")).current;
   const isCurrent = session.capture(sessionToken);
@@ -68,11 +70,11 @@ export default function PromotionPage() {
       });
       const settingsData = await safeResponseJson(settingsResponse);
       if (!current()) return;
-      if (!settingsResponse.ok) throw new Error(settingsData.error || "Unable to load curator settings.");
+      if (!settingsResponse.ok) throw new Error(settingsData.error || t("page.errors.settings"));
       setSettings(settingsData);
     } catch (error: any) {
       if (!current()) return;
-      setErrorMessage(error.message || "Unable to initialize Promotion Center.");
+      setErrorMessage(error.message || t("page.errors.initialize"));
     } finally {
       if (current()) setLoading(false);
     }
@@ -132,8 +134,8 @@ export default function PromotionPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans">
         <div className="bg-white border border-slate-200 rounded-2xl p-8 shadow-xl text-center max-w-sm">
           <Loader2 className="w-9 h-9 text-sky-500 animate-spin mx-auto" />
-          <h2 className="font-display font-bold text-slate-800 text-lg mt-4">Opening Promotion Center</h2>
-          <p className="text-xs text-slate-500 mt-1">Verifying your session and loading campaign data.</p>
+          <h2 className="font-display font-bold text-slate-800 text-lg mt-4">{t("page.opening")}</h2>
+          <p className="text-xs text-slate-500 mt-1">{t("page.loading")}</p>
           {errorMessage && <p className="text-xs text-rose-600 mt-4">{errorMessage}</p>}
         </div>
       </div>
@@ -158,7 +160,7 @@ export default function PromotionPage() {
         )}
         {errorMessage && (
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-800 shadow-sm" role="alert">
-            <p className="font-bold">Notice</p>
+            <p className="font-bold">{t("page.notice")}</p>
             <p className="mt-0.5 text-rose-700">{errorMessage}</p>
           </div>
         )}
