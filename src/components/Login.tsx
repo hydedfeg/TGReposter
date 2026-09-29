@@ -167,13 +167,13 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete={passwordSet ? "current-password" : "new-password"}
-                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-3.5 pr-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-3.5 pe-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center text-slate-400 transition-colors hover:text-slate-600"
+                    className="absolute end-0 top-0 flex h-12 w-12 items-center justify-center text-slate-400 transition-colors hover:text-slate-600"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
