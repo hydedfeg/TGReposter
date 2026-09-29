@@ -12,7 +12,7 @@ import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotTo
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
-import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
+import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, isAppUiLocale, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, updateSupabaseAppUserUiLocale, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -539,8 +539,42 @@ app.post("/api/auth/status", async (req, res) => {
     role: session?.role ?? null,
     username: session?.username ?? null,
     authProvider: session?.authProvider ?? null,
+    uiLocale: session?.uiLocale ?? null,
     accountKey: session ? ownerPrincipalForUser(session) : null,
   });
+});
+
+// Persist the current Supabase user's interface language. Legacy local accounts
+// keep using browser localStorage until they are migrated to Supabase Auth.
+app.put("/api/auth/ui-locale", authMiddleware, async (req: any, res: any) => {
+  const locale = req.body?.locale;
+
+  if (!isAppUiLocale(locale)) {
+    return res.status(400).json({
+      error: "Unsupported interface locale. Expected one of: en, ru, ar, fa.",
+    });
+  }
+
+  if (req.user?.authProvider !== "supabase" || !req.user?.id) {
+    return res.json({
+      success: true,
+      persisted: false,
+      uiLocale: null,
+    });
+  }
+
+  try {
+    const savedLocale = await updateSupabaseAppUserUiLocale(req.user.id, locale);
+    return res.json({
+      success: true,
+      persisted: true,
+      uiLocale: savedLocale,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      error: error?.message || "Unable to persist interface locale.",
+    });
+  }
 });
 
 // Setup initial super-admin account
@@ -578,6 +612,7 @@ app.post("/api/auth/setup", async (req, res) => {
     role: newUser.role,
     username: newUser.username,
     accountKey: ownerPrincipalForUser({ username: newUser.username, authProvider: "legacy" }),
+    uiLocale: null,
     message: "Super-admin account configured successfully!",
   });
 });
@@ -619,6 +654,7 @@ app.post("/api/auth/login", async (req, res) => {
           username: result.user.username,
           email: result.user.email,
           authProvider: "supabase",
+          uiLocale: result.user.uiLocale,
           accountKey: ownerPrincipalForUser(result.user),
         });
       }
@@ -653,6 +689,7 @@ app.post("/api/auth/login", async (req, res) => {
     role: user.role,
     username: user.username,
     authProvider: "legacy",
+    uiLocale: null,
     accountKey: ownerPrincipalForUser({ username: user.username, authProvider: "legacy" }),
   });
 });
