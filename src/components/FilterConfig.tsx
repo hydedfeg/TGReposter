@@ -96,7 +96,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
           </p>
         </div>
 
-        {/* Case Sensitive Switch */}
+        {/* Case-sensitivity control */}
         <button
           type="button"
           onClick={toggleCaseSensitive}
@@ -115,7 +115,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
       </div>
 
       <div className="space-y-6">
-        {/* Positive Keywords (Must Match) */}
+        {/* Positive include rules */}
         <div>
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
             {t("positive.label")}
@@ -170,7 +170,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
           )}
         </div>
 
-        {/* Required Hashtags */}
+        {/* Required hashtag rules */}
         <div>
           <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
             {t("hashtags.label")}
@@ -229,7 +229,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
           )}
         </div>
 
-        {/* Negative Keywords (Silences/Filters) */}
+        {/* Negative exclude rules */}
         <div className="border-t border-slate-100 pt-5">
           <label className="block text-xs font-bold uppercase tracking-wider text-rose-700 mb-2">
             {t("negative.label")}
