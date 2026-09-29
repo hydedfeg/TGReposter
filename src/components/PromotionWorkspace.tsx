@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
-  ArrowLeft,
   BarChart3,
   Check,
   CheckCircle2,
@@ -887,7 +886,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
 
                       {editing ? (
                         <div className="mt-4 grid gap-3">
-                          <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.contentMode")}</span><select value={editMode} onChange={event => setEditMode(event.target.value as PromotionContentMode)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs bg-white">{Object.entries(contentModeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                          <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.contentMode")}</span><select value={editMode} onChange={event => setEditMode(event.target.value as PromotionContentMode)} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs bg-white">{Object.entries(contentModeKeys).map(([value, key]) => <option key={value} value={value}>{t(key)}</option>)}</select></label>
                           {editMode !== "original" && (
                             <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.promotionText")}</span><textarea value={editPromotionText} dir="auto" onChange={event => setEditPromotionText(event.target.value)} rows={6} placeholder={editMode === "ai" ? t("workspace.posts.aiPlaceholder") : t("workspace.posts.textPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs leading-relaxed resize-y outline-none focus:border-sky-400" /></label>
                           )}
