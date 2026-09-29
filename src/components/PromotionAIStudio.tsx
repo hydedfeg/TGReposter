@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
   BrainCircuit,
@@ -42,14 +43,14 @@ interface PromotionAIStudioProps {
   onToast: (message: string, type?: "success" | "error") => void;
 }
 
-const actions: Array<{ value: PromotionAIAction; label: string; help: string }> = [
-  { value: "teaser", label: "Teaser", help: "Create a concise curiosity-building introduction without clickbait." },
-  { value: "rewrite", label: "Promotional rewrite", help: "Turn the source or current draft into polished promotional copy." },
-  { value: "shorten", label: "Shorten", help: "Compress the working copy while preserving essential facts." },
-  { value: "expand", label: "Expand", help: "Improve structure and explanation without inventing new facts." },
-  { value: "translate", label: "Translate", help: "Translate faithfully while preserving links, names, and formatting." },
-  { value: "cta", label: "Generate CTA", help: "Generate one short call-to-action for the campaign post." },
-  { value: "hashtags", label: "Generate hashtags", help: "Create 3-6 relevant Telegram hashtags." },
+const actions: Array<{ value: PromotionAIAction; labelKey: string; helpKey: string }> = [
+  { value: "teaser", labelKey: "ai.actions.teaser.label", helpKey: "ai.actions.teaser.help" },
+  { value: "rewrite", labelKey: "ai.actions.rewrite.label", helpKey: "ai.actions.rewrite.help" },
+  { value: "shorten", labelKey: "ai.actions.shorten.label", helpKey: "ai.actions.shorten.help" },
+  { value: "expand", labelKey: "ai.actions.expand.label", helpKey: "ai.actions.expand.help" },
+  { value: "translate", labelKey: "ai.actions.translate.label", helpKey: "ai.actions.translate.help" },
+  { value: "cta", labelKey: "ai.actions.cta.label", helpKey: "ai.actions.cta.help" },
+  { value: "hashtags", labelKey: "ai.actions.hashtags.label", helpKey: "ai.actions.hashtags.help" },
 ];
 
 const styles: PromotionAIStyle[] = [
@@ -62,11 +63,11 @@ const styles: PromotionAIStyle[] = [
   "viral",
 ];
 
-const modeLabels: Record<PromotionContentMode, string> = {
-  original: "Original",
-  teaser: "Teaser",
-  ai: "AI prepared",
-  custom: "Custom",
+const modeKeys: Record<PromotionContentMode, string> = {
+  original: "common.contentMode.original",
+  teaser: "common.contentMode.teaser",
+  ai: "common.contentMode.ai",
+  custom: "common.contentMode.custom",
 };
 
 function previewText(post: StudioCampaignPost | null, mode: PromotionContentMode, draft: string, cta: string) {
@@ -80,6 +81,7 @@ function previewText(post: StudioCampaignPost | null, mode: PromotionContentMode
 }
 
 export default function PromotionAIStudio({ currentUserRole, onToast }: PromotionAIStudioProps) {
+  const { t } = useTranslation("promotion");
   const [campaigns, setCampaigns] = useState<PromotionCampaign[]>([]);
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [campaignId, setCampaignId] = useState("");
@@ -105,7 +107,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
   }, []);
   const requireCurrentSession = () => {
     if (!requestsActive.current || localStorage.getItem("curator_token") !== requestToken) {
-      throw new Error("Session changed. Please reopen your workspace.");
+      throw new Error(t("ai.feedback.sessionChanged"));
     }
   };
 
@@ -126,7 +128,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
     const response = await authFetch(url, options);
     const data = await safeResponseJson(response);
     requireCurrentSession();
-    if (!response.ok) throw new Error(data?.error || `Promotion AI request failed (${response.status}).`);
+    if (!response.ok) throw new Error(data?.error || t("ai.feedback.requestFailed", { status: response.status }));
     return data;
   };
 
@@ -161,7 +163,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
       await loadCampaigns();
       if (campaignId) await loadDetail(campaignId);
     } catch (err: any) {
-      setError(err.message || "Unable to load Promotion AI Studio.");
+      setError(err.message || t("ai.feedback.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -177,7 +179,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
     setProviderInfo("");
     setBusy(true);
     loadDetail(campaignId)
-      .catch((err: any) => setError(err.message || "Unable to load campaign."))
+      .catch((err: any) => setError(err.message || t("ai.feedback.campaignLoadFailed")))
       .finally(() => setBusy(false));
   }, [campaignId]);
 
@@ -206,15 +208,15 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
 
   const generate = async () => {
     if (!detail || !selectedPost) {
-      onToast("Select a campaign post first.", "error");
+      onToast(t("ai.feedback.selectPost"), "error");
       return;
     }
     if (!editableCampaign) {
-      onToast("AI generation is available only for Draft or Ready campaigns.", "error");
+      onToast(t("ai.feedback.editableOnly"), "error");
       return;
     }
     if (action === "translate" && !language.trim()) {
-      onToast("Choose a target language for translation.", "error");
+      onToast(t("ai.feedback.chooseLanguage"), "error");
       return;
     }
 
@@ -236,10 +238,10 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
       );
       setGeneratedResult(data.result || "");
       setProviderInfo([data.provider, data.model].filter(Boolean).join(" · "));
-      onToast(`${selectedAction.label} generated. Review it before applying.`);
+      onToast(t("ai.feedback.generated", { action: t(selectedAction.labelKey) }));
     } catch (err: any) {
-      setError(err.message || "AI generation failed.");
-      onToast(err.message || "AI generation failed.", "error");
+      setError(err.message || t("ai.feedback.generationFailed"));
+      onToast(err.message || t("ai.feedback.generationFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -260,17 +262,17 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
       setDraftText(result);
       setSaveMode(action === "teaser" ? "teaser" : "ai");
     }
-    onToast("Generated result applied to the editable campaign copy.");
+    onToast(t("ai.feedback.applied"));
   };
 
   const save = async () => {
     if (!detail || !selectedPost) return;
     if (!editableCampaign) {
-      onToast("Only Draft or Ready campaign posts can be edited.", "error");
+      onToast(t("ai.feedback.editOnly"), "error");
       return;
     }
     if (saveMode !== "original" && !draftText.trim()) {
-      onToast(`${modeLabels[saveMode]} mode requires promotion text.`, "error");
+      onToast(t("ai.feedback.modeNeedsText", { mode: t(modeKeys[saveMode]) }), "error");
       return;
     }
 
@@ -285,9 +287,9 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
         }),
       });
       await loadDetail(detail.campaign.id);
-      onToast("AI-assisted promotion copy saved to the campaign.");
+      onToast(t("ai.feedback.saved"));
     } catch (err: any) {
-      onToast(err.message || "Unable to save promotion copy.", "error");
+      onToast(err.message || t("ai.feedback.saveFailed"), "error");
     } finally {
       setBusy(false);
     }
