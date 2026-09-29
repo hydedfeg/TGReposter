@@ -117,10 +117,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       const isSuccess = res.ok && data.success;
       
       // Update local status
-      const updatedTargets = targets.map(t => 
-        t.id === target.id 
-          ? { ...t, status: (isSuccess ? "success" : "error") as 'success' | 'error', errorMessage: isSuccess ? undefined : (data.error || t("feedback.verificationFallback")) }
-          : t
+      const updatedTargets = targets.map(targetItem =>
+        targetItem.id === target.id
+          ? { ...targetItem, status: (isSuccess ? "success" : "error") as 'success' | 'error', errorMessage: isSuccess ? undefined : (data.error || t("feedback.verificationFallback")) }
+          : targetItem
       );
       setTargets(updatedTargets);
 
