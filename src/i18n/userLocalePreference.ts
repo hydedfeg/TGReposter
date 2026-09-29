@@ -42,11 +42,16 @@ export async function reconcileAuthenticatedAppLocale(
   remoteLocale: unknown,
   token = browserToken(),
 ): Promise<AppLocale> {
-  if (isAppLocale(typeof remoteLocale === "string" ? remoteLocale : null)) {
-    if (normalizeAppLocale(i18n.language) !== remoteLocale) {
-      await changeAppLocale(remoteLocale);
+  const storedLocale =
+    typeof remoteLocale === "string" && isAppLocale(remoteLocale)
+      ? remoteLocale
+      : null;
+
+  if (storedLocale) {
+    if (normalizeAppLocale(i18n.language) !== storedLocale) {
+      await changeAppLocale(storedLocale);
     }
-    return remoteLocale;
+    return storedLocale;
   }
 
   const localLocale = normalizeAppLocale(i18n.language);
