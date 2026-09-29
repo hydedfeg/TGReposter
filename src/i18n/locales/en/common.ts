@@ -8,6 +8,9 @@ const common = {
     ar: "Arabic",
     fa: "Persian",
   },
+  languageSelector: {
+    label: "Interface language",
+  },
 } as const;
 
 export default common;
