@@ -152,7 +152,7 @@ function getRenderedPreview(campaignPost: CampaignDetailPost) {
   return parts.join("\n\n").trim();
 }
 
-export default function PromotionWorkspace({ posts, currentUserRole, onToast }: PromotionWorkspaceProps) {
+export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspaceProps) {
   const { t, i18n } = useTranslation("promotion");
   const locale = normalizeAppLocale(i18n.language);
   const numberFormatter = new Intl.NumberFormat(locale);
