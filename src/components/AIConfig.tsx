@@ -306,7 +306,7 @@ export default function AIConfig({
               ) : (
                 <>
                   <span>Run AI Test</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <ArrowRight className="rtl-mirror w-3.5 h-3.5" />
                 </>
               )}
             </button>
