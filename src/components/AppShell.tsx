@@ -108,7 +108,7 @@ function SidebarButton({
       type="button"
       onClick={() => onSelect(item.view)}
       aria-current={active ? "page" : undefined}
-      className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
+      className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-start text-sm font-semibold transition-colors ${
         active
           ? "bg-sky-500 text-white shadow-lg shadow-sky-950/20"
           : "text-slate-300 hover:bg-white/8 hover:text-white"
@@ -197,13 +197,13 @@ export default function AppShell({
     <div className="min-h-screen bg-slate-100/70 text-slate-950">
       <aside
         id="desktop-sidebar"
-        className={`fixed inset-y-0 left-0 z-50 w-64 flex-col bg-slate-950 px-3 py-4 text-white ${sidebarOpen ? "hidden lg:flex" : "hidden"}`}
+        className={`fixed inset-y-0 start-0 z-50 w-64 flex-col bg-slate-950 px-3 py-4 text-white ${sidebarOpen ? "hidden lg:flex" : "hidden"}`}
       >
         <div className="flex min-h-12 items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => navigate("dashboard")}
-            className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-2 text-left"
+            className="flex min-h-12 min-w-0 items-center gap-3 rounded-xl px-2 text-start"
             aria-label={t("accessibility.openDashboard")}
           >
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500 shadow-lg shadow-sky-950/30">
@@ -279,7 +279,7 @@ export default function AppShell({
         </div>
       </aside>
 
-      <div className={`min-h-screen transition-[padding] duration-200 ${sidebarOpen ? "lg:pl-64" : "lg:pl-0"}`}>
+      <div className={`min-h-screen transition-[padding] duration-200 ${sidebarOpen ? "lg:ps-64" : "lg:ps-0"}`}>
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
             <div className="flex min-w-0 items-center gap-3">
@@ -366,7 +366,7 @@ export default function AppShell({
                   type="button"
                   key={item.view}
                   onClick={() => navigate(item.view)}
-                  className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-left text-sm font-semibold text-slate-700"
+                  className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-start text-sm font-semibold text-slate-700"
                 >
                   <Icon className="h-5 w-5 text-sky-600" aria-hidden="true" />
                   {t(item.labelKey)}
@@ -381,7 +381,7 @@ export default function AppShell({
                       type="button"
                       key={item.view}
                       onClick={() => navigate(item.view)}
-                      className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-left text-sm font-semibold text-slate-700"
+                      className="flex min-h-14 items-center gap-3 rounded-xl bg-slate-50 px-3 text-start text-sm font-semibold text-slate-700"
                     >
                       <Icon className="h-5 w-5 text-sky-600" aria-hidden="true" />
                       {t(item.labelKey)}
