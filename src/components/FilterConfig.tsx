@@ -142,7 +142,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
               {filters.positiveKeywords.map((kw) => (
                 <span
                   key={kw}
-                  className="inline-flex items-center gap-1 bg-sky-50 border border-sky-100 text-sky-800 text-xs pl-2.5 pr-1.5 py-1 rounded-lg font-medium"
+                  className="inline-flex items-center gap-1 bg-sky-50 border border-sky-100 text-sky-800 text-xs ps-2.5 pe-1.5 py-1 rounded-lg font-medium"
                 >
                   {kw}
                   {!readOnly && (
@@ -168,13 +168,13 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
           {!readOnly && (
             <form onSubmit={handleAddHashtag} className="flex gap-2 mb-3">
               <div className="relative flex-1">
-                <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-medium">#</span>
+                <span className="absolute start-3 top-2.5 text-slate-400 text-sm font-medium">#</span>
                 <input
                   type="text"
                   placeholder="tech, ai, health"
                   value={hashInput}
                   onChange={(e) => setHashInput(e.target.value)}
-                  className="w-full pl-7 pr-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50/50 outline-hidden font-sans placeholder-slate-400"
+                  className="w-full ps-7 pe-3 py-2 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-sm bg-slate-50/50 outline-hidden font-sans placeholder-slate-400"
                 />
               </div>
               <button
@@ -195,7 +195,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
               {filters.requiredHashtags.map((hash) => (
                 <span
                   key={hash}
-                  className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-100 text-indigo-800 text-xs pl-2.5 pr-1.5 py-1 rounded-lg font-medium"
+                  className="inline-flex items-center gap-1 bg-indigo-50 border border-indigo-100 text-indigo-800 text-xs ps-2.5 pe-1.5 py-1 rounded-lg font-medium"
                 >
                   <Hash className="w-3 h-3 text-indigo-500 shrink-0" />
                   {hash.replace(/^#/, "")}
@@ -246,7 +246,7 @@ export default function FilterConfig({ filters, onUpdateFilters, readOnly = fals
               {filters.negativeKeywords.map((kw) => (
                 <span
                   key={kw}
-                  className="inline-flex items-center gap-1 bg-rose-50 border border-rose-100 text-rose-800 text-xs pl-2.5 pr-1.5 py-1 rounded-lg font-medium"
+                  className="inline-flex items-center gap-1 bg-rose-50 border border-rose-100 text-rose-800 text-xs ps-2.5 pe-1.5 py-1 rounded-lg font-medium"
                 >
                   {kw}
                   {!readOnly && (
