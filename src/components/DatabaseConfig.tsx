@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   Table2,
   Users,
 } from "lucide-react";
+import { normalizeAppLocale } from "../i18n";
 import { safeResponseJson } from "../utils/api";
 
 interface RuntimeTableStatus {
@@ -76,44 +78,20 @@ interface DatabaseStatus {
   error?: string;
 }
 
-const tableLabels: Record<string, string> = {
-  source_channels: "Personal Sources",
-  filters: "Personal Filters",
-  destination_targets: "Personal Destinations",
-  ai_settings: "Personal AI Settings",
-  posts: "Personal Monitored Posts",
-  user_inbox_items: "Personal Inbox State",
-  curator_settings: "Legacy Compatibility",
+interface SystemErrorState {
+  message?: string;
+  messageKey?: string;
+}
+
+const tableScopes: Record<string, "personal" | "compatibility"> = {
+  source_channels: "personal",
+  filters: "personal",
+  destination_targets: "personal",
+  ai_settings: "personal",
+  posts: "personal",
+  user_inbox_items: "personal",
+  curator_settings: "compatibility",
 };
-
-const tableScopes: Record<string, "Personal" | "Compatibility"> = {
-  source_channels: "Personal",
-  filters: "Personal",
-  destination_targets: "Personal",
-  ai_settings: "Personal",
-  posts: "Personal",
-  user_inbox_items: "Personal",
-  curator_settings: "Compatibility",
-};
-
-function formatSchedule(schedule: string) {
-  if (schedule === "*/5 * * * *") return "Every 5 minutes";
-  if (schedule === "0 * * * *") return "Every hour";
-  return schedule;
-}
-
-function formatJobName(name: string) {
-  if (name === "tgreposter-inbox-import") return "Source Inbox Import";
-  if (name === "tgreposter-inbox-cleanup") return "Rolling Inbox Cleanup";
-  return name;
-}
-
-function formatLastRun(value?: string) {
-  if (!value) return "No run recorded";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
 
 function HealthBadge({
   healthy,
@@ -158,9 +136,45 @@ function Metric({
 }
 
 export default function DatabaseConfig() {
+  const { t, i18n } = useTranslation("system");
+  const locale = normalizeAppLocale(i18n.language);
+  const numberFormatter = new Intl.NumberFormat(locale);
+  const dateTimeFormatter = new Intl.DateTimeFormat(`${locale}-u-ca-gregory`, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
   const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SystemErrorState | null>(null);
+
+  const formatSchedule = (schedule: string) => {
+    if (schedule === "*/5 * * * *") return t("automation.schedules.everyFiveMinutes");
+    if (schedule === "0 * * * *") return t("automation.schedules.everyHour");
+    return schedule;
+  };
+
+  const formatJobName = (name: string) => {
+    if (name === "tgreposter-inbox-import") return t("automation.jobs.import");
+    if (name === "tgreposter-inbox-cleanup") return t("automation.jobs.cleanup");
+    return name;
+  };
+
+  const formatLastRun = (value?: string) => {
+    if (!value) return t("automation.noRun");
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return dateTimeFormatter.format(date);
+  };
+
+  const ownerCount = (count: number) =>
+    t("workspace.owners", {
+      count,
+      formattedCount: numberFormatter.format(count),
+    });
 
   const fetchStatus = async () => {
     setLoading(true);
@@ -175,28 +189,35 @@ export default function DatabaseConfig() {
 
       if (!response.ok) {
         const body = await safeResponseJson(response).catch(() => null);
-        throw new Error(body?.error || "Failed to fetch system status.");
+        if (body?.error) {
+          setError({ message: body.error });
+        } else {
+          setError({ messageKey: "unavailable.fetchFailed" });
+        }
+        return;
       }
 
       setStatus(await safeResponseJson(response));
-    } catch (err: any) {
-      setError(err?.message || "System health check failed.");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error && err.message
+          ? { message: err.message }
+          : { messageKey: "unavailable.healthFailed" },
+      );
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchStatus();
+    void fetchStatus();
   }, []);
 
   if (loading && !status) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white p-10">
         <RefreshCw className="mb-3 h-8 w-8 animate-spin text-sky-500" aria-hidden="true" />
-        <p className="text-sm font-medium text-slate-500">
-          Checking per-user application data isolation...
-        </p>
+        <p className="text-sm font-medium text-slate-500">{t("loading")}</p>
       </div>
     );
   }
@@ -207,17 +228,19 @@ export default function DatabaseConfig() {
         <AlertTriangle className="h-10 w-10 text-amber-500" aria-hidden="true" />
         <div>
           <h3 className="font-display text-base font-bold text-slate-800">
-            System health unavailable
+            {t("unavailable.title")}
           </h3>
-          <p className="mt-1 max-w-md text-xs leading-5 text-slate-500">{error}</p>
+          <p className="mt-1 max-w-md text-xs leading-5 text-slate-500" dir="auto">
+            {error.messageKey ? t(error.messageKey) : error.message}
+          </p>
         </div>
         <button
           type="button"
-          onClick={fetchStatus}
+          onClick={() => void fetchStatus()}
           className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-100 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-200"
         >
           <RefreshCw className="h-4 w-4" aria-hidden="true" />
-          Retry
+          {t("unavailable.retry")}
         </button>
       </div>
     );
@@ -227,39 +250,45 @@ export default function DatabaseConfig() {
 
   const overviewCards = [
     {
-      label: "Backend Runtime",
-      title: "Normalized PostgreSQL",
+      label: t("overview.backendLabel"),
+      title: t("overview.backendTitle"),
       icon: Server,
       healthy:
         health.configured &&
         health.hasDirectDbUrl &&
         health.backendMode === "normalized-postgres",
-      healthyText: "Backend active",
-      unhealthyText: "Backend unavailable",
+      healthyText: t("overview.backendActive"),
+      unhealthyText: t("overview.backendUnavailable"),
     },
     {
-      label: "Multi-user Architecture",
-      title: "Workspace Isolation",
+      label: t("overview.architectureLabel"),
+      title: t("overview.architectureTitle"),
       icon: Layers3,
       healthy: health.workspace.ready,
-      healthyText: "Personal data isolated",
-      unhealthyText: "Cutover incomplete",
+      healthyText: t("overview.isolated"),
+      unhealthyText: t("overview.cutoverIncomplete"),
     },
     {
-      label: "Automation",
-      title: "Collection & Cleanup",
+      label: t("overview.automationLabel"),
+      title: t("overview.automationTitle"),
       icon: Clock3,
       healthy: health.automation.ready,
-      healthyText: "Jobs active",
-      unhealthyText: "Automation incomplete",
+      healthyText: t("overview.jobsActive"),
+      unhealthyText: t("overview.automationIncomplete"),
     },
     {
-      label: "Data Security",
-      title: "Backend-Owned Tables",
+      label: t("overview.securityLabel"),
+      title: t("overview.securityTitle"),
       icon: ShieldCheck,
       healthy: health.security.ready,
-      healthyText: `${health.security.protectedCount}/${health.security.expectedCount} protected`,
-      unhealthyText: `${health.security.protectedCount}/${health.security.expectedCount} protected`,
+      healthyText: t("overview.protected", {
+        protected: numberFormatter.format(health.security.protectedCount),
+        expected: numberFormatter.format(health.security.expectedCount),
+      }),
+      unhealthyText: t("overview.protected", {
+        protected: numberFormatter.format(health.security.protectedCount),
+        expected: numberFormatter.format(health.security.expectedCount),
+      }),
     },
   ];
 
@@ -271,20 +300,17 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Database className="h-5 w-5 text-indigo-600" aria-hidden="true" />
               <h2 className="font-display text-lg font-bold text-slate-950">
-                System Architecture & Health
+                {t("header.title")}
               </h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              This page is system-wide and Super-Admin only. It verifies that every
-              application record—including sources, filters, AI preferences, monitored
-              posts, Inbox state, and destinations—is owned by one member. Credentials
-              remain managed from each member&apos;s My Destinations workspace.
+              {t("header.description")}
             </p>
           </div>
 
           <div className="flex items-center gap-2 self-start rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-bold text-indigo-800">
             <ShieldCheck className="h-5 w-5 text-indigo-600" aria-hidden="true" />
-            System administration scope
+            {t("header.scope")}
           </div>
         </div>
 
@@ -319,8 +345,10 @@ export default function DatabaseConfig() {
           <div className="mt-5 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
             <div>
-              <p className="text-sm font-bold">System health notice</p>
-              <p className="mt-1 text-xs leading-5">{health.error || error}</p>
+              <p className="text-sm font-bold">{t("header.notice")}</p>
+              <p className="mt-1 text-xs leading-5" dir="auto">
+                {health.error || (error?.messageKey ? t(error.messageKey) : error?.message)}
+              </p>
             </div>
           </div>
         ) : null}
@@ -329,11 +357,9 @@ export default function DatabaseConfig() {
           <div className="mt-5 flex gap-3 rounded-xl border border-violet-200 bg-violet-50 p-4 text-violet-900">
             <Layers3 className="mt-0.5 h-5 w-5 shrink-0 text-violet-600" aria-hidden="true" />
             <div>
-              <p className="text-sm font-bold">Full application ownership cutover pending</p>
+              <p className="text-sm font-bold">{t("header.cutoverTitle")}</p>
               <p className="mt-1 text-xs leading-5 text-violet-800">
-                A coordinated database and backend release is still required before every
-                source, filter, AI setting, monitored post, Inbox item, and destination is
-                structurally required to have an owner.
+                {t("header.cutoverDescription")}
               </p>
             </div>
           </div>
@@ -341,14 +367,14 @@ export default function DatabaseConfig() {
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
           <p className="text-xs text-slate-400">
-            Supabase endpoint:{" "}
-            <span className="font-medium text-slate-500">
-              {health.supabaseUrl || "Not configured"}
+            {t("header.supabaseEndpoint")}{" "}
+            <span className="font-medium text-slate-500" dir="ltr">
+              {health.supabaseUrl || t("header.notConfigured")}
             </span>
           </p>
           <button
             type="button"
-            onClick={fetchStatus}
+            onClick={() => void fetchStatus()}
             disabled={loading}
             className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
@@ -356,7 +382,7 @@ export default function DatabaseConfig() {
               className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
               aria-hidden="true"
             />
-            Refresh health
+            {t("header.refresh")}
           </button>
         </div>
       </section>
@@ -367,24 +393,23 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-sky-600" aria-hidden="true" />
               <h3 className="font-display text-base font-bold text-slate-950">
-                Personal Monitoring Data
+                {t("monitoring.title")}
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Sources and crawled Telegram posts are stored separately for each member,
-              even when two members monitor the same public channel.
+              {t("monitoring.description")}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-px bg-slate-100">
             <Metric
-              label="Source Channels"
-              value={health.counts.sourceChannels}
-              helper={`${health.workspace.sourceOwners} owner(s)`}
+              label={t("monitoring.sourceChannels")}
+              value={numberFormatter.format(health.counts.sourceChannels)}
+              helper={ownerCount(health.workspace.sourceOwners)}
             />
             <Metric
-              label="Monitored Posts · 24h"
-              value={health.counts.inboxPosts}
-              helper={`${health.workspace.postOwners} owner(s)`}
+              label={t("monitoring.monitoredPosts")}
+              value={numberFormatter.format(health.counts.inboxPosts)}
+              helper={ownerCount(health.workspace.postOwners)}
             />
           </div>
         </section>
@@ -394,44 +419,43 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-emerald-600" aria-hidden="true" />
               <h3 className="font-display text-base font-bold text-slate-950">
-                Personal Workspace Data
+                {t("workspace.title")}
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Inbox workflow and publishing configuration are also separated by ownership
-              principal. Counts below are aggregate system health metrics only.
+              {t("workspace.description")}
             </p>
           </div>
           <div className="grid grid-cols-2 gap-px bg-slate-100 sm:grid-cols-3">
             <Metric
-              label="Destination Targets"
-              value={health.counts.destinationTargets}
-              helper={`${health.workspace.destinationOwners} owner(s)`}
+              label={t("workspace.destinationTargets")}
+              value={numberFormatter.format(health.counts.destinationTargets)}
+              helper={ownerCount(health.workspace.destinationOwners)}
             />
             <Metric
-              label="Inbox Workflow Rows"
-              value={health.counts.userInboxItems}
-              helper={`${health.workspace.inboxOwners} owner(s)`}
+              label={t("workspace.inboxRows")}
+              value={numberFormatter.format(health.counts.userInboxItems)}
+              helper={ownerCount(health.workspace.inboxOwners)}
             />
             <Metric
-              label="Published Workflow"
-              value={health.counts.postedPosts}
-              helper="Per-user publish states"
+              label={t("workspace.publishedWorkflow")}
+              value={numberFormatter.format(health.counts.postedPosts)}
+              helper={t("workspace.publishStates")}
             />
             <Metric
-              label="Supabase Members"
-              value={health.workspace.activeSupabaseUsers}
-              helper="Active durable identities"
+              label={t("workspace.supabaseMembers")}
+              value={numberFormatter.format(health.workspace.activeSupabaseUsers)}
+              helper={t("workspace.durableIdentities")}
             />
             <Metric
-              label="Legacy Members"
-              value={health.workspace.legacyUsers}
-              helper="Username-owned workspaces"
+              label={t("workspace.legacyMembers")}
+              value={numberFormatter.format(health.workspace.legacyUsers)}
+              helper={t("workspace.usernameOwned")}
             />
             <Metric
-              label="Unowned App Rows"
-              value={health.workspace.unownedApplicationRows}
-              helper="Should remain 0"
+              label={t("workspace.unownedRows")}
+              value={numberFormatter.format(health.workspace.unownedApplicationRows)}
+              helper={t("workspace.shouldRemainZero")}
             />
           </div>
         </section>
@@ -442,18 +466,17 @@ export default function DatabaseConfig() {
           <div className="flex items-center gap-2">
             <Table2 className="h-5 w-5 text-indigo-600" aria-hidden="true" />
             <h3 className="font-display text-base font-bold text-slate-950">
-              Runtime Data Boundaries
+              {t("runtime.title")}
             </h3>
           </div>
           <p className="mt-1 text-xs leading-5 text-slate-500">
-            All application tables are personal. Only the legacy compatibility record is
-            system-level, and browser clients do not receive direct database write access.
+            {t("runtime.description")}
           </p>
         </div>
 
         <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
           {health.runtime.tables.map((table) => {
-            const scope = tableScopes[table.name] || "Personal";
+            const scope = tableScopes[table.name] || "personal";
             return (
               <div
                 key={table.name}
@@ -462,21 +485,19 @@ export default function DatabaseConfig() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="text-xs font-bold text-slate-700">
-                      {tableLabels[table.name] || table.name}
+                      {t(`runtime.tables.${table.name}`, { defaultValue: table.name })}
                     </p>
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        scope === "Personal"
+                        scope === "personal"
                           ? "bg-emerald-50 text-emerald-700"
-                          : scope === "Compatibility"
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-sky-50 text-sky-700"
+                          : "bg-amber-50 text-amber-700"
                       }`}
                     >
-                      {scope}
+                      {t(`runtime.scopes.${scope}`)}
                     </span>
                   </div>
-                  <p className="mt-1 truncate font-mono text-[10px] text-slate-400">
+                  <p className="mt-1 truncate font-mono text-[10px] text-slate-400" dir="ltr">
                     {table.name}
                   </p>
                 </div>
@@ -497,12 +518,11 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Bot className="h-5 w-5 text-emerald-600" aria-hidden="true" />
               <h3 className="font-display text-base font-bold text-slate-950">
-                Workspace Isolation Checks
+                {t("isolation.title")}
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              These checks verify that no application data can exist outside a member
-              workspace.
+              {t("isolation.description")}
             </p>
           </div>
 
@@ -510,56 +530,56 @@ export default function DatabaseConfig() {
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4">
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Complete application ownership
+                  {t("isolation.ownershipTitle")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Sources, filters, AI settings, posts, and destinations require an owner.
+                  {t("isolation.ownershipDescription")}
                 </p>
               </div>
               <HealthBadge
                 healthy={health.workspace.applicationOwnershipReady}
-                healthyText="Ready"
-                unhealthyText="Missing"
+                healthyText={t("isolation.ready")}
+                unhealthyText={t("isolation.missing")}
               />
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4">
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Content Inbox isolation
+                  {t("isolation.inboxTitle")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Review/edit/publish state joins only to posts owned by the same member.
+                  {t("isolation.inboxDescription")}
                 </p>
               </div>
               <HealthBadge
                 healthy={health.workspace.inboxIsolationReady}
-                healthyText="Ready"
-                unhealthyText="Cutover pending"
+                healthyText={t("isolation.ready")}
+                unhealthyText={t("isolation.cutoverPending")}
               />
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-xl border border-slate-100 p-4">
               <div>
                 <p className="text-sm font-bold text-slate-800">
-                  Orphan application-data check
+                  {t("isolation.orphanTitle")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Every production application row should have an owner.
+                  {t("isolation.orphanDescription")}
                 </p>
               </div>
               <HealthBadge
                 healthy={health.workspace.unownedApplicationRows === 0}
-                healthyText="No orphans"
-                unhealthyText={`${health.workspace.unownedApplicationRows} unowned`}
+                healthyText={t("isolation.noOrphans")}
+                unhealthyText={t("isolation.unowned", {
+                  count: numberFormatter.format(health.workspace.unownedApplicationRows),
+                })}
               />
             </div>
 
             <div className="rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">
               <Inbox className="me-1 inline h-4 w-4 text-slate-400" aria-hidden="true" />
-              Source definitions, filters, AI preferences, monitored post text, status,
-              history, and errors are never treated as global configuration. Individual
-              Telegram bot credentials remain in user-scoped Vault secrets.
+              {t("isolation.note")}
             </div>
           </div>
         </section>
@@ -569,12 +589,11 @@ export default function DatabaseConfig() {
             <div className="flex items-center gap-2">
               <Clock3 className="h-5 w-5 text-sky-600" aria-hidden="true" />
               <h3 className="font-display text-base font-bold text-slate-950">
-                Collection Automation
+                {t("automation.title")}
               </h3>
             </div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              The scheduler enumerates owners with enabled sources and runs collection in
-              each isolated workspace using that member&apos;s filters and post records.
+              {t("automation.description")}
             </p>
           </div>
 
@@ -582,19 +601,19 @@ export default function DatabaseConfig() {
             <div className="flex flex-wrap gap-2">
               <HealthBadge
                 healthy={health.automation.pgCronInstalled}
-                healthyText="pg_cron installed"
-                unhealthyText="pg_cron missing"
+                healthyText={t("automation.cronInstalled")}
+                unhealthyText={t("automation.cronMissing")}
               />
               <HealthBadge
                 healthy={health.automation.pgNetInstalled}
-                healthyText="pg_net installed"
-                unhealthyText="pg_net missing"
+                healthyText={t("automation.netInstalled")}
+                unhealthyText={t("automation.netMissing")}
               />
             </div>
 
             {health.automation.jobs.length === 0 ? (
               <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-xs text-amber-800">
-                No TGReposter collection jobs were found.
+                {t("automation.empty")}
               </div>
             ) : (
               health.automation.jobs.map((job) => (
@@ -610,22 +629,28 @@ export default function DatabaseConfig() {
                       <p className="mt-0.5 text-xs text-slate-500">
                         {formatSchedule(job.schedule)}
                       </p>
+                      <p className="mt-1 font-mono text-[10px] text-slate-400" dir="ltr">
+                        {job.name} · {job.schedule}
+                      </p>
                     </div>
                     <HealthBadge
                       healthy={job.active && job.lastStatus !== "failed"}
                       healthyText={
-                        job.lastStatus === "succeeded" ? "Succeeded" : "Active"
+                        job.lastStatus === "succeeded"
+                          ? t("automation.succeeded")
+                          : t("automation.active")
                       }
-                      unhealthyText={job.active ? "Last run failed" : "Disabled"}
+                      unhealthyText={
+                        job.active
+                          ? t("automation.lastRunFailed")
+                          : t("automation.disabled")
+                      }
                     />
                   </div>
                   <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
-                    Last run:{" "}
-                    <span className="font-medium text-slate-600">
-                      {formatLastRun(job.lastRunAt)}
-                    </span>
+                    {t("automation.lastRun", { time: formatLastRun(job.lastRunAt) })}
                     {job.lastReturnMessage ? (
-                      <span className="ms-2 text-slate-400">
+                      <span className="ms-2 text-slate-400" dir="auto">
                         · {job.lastReturnMessage}
                       </span>
                     ) : null}
@@ -642,12 +667,10 @@ export default function DatabaseConfig() {
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
           <div>
             <h3 className="text-sm font-bold text-emerald-950">
-              Migration-managed, secure-by-default runtime
+              {t("security.title")}
             </h3>
             <p className="mt-1 text-xs leading-5 text-emerald-800">
-              Structural changes are versioned through Supabase migrations. All application
-              configuration and content are member-owned, and sensitive writes are handled
-              by authenticated backend routes rather than direct browser database access.
+              {t("security.description")}
             </p>
           </div>
         </div>
