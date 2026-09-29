@@ -75,8 +75,9 @@ test("authenticated bootstrap restores remote locale or seeds a null preference 
   const promotion = readFileSync(resolve(root, "src/PromotionPage.tsx"), "utf8");
   const login = readFileSync(resolve(root, "src/components/Login.tsx"), "utf8");
 
-  assert.match(preference, /if \(isAppLocale\(typeof remoteLocale === "string" \? remoteLocale : null\)\)/);
-  assert.match(preference, /await changeAppLocale\(remoteLocale\)/);
+  assert.match(preference, /typeof remoteLocale === "string" && isAppLocale\(remoteLocale\)/);
+  assert.match(preference, /if \(storedLocale\)/);
+  assert.match(preference, /await changeAppLocale\(storedLocale\)/);
   assert.match(preference, /const localLocale = normalizeAppLocale\(i18n\.language\)/);
   assert.match(preference, /await persistAuthenticatedAppLocale\(localLocale, token\)/);
 
