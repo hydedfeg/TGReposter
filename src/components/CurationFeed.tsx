@@ -115,7 +115,7 @@ function OriginalPostPanel({ post }: { post: CuratedPost }) {
 function TelegramPreview({ post, text }: { post: CuratedPost; text: string }) {
   return (
     <div className="rounded-2xl bg-[#dcebd2] p-4 shadow-inner">
-      <div className="ml-auto max-w-md rounded-2xl rounded-br-md bg-white px-4 py-3 shadow-sm">
+      <div className="ms-auto max-w-md rounded-2xl rounded-br-md bg-white px-4 py-3 shadow-sm">
         <p className="text-sm font-bold text-sky-700">TGReposter</p>
         <p className="mt-1 whitespace-pre-wrap text-[15px] leading-6 text-slate-800">{text || "Your curated Telegram message will appear here."}</p>
         <div className="mt-2 flex items-center justify-end gap-1 text-xs text-slate-400">
@@ -435,7 +435,7 @@ export default function CurationFeed({
   };
 
   const renderDestinationSummary = () => (
-    <div className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-left">
+    <div className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-start">
       <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><Send className="h-4 w-4 -rotate-12" aria-hidden="true" /></span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold text-slate-900">{enabledTargets.length} destination{enabledTargets.length === 1 ? "" : "s"} selected</span>
@@ -473,8 +473,8 @@ export default function CurationFeed({
           <div className="flex flex-col gap-2 sm:flex-row">
             <label className="relative block min-w-0 sm:w-80">
               <span className="sr-only">Search posts or channels</span>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search posts or channels" className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-base outline-hidden focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100 xl:text-sm" />
+              <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search posts or channels" className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-10 pe-4 text-base outline-hidden focus:border-sky-500 focus:bg-white focus:ring-4 focus:ring-sky-100 xl:text-sm" />
             </label>
             <button type="button" onClick={onTriggerScrape} disabled={isScraping} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 hover:bg-sky-100 disabled:opacity-50">
               <RefreshCw className={`h-4 w-4 ${isScraping ? "animate-spin" : ""}`} aria-hidden="true" />
@@ -504,7 +504,7 @@ export default function CurationFeed({
               </div>
               <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                 {filteredPosts.map((post) => (
-                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`flex w-full gap-3 px-4 py-4 text-left transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
+                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`flex w-full gap-3 px-4 py-4 text-start transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-sky-700">@{post.channelUsername}</span><span className="shrink-0 text-xs text-slate-400">{formatDate(post.date)}</span></span>
@@ -535,7 +535,7 @@ export default function CurationFeed({
 
           <section className="space-y-3 xl:hidden" aria-label="Mobile post list">
             {filteredPosts.map((post) => (
-              <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-left shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
+              <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-start shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
                 <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-base font-bold text-slate-900">@{post.channelUsername}</span><span className="shrink-0 text-sm text-slate-400">{formatDate(post.date)}</span></span><span className="mt-2 line-clamp-3 text-[15px] leading-6 text-slate-600">{post.originalText || "Media post"}</span><span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClasses(post.status)}`}>{tabLabels[post.status]}</span></span>
                 {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
