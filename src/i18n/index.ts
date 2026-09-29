@@ -37,7 +37,7 @@ void i18n
     fallbackLng: DEFAULT_APP_LOCALE,
     supportedLngs: [...APP_LOCALES],
     defaultNS: "common",
-    ns: ["common"],
+    ns: ["common", "navigation"],
     interpolation: {
       escapeValue: false,
     },
