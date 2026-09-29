@@ -66,7 +66,8 @@ test("language selector keeps local changes immediate and syncs authenticated ch
   assert.match(preference, /method: "PUT"/);
   assert.match(preference, /Authorization:/);
   assert.match(preference, /Bearer/);
-  assert.match(preference, /if \(!token \|\| typeof fetch === "undefined"\) return false/);
+  assert.match(preference, /if \(!token \|\| typeof fetch === "undefined"\) return Promise\.resolve\(false\)/);
+  assert.match(preference, /localePersistenceQueue = localePersistenceQueue/);
 });
 
 test("authenticated bootstrap restores remote locale or seeds a null preference from local state", () => {
