@@ -714,7 +714,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                       <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center shrink-0"><Megaphone className="w-4 h-4" /></div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-bold text-slate-900 truncate">{campaign.name}</p>
+                          <p className="text-sm font-bold text-slate-900 truncate" dir="auto">{campaign.name}</p>
                           <span className={`inline-flex border rounded-full px-2 py-0.5 text-[9px] font-bold ${statusClasses[campaign.status]}`}>{t(`common.status.${campaign.status}`)}</span>
                         </div>
                         <p className="text-[10px] text-slate-500 mt-1">{campaign.createdByUsername ? t("common.createdBy", { date: campaignDate(campaign.createdAt, locale), username: campaign.createdByUsername }) : t("common.created", { date: campaignDate(campaign.createdAt, locale) })}</p>
@@ -794,7 +794,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               {campaigns.map(campaign => (
                 <button key={campaign.id} onClick={() => openCampaign(campaign.id)} className={`w-full p-4 text-start transition-colors ${selectedCampaignId === campaign.id ? "bg-sky-50" : "hover:bg-slate-50"}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-bold text-slate-900 truncate">{campaign.name}</p>
+                    <p className="text-xs font-bold text-slate-900 truncate" dir="auto">{campaign.name}</p>
                     <span className={`shrink-0 border rounded-full px-2 py-0.5 text-[8px] font-bold ${statusClasses[campaign.status]}`}>{t(`common.status.${campaign.status}`)}</span>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1.5">{campaignDate(campaign.createdAt, locale)}</p>
@@ -816,10 +816,10 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-xl font-bold text-slate-900 break-words">{detail.campaign.name}</h3>
+                      <h3 className="text-xl font-bold text-slate-900 break-words" dir="auto">{detail.campaign.name}</h3>
                       <span className={`border rounded-full px-2.5 py-1 text-[9px] font-bold ${statusClasses[detail.campaign.status]}`}>{t(`common.status.${detail.campaign.status}`)}</span>
                     </div>
-                    {detail.campaign.description && <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-2xl">{detail.campaign.description}</p>}
+                    {detail.campaign.description && <p className="text-xs text-slate-500 mt-2 leading-relaxed max-w-2xl" dir="auto">{detail.campaign.description}</p>}
                     <p className="text-[10px] text-slate-400 mt-2">{detail.campaign.createdByUsername ? t("common.createdBy", { date: campaignDate(detail.campaign.createdAt, locale), username: detail.campaign.createdByUsername }) : t("common.created", { date: campaignDate(detail.campaign.createdAt, locale) })}</p>
                   </div>
                   {mutableCampaign && (
@@ -875,7 +875,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                             <p className="text-xs font-bold text-slate-800" dir="ltr">@{campaignPost.sourcePost?.channelUsername || t("common.unknownChannel")}</p>
                             <span className="bg-slate-100 text-slate-600 rounded-full px-2 py-0.5 text-[9px] font-bold">{t(contentModeKeys[campaignPost.contentMode])}</span>
                           </div>
-                          <p className="text-[10px] text-slate-400 mt-1.5 font-mono break-all">{campaignPost.postId}</p>
+                          <p className="text-[10px] text-slate-400 mt-1.5 font-mono break-all" dir="ltr">{campaignPost.postId}</p>
                         </div>
                         {mutableCampaign && !editing && (
                           <div className="flex gap-1.5">
@@ -924,33 +924,33 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
                   <div className="flex items-start gap-3 mb-4">
                     <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Target className="w-4.5 h-4.5" /></div>
-                    <div><h4 className="text-sm font-bold text-slate-900">Select promotion targets</h4><p className="text-[11px] text-slate-500 mt-0.5">Only verified, enabled targets can be selected. A failed target will not block successful destinations.</p></div>
+                    <div><h4 className="text-sm font-bold text-slate-900">{t("workspace.launch.title")}</h4><p className="text-[11px] text-slate-500 mt-0.5">{t("workspace.launch.description")}</p></div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-2">
                     {targets.map(target => {
                       const ready = verifiedTargets.some(item => item.id === target.id);
                       const selected = selectedTargetIds.includes(target.id);
                       return (
-                        <button key={target.id} disabled={!ready || detail.campaign.status === "running"} onClick={() => toggleTarget(target.id)} className={`text-left rounded-xl border p-3.5 transition-all ${selected ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100" : ready ? "border-slate-200 hover:border-slate-300 bg-white" : "border-slate-100 bg-slate-50 opacity-65 cursor-not-allowed"}`}>
+                        <button key={target.id} disabled={!ready || detail.campaign.status === "running"} onClick={() => toggleTarget(target.id)} className={`text-start rounded-xl border p-3.5 transition-all ${selected ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100" : ready ? "border-slate-200 hover:border-slate-300 bg-white" : "border-slate-100 bg-slate-50 opacity-65 cursor-not-allowed"}`}>
                           <div className="flex items-start gap-3">
                             <span className={`mt-0.5 w-4.5 h-4.5 rounded border flex items-center justify-center ${selected ? "bg-sky-500 border-sky-500 text-white" : "border-slate-300 bg-white"}`}>{selected && <Check className="w-3 h-3" />}</span>
-                            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-xs font-bold text-slate-800 truncate">{target.name}</p><span className={`text-[8px] font-bold rounded-full px-1.5 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>{ready ? "Verified" : target.connectionStatus}</span></div><p className="text-[10px] text-slate-400 mt-1 truncate">{target.chatId} · {target.chatType || "unknown type"}</p><p className="text-[9px] text-slate-400 mt-0.5 truncate">Bot: {target.botAccount?.name || "Unknown bot"}</p></div>
+                            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-xs font-bold text-slate-800 truncate" dir="auto">{target.name}</p><span className={`text-[8px] font-bold rounded-full px-1.5 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>{ready ? t("workspace.launch.verified") : t(`common.deliveryStatus.${target.connectionStatus === "ok" ? "success" : target.connectionStatus === "error" ? "failed" : "pending"}`)}</span></div><p className="text-[10px] text-slate-400 mt-1 truncate" dir="ltr">{target.chatId} · {target.chatType ? t(`common.chatType.${target.chatType}`) : t("common.unknownType")}</p><p className="text-[9px] text-slate-400 mt-0.5 truncate">{t("common.bot")} <span dir="auto">{target.botAccount?.name || t("common.unknownBot")}</span></p></div>
                           </div>
                         </button>
                       );
                     })}
-                    {targets.length === 0 && <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800">No promotion targets exist yet. A Super Admin must configure and verify at least one target before a campaign can launch.</div>}
+                    {targets.length === 0 && <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800">{t("workspace.launch.noTargets")}</div>}
                   </div>
 
                   {detail.campaign.status === "running" && detail.deliveries.length > 0 && (
-                    <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">This campaign is already running. Resume uses the original target set stored by the backend.</div>
+                    <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">{t("workspace.launch.running")}</div>
                   )}
 
                   <div className="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div><p className="text-xs font-bold text-slate-700">{selectedTargetIds.length} target{selectedTargetIds.length === 1 ? "" : "s"} selected</p><p className="text-[10px] text-slate-400 mt-0.5">{detail.posts.length} campaign post{detail.posts.length === 1 ? "" : "s"} → up to {detail.posts.length * selectedTargetIds.length} deliveries</p></div>
+                    <div><p className="text-xs font-bold text-slate-700">{t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}</p><p className="text-[10px] text-slate-400 mt-0.5">{t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })} → {t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}</p></div>
                     <div className="flex flex-wrap items-center gap-2">
-                      {launchArmed && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Press again to confirm publishing</span>}
-                      <button disabled={isActionLoading || detail.posts.length === 0 || selectedTargetIds.length === 0} onClick={launchCampaign} className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-xs font-bold text-white transition-colors disabled:bg-slate-300 ${launchArmed ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>{isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{launchArmed ? "Confirm Launch" : "Launch Campaign"}</button>
+                      {launchArmed && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{t("workspace.launch.confirmHint")}</span>}
+                      <button disabled={isActionLoading || detail.posts.length === 0 || selectedTargetIds.length === 0} onClick={launchCampaign} className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-xs font-bold text-white transition-colors disabled:bg-slate-300 ${launchArmed ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>{isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{launchArmed ? t("workspace.launch.confirm") : t("workspace.launch.launch")}</button>
                     </div>
                   </div>
                 </div>
@@ -959,14 +959,14 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               {detail.deliveries.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
                   <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div><h4 className="text-sm font-bold text-slate-900">Delivery report</h4><p className="text-[10px] text-slate-500 mt-0.5">Per-target result and retry audit trail.</p></div>
+                    <div><h4 className="text-sm font-bold text-slate-900">{t("workspace.delivery.title")}</h4><p className="text-[10px] text-slate-500 mt-0.5">{t("workspace.delivery.description")}</p></div>
                     {failedDeliveries.length > 0 && (
-                      <div className="flex gap-2"><button disabled={isActionLoading || selectedFailedDeliveryIds.length === 0} onClick={() => retryFailed(true)} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-700 disabled:text-slate-300 disabled:border-slate-200 text-[10px] font-bold">Retry selected ({selectedFailedDeliveryIds.length})</button><button disabled={isActionLoading} onClick={() => retryFailed(false)} className="px-3 py-2 rounded-lg bg-rose-600 text-white text-[10px] font-bold">Retry all failed</button></div>
+                      <div className="flex gap-2"><button disabled={isActionLoading || selectedFailedDeliveryIds.length === 0} onClick={() => retryFailed(true)} className="px-3 py-2 rounded-lg border border-rose-200 text-rose-700 disabled:text-slate-300 disabled:border-slate-200 text-[10px] font-bold">{t("workspace.delivery.retrySelected", { count: numberFormatter.format(selectedFailedDeliveryIds.length) })}</button><button disabled={isActionLoading} onClick={() => retryFailed(false)} className="px-3 py-2 rounded-lg bg-rose-600 text-white text-[10px] font-bold">{t("workspace.delivery.retryAll")}</button></div>
                     )}
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="min-w-full text-left">
-                      <thead className="bg-slate-50 text-[9px] uppercase tracking-wider text-slate-400"><tr><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Post</th><th className="px-4 py-2.5">Target</th><th className="px-4 py-2.5">Attempts</th><th className="px-4 py-2.5">Result</th></tr></thead>
+                    <table className="min-w-full text-start">
+                      <thead className="bg-slate-50 text-[9px] uppercase tracking-wider text-slate-400"><tr><th className="px-4 py-2.5">{t("workspace.delivery.headers.status")}</th><th className="px-4 py-2.5">{t("workspace.delivery.headers.post")}</th><th className="px-4 py-2.5">{t("workspace.delivery.headers.target")}</th><th className="px-4 py-2.5">{t("workspace.delivery.headers.attempts")}</th><th className="px-4 py-2.5">{t("workspace.delivery.headers.result")}</th></tr></thead>
                       <tbody className="divide-y divide-slate-100">
                         {detail.deliveries.map(delivery => {
                           const target = targetMap.get(delivery.targetId);
@@ -975,11 +975,11 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                           const checked = selectedFailedDeliveryIds.includes(delivery.id);
                           return (
                             <tr key={delivery.id} className="text-xs align-top">
-                              <td className="px-4 py-3"><div className="flex items-center gap-2">{delivery.status === "failed" && <input type="checkbox" checked={checked} onChange={() => setSelectedFailedDeliveryIds(current => checked ? current.filter(id => id !== delivery.id) : [...current, delivery.id])} className="rounded border-slate-300" />}{deliveryStatusIcon(delivery.status)}<span className="font-bold text-slate-700 capitalize whitespace-nowrap">{delivery.status.replace("_", " ")}</span></div></td>
-                              <td className="px-4 py-3"><p className="font-mono text-[10px] text-slate-500 max-w-[180px] truncate">{campaignPost?.postId || delivery.campaignPostId}</p></td>
-                              <td className="px-4 py-3"><p className="font-bold text-slate-700 whitespace-nowrap">{target?.name || delivery.targetId}</p><p className="text-[9px] text-slate-400 mt-0.5">{target?.chatId}</p></td>
-                              <td className="px-4 py-3"><p className="font-bold text-slate-700">{delivery.attemptCount}</p>{attempts.length > 0 && <p className="text-[9px] text-slate-400 mt-0.5">Last {campaignDate(attempts[attempts.length - 1]?.attemptedAt)}</p>}</td>
-                              <td className="px-4 py-3 max-w-[300px]">{delivery.warningMessage && <p className="text-[10px] text-amber-700 leading-relaxed">{delivery.warningMessage}</p>}{delivery.errorMessage && <p className="text-[10px] text-rose-600 leading-relaxed">{delivery.errorMessage}</p>}{!delivery.warningMessage && !delivery.errorMessage && delivery.status === "success" && <p className="text-[10px] text-emerald-600 font-semibold">Published successfully</p>}</td>
+                              <td className="px-4 py-3"><div className="flex items-center gap-2">{delivery.status === "failed" && <input type="checkbox" checked={checked} onChange={() => setSelectedFailedDeliveryIds(current => checked ? current.filter(id => id !== delivery.id) : [...current, delivery.id])} className="rounded border-slate-300" />}{deliveryStatusIcon(delivery.status)}<span className="font-bold text-slate-700 whitespace-nowrap">{t(`common.deliveryStatus.${delivery.status}`)}</span></div></td>
+                              <td className="px-4 py-3"><p className="font-mono text-[10px] text-slate-500 max-w-[180px] truncate" dir="ltr">{campaignPost?.postId || delivery.campaignPostId}</p></td>
+                              <td className="px-4 py-3"><p className="font-bold text-slate-700 whitespace-nowrap" dir="auto">{target?.name || delivery.targetId}</p><p className="text-[9px] text-slate-400 mt-0.5 font-mono" dir="ltr">{target?.chatId}</p></td>
+                              <td className="px-4 py-3"><p className="font-bold text-slate-700">{numberFormatter.format(delivery.attemptCount)}</p>{attempts.length > 0 && <p className="text-[9px] text-slate-400 mt-0.5">{t("workspace.delivery.lastAttempt", { date: campaignDate(attempts[attempts.length - 1]?.attemptedAt, locale) })}</p>}</td>
+                              <td className="px-4 py-3 max-w-[300px]">{delivery.warningMessage && <p className="text-[10px] text-amber-700 leading-relaxed" dir="auto">{delivery.warningMessage}</p>}{delivery.errorMessage && <p className="text-[10px] text-rose-600 leading-relaxed" dir="auto">{delivery.errorMessage}</p>}{!delivery.warningMessage && !delivery.errorMessage && delivery.status === "success" && <p className="text-[10px] text-emerald-600 font-semibold">{t("workspace.delivery.success")}</p>}</td>
                             </tr>
                           );
                         })}
@@ -999,58 +999,60 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               <div className="p-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <Plus className="w-4 h-4 text-sky-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Add campaign destination</h3>
+                  <h3 className="text-sm font-bold text-slate-900">{t("workspace.targets.addTitle")}</h3>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Add the Telegram channel or group that campaigns may publish to. A connection test is required before the destination becomes selectable.
+                  {t("workspace.targets.addDescription")}
                 </p>
               </div>
 
               <div className="p-5 grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Destination name</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("workspace.targets.name")}</span>
                   <input
                     value={targetName}
+                    dir="auto"
                     onChange={event => setTargetName(event.target.value)}
-                    placeholder="Partner News Channel"
+                    placeholder={t("workspace.targets.namePlaceholder")}
                     className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs outline-none focus:border-sky-400"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Telegram chat ID / @username</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("workspace.targets.chatId")}</span>
                   <input
                     value={targetChatId}
+                    dir="ltr"
                     onChange={event => setTargetChatId(event.target.value)}
-                    placeholder="@channel or -100..."
+                    placeholder={t("workspace.targets.chatIdPlaceholder")}
                     className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-mono outline-none focus:border-sky-400"
                   />
                 </label>
 
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Chat type</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("workspace.targets.chatType")}</span>
                   <select
                     value={targetChatType}
                     onChange={event => setTargetChatType(event.target.value as "channel" | "group" | "supergroup")}
                     className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs bg-white outline-none focus:border-sky-400"
                   >
-                    <option value="channel">Channel</option>
-                    <option value="group">Group</option>
-                    <option value="supergroup">Supergroup</option>
+                    <option value="channel">{t("common.chatType.channel")}</option>
+                    <option value="group">{t("common.chatType.group")}</option>
+                    <option value="supergroup">{t("common.chatType.supergroup")}</option>
                   </select>
                 </label>
 
                 <label className="block">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Publishing bot</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{t("workspace.targets.publishingBot")}</span>
                   <select
                     value={targetBotAccountId}
                     onChange={event => setTargetBotAccountId(event.target.value)}
                     className="mt-1.5 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-xs bg-white outline-none focus:border-sky-400"
                   >
-                    <option value="">Select bot account</option>
+                    <option value="">{t("workspace.targets.selectBot")}</option>
                     {botAccounts.map(account => (
                       <option key={account.id} value={account.id} disabled={!account.enabled || account.credentialConfigured === false}>
-                        {account.name}{account.botUsername ? ` (@${account.botUsername})` : ""}{!account.enabled ? " — disabled" : account.credentialConfigured === false ? " — credential missing" : ""}
+                        {account.name}{account.botUsername ? ` (@${account.botUsername})` : ""}{!account.enabled ? ` — ${t("workspace.targets.disabledSuffix")}` : account.credentialConfigured === false ? ` — ${t("workspace.targets.credentialMissingSuffix")}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1059,7 +1061,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
 
               <div className="px-5 pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-[10px] text-slate-500">
-                  The bot must already be a member/admin of the destination with permission to post.
+                  {t("workspace.targets.botHelp")}
                 </p>
                 <button
                   disabled={isActionLoading || !targetName.trim() || !targetChatId.trim() || !targetBotAccountId}
@@ -1067,20 +1069,20 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 text-white px-4 py-2.5 text-xs font-bold disabled:bg-slate-300"
                 >
                   {isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  Add destination
+                  {t("workspace.targets.add")}
                 </button>
               </div>
 
               {botAccounts.length === 0 && (
                 <div className="mx-5 mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[10px] text-amber-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <span>Save your personal bot token in Destinations, then register that bot for your private campaign workspace.</span>
+                  <span>{t("workspace.targets.registerHelp")}</span>
                   <button
                     type="button"
                     disabled={isActionLoading}
                     onClick={registerPersonalDestinationBot}
                     className="shrink-0 rounded-lg bg-amber-900 px-3 py-2 font-bold text-white disabled:bg-amber-300"
                   >
-                    Register my Destination Bot
+                    {t("workspace.targets.register")}
                   </button>
                 </div>
               )}
@@ -1089,13 +1091,13 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
           <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Campaign destinations</h3>
+                <h3 className="text-sm font-bold text-slate-900">{t("workspace.targets.listTitle")}</h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  These channels and groups are the destination pool shown when launching a campaign.
+                  {t("workspace.targets.listDescription")}
                 </p>
               </div>
               <div className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-3 py-2 rounded-lg">
-                {verifiedTargets.length} verified · {targets.length} total
+                {t("workspace.targets.summary", { verified: numberFormatter.format(verifiedTargets.length), total: numberFormatter.format(targets.length) })}
               </div>
             </div>
 
@@ -1110,18 +1112,18 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-bold text-slate-900">{target.name}</p>
+                        <p className="text-sm font-bold text-slate-900" dir="auto">{target.name}</p>
                         <span className={`text-[9px] font-bold rounded-full px-2 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : target.connectionStatus === "error" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>
-                          {ready ? "Ready for campaigns" : target.connectionStatus === "unknown" ? "Needs verification" : "Connection error"}
+                          {ready ? t("workspace.targets.ready") : target.connectionStatus === "unknown" ? t("workspace.targets.needsVerification") : t("workspace.targets.connectionError")}
                         </span>
-                        {!target.enabled && <span className="text-[9px] font-bold rounded-full px-2 py-0.5 bg-slate-200 text-slate-500">Disabled</span>}
+                        {!target.enabled && <span className="text-[9px] font-bold rounded-full px-2 py-0.5 bg-slate-200 text-slate-500">{t("workspace.targets.disabled")}</span>}
                       </div>
-                      <p className="text-xs text-slate-500 mt-1">{target.chatId} · {target.chatType || "type not verified"}</p>
+                      <p className="text-xs text-slate-500 mt-1" dir="ltr">{target.chatId} · {target.chatType ? t(`common.chatType.${target.chatType}`) : t("workspace.targets.typeNotVerified")}</p>
                       <p className="text-[10px] text-slate-400 mt-1">
-                        Bot: {target.botAccount?.name || "Unknown"}{target.botAccount?.botUsername ? ` (@${target.botAccount.botUsername})` : ""}
-                        {target.lastCheckedAt ? ` · Checked ${campaignDate(target.lastCheckedAt)}` : ""}
+                        {t("common.bot")} <span dir="auto">{target.botAccount?.name || t("common.unknown")}</span>{target.botAccount?.botUsername ? ` (@${target.botAccount.botUsername})` : ""}
+                        {target.lastCheckedAt ? ` · ${t("common.checked", { date: campaignDate(target.lastCheckedAt, locale) })}` : ""}
                       </p>
-                      {target.errorMessage && <p className="text-[10px] text-rose-600 mt-1.5">{target.errorMessage}</p>}
+                      {target.errorMessage && <p className="text-[10px] text-rose-600 mt-1.5" dir="auto">{target.errorMessage}</p>}
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -1131,14 +1133,14 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                           className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 px-3 py-2 text-[10px] font-bold text-sky-700 disabled:text-slate-300 disabled:border-slate-200"
                         >
                           <ShieldCheck className="w-3.5 h-3.5" />
-                          {ready ? "Re-test" : "Test connection"}
+                          {ready ? t("workspace.targets.retest") : t("workspace.targets.test")}
                         </button>
                         <button
                           disabled={isActionLoading}
                           onClick={() => setPromotionTargetEnabled(target, !target.enabled)}
                           className="rounded-lg border border-slate-200 px-3 py-2 text-[10px] font-bold text-slate-600"
                         >
-                          {target.enabled ? "Disable" : "Enable"}
+                          {target.enabled ? t("common.disable") : t("common.enable")}
                         </button>
                         <button
                           disabled={isActionLoading}
@@ -1146,7 +1148,7 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
                           className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-[10px] font-bold text-rose-700"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          Delete
+                          {t("common.delete")}
                         </button>
                     </div>
                   </div>
@@ -1156,9 +1158,9 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
               {targets.length === 0 && (
                 <div className="p-10 text-center">
                   <Target className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700 mt-3">No campaign destinations configured</p>
+                  <p className="text-sm font-bold text-slate-700 mt-3">{t("workspace.targets.emptyTitle")}</p>
                   <p className="text-xs text-slate-500 mt-1">
-                    Add one of your Telegram channels or groups above, then test its connection.
+                    {t("workspace.targets.emptyDescription")}
                   </p>
                 </div>
               )}
@@ -1169,15 +1171,15 @@ export default function PromotionWorkspace({ posts, currentUserRole, onToast }: 
 
       {section === "history" && (
         <div className="space-y-3">
-          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs"><h3 className="text-sm font-bold text-slate-900">Delivery history</h3><p className="text-[11px] text-slate-500 mt-1">Completed, partial, and failed campaigns are retained as an audit trail. Open a campaign to inspect individual delivery attempts.</p></div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs"><h3 className="text-sm font-bold text-slate-900">{t("workspace.history.title")}</h3><p className="text-[11px] text-slate-500 mt-1">{t("workspace.history.description")}</p></div>
           {campaigns.filter(campaign => ["completed", "partial", "failed"].includes(campaign.status)).map(campaign => (
-            <button key={campaign.id} onClick={() => openCampaign(campaign.id)} className="w-full bg-white border border-slate-200 rounded-xl p-4 text-left shadow-3xs hover:border-slate-300 transition-colors flex items-center gap-4">
+            <button key={campaign.id} onClick={() => openCampaign(campaign.id)} className="w-full bg-white border border-slate-200 rounded-xl p-4 text-start shadow-3xs hover:border-slate-300 transition-colors flex items-center gap-4">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${campaign.status === "completed" ? "bg-emerald-50 text-emerald-600" : campaign.status === "failed" ? "bg-rose-50 text-rose-600" : "bg-orange-50 text-orange-600"}`}>{campaign.status === "completed" ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}</div>
-              <div className="min-w-0 flex-1"><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-slate-900 truncate">{campaign.name}</p><span className={`border rounded-full px-2 py-0.5 text-[9px] font-bold ${statusClasses[campaign.status]}`}>{t(`common.status.${campaign.status}`)}</span></div><p className="text-[10px] text-slate-400 mt-1">Started {campaignDate(campaign.startedAt)} · Completed {campaignDate(campaign.completedAt)}</p></div>
-              <ChevronRight className="w-4 h-4 text-slate-300" />
+              <div className="min-w-0 flex-1"><div className="flex items-center gap-2 flex-wrap"><p className="text-sm font-bold text-slate-900 truncate" dir="auto">{campaign.name}</p><span className={`border rounded-full px-2 py-0.5 text-[9px] font-bold ${statusClasses[campaign.status]}`}>{t(`common.status.${campaign.status}`)}</span></div><p className="text-[10px] text-slate-400 mt-1">{t("common.startedCompleted", { started: campaignDate(campaign.startedAt, locale), completed: campaignDate(campaign.completedAt, locale) })}</p></div>
+              <ChevronRight className="rtl-mirror w-4 h-4 text-slate-300" />
             </button>
           ))}
-          {campaigns.filter(campaign => ["completed", "partial", "failed"].includes(campaign.status)).length === 0 && <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center"><History className="w-8 h-8 text-slate-300 mx-auto" /><p className="text-sm font-bold text-slate-700 mt-3">No delivery history yet</p><p className="text-xs text-slate-500 mt-1">Campaign results will appear here after the first launch.</p></div>}
+          {campaigns.filter(campaign => ["completed", "partial", "failed"].includes(campaign.status)).length === 0 && <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center"><History className="w-8 h-8 text-slate-300 mx-auto" /><p className="text-sm font-bold text-slate-700 mt-3">{t("workspace.history.emptyTitle")}</p><p className="text-xs text-slate-500 mt-1">{t("workspace.history.emptyDescription")}</p></div>}
         </div>
       )}
     </div>
