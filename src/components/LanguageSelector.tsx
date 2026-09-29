@@ -3,9 +3,9 @@ import { useTranslation } from "react-i18next";
 import {
   APP_LOCALES,
   APP_LOCALE_DEFINITIONS,
-  changeAppLocale,
   normalizeAppLocale,
 } from "../i18n";
+import { changeAndPersistAppLocale } from "../i18n/userLocalePreference";
 
 interface LanguageSelectorProps {
   className?: string;
@@ -39,7 +39,7 @@ export default function LanguageSelector({
         aria-label={t("languageSelector.label")}
         value={currentLocale}
         onChange={(event) => {
-          void changeAppLocale(normalizeAppLocale(event.target.value));
+          void changeAndPersistAppLocale(normalizeAppLocale(event.target.value));
         }}
         className={`min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none ${
           isDark ? "text-white" : "text-slate-800"
