@@ -5,6 +5,7 @@ import AppShell, { type WorkspaceView } from "./components/AppShell";
 import PromotionCenter from "./components/PromotionCenter";
 import type { CuratorSettings } from "./types";
 import { safeResponseJson } from "./utils/api";
+import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
@@ -60,6 +61,9 @@ export default function PromotionPage() {
         window.location.hash = "";
         return;
       }
+
+      await reconcileAuthenticatedAppLocale(authData.uiLocale, token);
+      if (!current()) return;
 
       setCurrentUsername(authData.username || null);
       setCurrentUserRole(authData.role || null);
