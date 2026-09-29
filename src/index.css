@@ -65,3 +65,12 @@ summary:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+.rtl-mirror {
+  transform-origin: center;
+}
+
+html[dir="rtl"] .rtl-mirror {
+  transform: scaleX(-1);
+}
