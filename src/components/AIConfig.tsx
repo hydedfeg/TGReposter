@@ -147,7 +147,7 @@ export default function AIConfig({
                     key={p.id}
                     onClick={() => handleProviderSelect(p.id)}
                     disabled={readOnly}
-                    className={`text-left p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between disabled:opacity-80 disabled:cursor-not-allowed ${
+                    className={`text-start p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between disabled:opacity-80 disabled:cursor-not-allowed ${
                       isSelected
                         ? "border-indigo-600 bg-indigo-50/20 shadow-2xs"
                         : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
