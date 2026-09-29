@@ -1,12 +1,24 @@
 import { getPostgresPool } from "../utils/postgresPool";
 
 export type AppRole = "super-admin" | "admin";
+export type AppUiLocale = "en" | "ru" | "ar" | "fa";
+
+const APP_UI_LOCALES = new Set<AppUiLocale>(["en", "ru", "ar", "fa"]);
+
+export function isAppUiLocale(value: unknown): value is AppUiLocale {
+  return typeof value === "string" && APP_UI_LOCALES.has(value as AppUiLocale);
+}
+
+function normalizeStoredUiLocale(value: unknown): AppUiLocale | null {
+  return isAppUiLocale(value) ? value : null;
+}
 
 export interface AuthenticatedAppUser {
   id: string;
   email: string;
   username: string;
   role: AppRole;
+  uiLocale: AppUiLocale | null;
   authProvider: "supabase";
 }
 
@@ -58,7 +70,7 @@ async function fetchWithTimeout(
 export async function getSupabaseProfileByUserId(userId: string) {
   const { rows } = await getPostgresPool().query(
     `
-      select id, email, full_name, role, is_active, created_at, updated_at
+      select id, email, full_name, role, is_active, ui_locale, created_at, updated_at
       from public.profiles
       where id = $1::uuid
       limit 1
@@ -118,8 +130,44 @@ export async function validateSupabaseAccessToken(
     email,
     username,
     role,
+    uiLocale: normalizeStoredUiLocale(profile.ui_locale),
     authProvider: "supabase",
   };
+}
+
+export async function updateSupabaseAppUserUiLocale(
+  userId: string,
+  locale: AppUiLocale
+): Promise<AppUiLocale> {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("Database is not configured.");
+  }
+  if (!isAppUiLocale(locale)) {
+    throw new Error("Unsupported interface locale.");
+  }
+
+  const { rows } = await getPostgresPool().query(
+    `
+      update public.profiles
+      set ui_locale = $2,
+          updated_at = now()
+      where id = $1::uuid
+        and is_active = true
+      returning ui_locale
+    `,
+    [userId, locale]
+  );
+
+  if (rows.length === 0) {
+    throw new Error("Active Supabase profile was not found.");
+  }
+
+  const savedLocale = normalizeStoredUiLocale(rows[0]?.ui_locale);
+  if (!savedLocale) {
+    throw new Error("Interface locale was not persisted.");
+  }
+
+  return savedLocale;
 }
 
 export async function signInWithSupabasePassword(
