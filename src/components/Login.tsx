@@ -32,7 +32,8 @@ interface LoginProps {
     isNewSetup: boolean,
     role: 'super-admin' | 'admin',
     username: string,
-    accountKey: string
+    accountKey: string,
+    uiLocale: string | null
   ) => void;
 }
 
@@ -98,7 +99,8 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
               true,
               data.role || "super-admin",
               data.username || username.trim(),
-              data.accountKey
+              data.accountKey,
+              data.uiLocale ?? null
             );
           }, 1500);
         } else {
@@ -107,7 +109,8 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             false,
             data.role || "admin",
             data.username || username.trim(),
-            data.accountKey
+            data.accountKey,
+            data.uiLocale ?? null
           );
         }
       } else {
