@@ -36,6 +36,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
   // Form state for adding a new target
   const [newTargetName, setNewTargetName] = useState("");
   const [newTargetChannelId, setNewTargetChannelId] = useState("");
+  const [targetFormErrorKey, setTargetFormErrorKey] = useState<string | null>(null);
   
   // Testing states
   const [testingTargetId, setTestingTargetId] = useState<string | null>(null);
@@ -44,8 +45,16 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
 
   const handleAddTarget = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTargetName.trim() || !newTargetChannelId.trim()) return;
+    if (!newTargetName.trim()) {
+      setTargetFormErrorKey("feedback.targetNameRequired");
+      return;
+    }
+    if (!newTargetChannelId.trim()) {
+      setTargetFormErrorKey("feedback.channelIdRequired");
+      return;
+    }
 
+    setTargetFormErrorKey(null);
     let cleanChannelId = newTargetChannelId.trim();
     if (!cleanChannelId.startsWith("@") && !cleanChannelId.startsWith("-") && isNaN(Number(cleanChannelId))) {
       cleanChannelId = `@${cleanChannelId}`;
@@ -169,6 +178,11 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         messageKey: "feedback.tokenStored"
       });
       setTimeout(() => setTestResult(null), 3000);
+    } else {
+      setTestResult({
+        success: false,
+        messageKey: "feedback.tokenSaveFailed"
+      });
     }
   };
 
@@ -239,6 +253,22 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   {t("bot.acquirePrefix")} <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline" dir="ltr">@BotFather</a>. {t("bot.acquireSuffix")}
                 </p>
               </div>
+              {testResult && !testResult.targetId ? (
+                <div className={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                  testResult.success
+                    ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+                    : "border-rose-100 bg-rose-50 text-rose-800"
+                }`} role={testResult.success ? "status" : "alert"}>
+                  {testResult.success ? (
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  ) : (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                  )}
+                  <span dir="auto">
+                    {testResult.messageKey ? t(testResult.messageKey, testResult.values) : testResult.message}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -265,7 +295,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   placeholder={t("targets.friendlyNamePlaceholder")}
                   value={newTargetName}
                   dir="auto"
-                  onChange={(e) => setNewTargetName(e.target.value)}
+                  onChange={(e) => {
+                    setNewTargetName(e.target.value);
+                    setTargetFormErrorKey(null);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs outline-hidden"
                 />
               </div>
@@ -278,7 +311,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   placeholder={t("targets.channelIdPlaceholder")}
                   value={newTargetChannelId}
                   dir="ltr"
-                  onChange={(e) => setNewTargetChannelId(e.target.value)}
+                  onChange={(e) => {
+                    setNewTargetChannelId(e.target.value);
+                    setTargetFormErrorKey(null);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs font-mono outline-hidden"
                 />
               </div>
@@ -291,6 +327,11 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                   <Plus className="w-3.5 h-3.5" /> {t("targets.add")}
                 </button>
               </div>
+              {targetFormErrorKey ? (
+                <p className="sm:col-span-12 text-xs font-semibold text-rose-600" role="alert">
+                  {t(targetFormErrorKey)}
+                </p>
+              ) : null}
             </form>
           )}
 
