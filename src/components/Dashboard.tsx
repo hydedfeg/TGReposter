@@ -148,7 +148,7 @@ export default function Dashboard({ isSyncing, onNavigate, onSync, settings }: D
                     <span className="block truncate text-sm font-bold text-slate-900">@{post.channelUsername}</span>
                     <span className="mt-1 block truncate text-sm text-slate-500">{post.originalText || "Media post"}</span>
                   </span>
-                  <ArrowRight className="h-4 w-4 shrink-0 text-slate-300" aria-hidden="true" />
+                  <ArrowRight className="rtl-mirror h-4 w-4 shrink-0 text-slate-300" aria-hidden="true" />
                 </button>
               ))}
             </div>
