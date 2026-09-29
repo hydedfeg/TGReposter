@@ -9,10 +9,12 @@ const read = (relativePath: string) => fs.readFileSync(path.join(root, relativeP
 test("promotion workspace is reachable through an isolated authenticated hash route", () => {
   const main = read("src/main.tsx");
   const header = read("src/components/Header.tsx");
+  const englishNavigation = read("src/i18n/locales/en/navigation.ts");
   const page = read("src/PromotionPage.tsx");
 
   assert.match(main, /hash === '#promotion'/);
-  assert.match(header, /Open Promotion Center/);
+  assert.match(header, /t\("accessibility\.openPromotionCenter"\)/);
+  assert.match(englishNavigation, /openPromotionCenter: "Open Promotion Center"/);
   assert.match(page, /\/api\/auth\/status/);
   assert.match(page, /curator_token/);
 });
