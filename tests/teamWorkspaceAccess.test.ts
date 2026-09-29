@@ -13,6 +13,10 @@ const appShellSource = fs.readFileSync(
   path.join(repoRoot, "src/components/AppShell.tsx"),
   "utf8"
 );
+const englishNavigationSource = fs.readFileSync(
+  path.join(repoRoot, "src/i18n/locales/en/navigation.ts"),
+  "utf8"
+);
 const serverSource = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
 
 test("Team explains the new private workspace ownership model", () => {
@@ -43,11 +47,18 @@ test("revoking a legacy member preserves their personal workspace identity", () 
   );
 });
 
-test("navigation reflects the workspace access model", () => {
-  assert.match(appShellSource, /label: "My Sources"/);
-  assert.match(appShellSource, /label: "My Filters"/);
-  assert.match(appShellSource, /label: "My AI Configuration"/);
-  assert.match(appShellSource, /label: "Team & Access"/);
-  assert.match(appShellSource, /team: "Team & Access"/);
-  assert.match(appShellSource, /"Personal workspace"/);
+test("navigation reflects the workspace access model through i18n keys", () => {
+  assert.match(appShellSource, /labelKey: "items\.sources"/);
+  assert.match(appShellSource, /labelKey: "items\.filters"/);
+  assert.match(appShellSource, /labelKey: "items\.aiConfiguration"/);
+  assert.match(appShellSource, /labelKey: "items\.teamAccess"/);
+  assert.match(appShellSource, /team: "titles\.team"/);
+  assert.match(appShellSource, /t\("account\.personalWorkspace"\)/);
+
+  assert.match(englishNavigationSource, /sources: "My Sources"/);
+  assert.match(englishNavigationSource, /filters: "My Filters"/);
+  assert.match(englishNavigationSource, /aiConfiguration: "My AI Configuration"/);
+  assert.match(englishNavigationSource, /teamAccess: "Team & Access"/);
+  assert.match(englishNavigationSource, /team: "Team & Access"/);
+  assert.match(englishNavigationSource, /personalWorkspace: "Personal workspace"/);
 });
