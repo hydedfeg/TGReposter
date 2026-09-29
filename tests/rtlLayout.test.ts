@@ -20,7 +20,7 @@ const rtlAuditedFiles = [
 ];
 
 const physicalUtilityPattern =
-  /(?:^|[\\s"\'])((?:[a-z]+:)*(?:left|right|pl|pr|ml|mr)-[^\\s"\'}]+)|\\btext-(?:left|right)\\b/g;
+  /(?:^|[\s"'])(?:[a-z]+:)*(?:left|right|pl|pr|ml|mr)-[^\s"'}]+|\btext-(?:left|right)\b/g;
 
 test("RTL-audited dashboard files use logical inline layout utilities", () => {
   for (const relativePath of rtlAuditedFiles) {
@@ -30,7 +30,7 @@ test("RTL-audited dashboard files use logical inline layout utilities", () => {
     assert.deepEqual(
       matches,
       [],
-      `${relativePath} contains physical inline-direction utilities: ${matches.join(", ")}`,
+      relativePath + " contains physical inline-direction utilities: " + matches.join(", "),
     );
   }
 });
@@ -38,14 +38,14 @@ test("RTL-audited dashboard files use logical inline layout utilities", () => {
 test("the shared shell uses inline-start positioning and padding", () => {
   const source = readFileSync(resolve(root, "src/components/AppShell.tsx"), "utf8");
 
-  assert.match(source, /\\bstart-0\\b/);
-  assert.match(source, /\\blg:ps-64\\b/);
-  assert.match(source, /\\btext-start\\b/);
+  assert.match(source, /\bstart-0\b/);
+  assert.match(source, /\blg:ps-64\b/);
+  assert.match(source, /\btext-start\b/);
 });
 
 test("directional icons are mirrored when the document is RTL", () => {
   const css = readFileSync(resolve(root, "src/index.css"), "utf8");
 
-  assert.match(css, /html\\[dir="rtl"\\] \\.rtl-mirror/);
-  assert.match(css, /transform:\\s*scaleX\\(-1\\)/);
+  assert.match(css, /html\[dir="rtl"\] \.rtl-mirror/);
+  assert.match(css, /transform:\s*scaleX\(-1\)/);
 });
