@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { normalizeAppLocale } from "../i18n";
+import { AI_OUTPUT_LANGUAGE_IDS, type AIOutputLanguageId } from "../../shared/aiLanguages";
 import type { CuratedPost, DestinationTarget } from "../types";
 import { AI_CONNECTION_FALLBACK_ERROR, AI_CURATION_FALLBACK_ERROR } from "../utils/aiErrors";
 import { safeResponseJson } from "../utils/api";
@@ -58,17 +59,6 @@ const toneOptions = [
   { value: "Punchy & Viral", labelKey: "ai.tones.viral" },
   { value: "Insightful News", labelKey: "ai.tones.news" },
   { value: "Bullet Summary", labelKey: "ai.tones.bullets" },
-] as const;
-
-const languageOptions = [
-  { value: "English", labelKey: "ai.languages.english" },
-  { value: "Spanish", labelKey: "ai.languages.spanish" },
-  { value: "Russian", labelKey: "ai.languages.russian" },
-  { value: "French", labelKey: "ai.languages.french" },
-  { value: "German", labelKey: "ai.languages.german" },
-  { value: "Chinese", labelKey: "ai.languages.chinese" },
-  { value: "Arabic", labelKey: "ai.languages.arabic" },
-  { value: "Persian", labelKey: "ai.languages.persian" },
 ] as const;
 
 const tabs: TabType[] = ["pending", "approved", "posted", "archived"];
@@ -204,7 +194,7 @@ export default function CurationFeed({
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null);
   const [draftText, setDraftText] = useState("");
   const [activeTone, setActiveTone] = useState("Professional");
-  const [activeLanguage, setActiveLanguage] = useState("English");
+  const [activeLanguage, setActiveLanguage] = useState<AIOutputLanguageId>("en");
   const [aiLoadingAction, setAiLoadingAction] = useState<string | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState<AiSuggestion | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
@@ -337,7 +327,15 @@ export default function CurationFeed({
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ action, context, text: draftText }),
+        body: JSON.stringify({
+          action,
+          text: draftText,
+          ...(action === "translate"
+            ? { targetLanguage: activeLanguage }
+            : context
+              ? { context }
+              : {}),
+        }),
       });
       const data = await safeResponseJson(response);
       if (!response.ok || !data.result) throw new Error(data.error || AI_CURATION_FALLBACK_ERROR);
@@ -407,7 +405,7 @@ export default function CurationFeed({
         <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("summarize")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
           <FileText className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.summarize")}
         </button>
-        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("translate", activeLanguage)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("translate")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
           <Languages className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.translate")}
         </button>
         <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("hashtags")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
@@ -423,8 +421,8 @@ export default function CurationFeed({
         </label>
         <label className="text-xs font-bold text-slate-600">
           {t("ai.language")}
-          <select value={activeLanguage} onChange={(event) => setActiveLanguage(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-800 xl:text-sm">
-            {languageOptions.map((language) => <option key={language.value} value={language.value}>{t(language.labelKey)}</option>)}
+          <select value={activeLanguage} onChange={(event) => setActiveLanguage(event.target.value as AIOutputLanguageId)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-800 xl:text-sm">
+            {AI_OUTPUT_LANGUAGE_IDS.map((languageId) => <option key={languageId} value={languageId}>{t(`common:aiLanguages.${languageId}`)}</option>)}
           </select>
         </label>
       </div>
@@ -442,6 +440,7 @@ export default function CurationFeed({
           </div>
           <textarea
             aria-label={t("accessibility.curatedVersion")}
+            dir="auto"
             value={draftText}
             onChange={(event) => setDraftText(event.target.value)}
             rows={8}
