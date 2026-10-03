@@ -27,7 +27,7 @@ function readNestedString(value: unknown, path: string): string {
   }
 
   assert.equal(typeof current, "string");
-  return current;
+  return current as string;
 }
 
 test("all locales expose the same marketing translation keys", () => {
