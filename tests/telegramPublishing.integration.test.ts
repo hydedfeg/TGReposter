@@ -211,7 +211,30 @@ test("Telegram publishing route regression suite", { timeout: 45_000 }, async t 
     });
 
     assert.equal(response.status, 400);
+    assert.equal(body.code, "PUBLISH_DISABLED_TARGETS");
     assert.deepEqual(body.disabledTargetIds, ["off"]);
+    assert.deepEqual(readCalls(tempDir), []);
+  });
+
+  await t.test("publishing validation errors expose stable machine codes", async () => {
+    writeState(tempDir, [targetA]);
+    writeControl(tempDir, {});
+    clearCalls(tempDir);
+
+    const invalidTargets = await postTelegram({
+      postId: "source/1",
+      targetIds: "a"
+    });
+    assert.equal(invalidTargets.response.status, 400);
+    assert.equal(invalidTargets.body.code, "PUBLISH_TARGET_IDS_INVALID");
+
+    const missingPost = await postTelegram({
+      postId: "missing",
+      targetIds: ["a"]
+    });
+    assert.equal(missingPost.response.status, 404);
+    assert.equal(missingPost.body.code, "PUBLISH_POST_NOT_FOUND");
+
     assert.deepEqual(readCalls(tempDir), []);
   });
 
