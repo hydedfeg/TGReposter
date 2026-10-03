@@ -39,6 +39,7 @@ const common = {
       settingsUnavailable: "بارگذاری فضای کاری ممکن نشد. دوباره وارد شوید و تلاش کنید.",
       sessionVerify: "بررسی نشست ممکن نشد. دوباره وارد شوید.",
       configPersist: "تنظیمات محلی ذخیره شد، اما سرور نتوانست آن را ذخیره کند.",
+      sessionChanged: "نشست تغییر کرده است. فضای کاری را دوباره باز کنید.",
     },
     auth: {
       ownerReady: "حساب مدیر ارشد تنظیم شد! فضای کاری باز شد.",
@@ -55,6 +56,8 @@ const common = {
       removed: "کانال @{{username}} حذف شد",
       fetching: "در حال دریافت فید @{{username}}…",
       fetched: "جمع‌آوری کامل شد! پست‌های @{{username}} دریافت شدند.",
+      serverFetchFailed: "سرور نتوانست پست‌های کانال را جمع‌آوری کند.",
+      serverFetchAllFailed: "سرور نتوانست پست‌های کانال‌ها را جمع‌آوری کند.",
       fetchFailed: "جمع‌آوری @{{username}} ناموفق بود: {{error}}",
       allFetching: "جمع‌آوری همه فیدهای هدف در حال شروع است…",
       allFetched_one: "جمع‌آوری کامل شد! {{formattedCount}} پست جدید مطابق قوانین پیدا شد.",
