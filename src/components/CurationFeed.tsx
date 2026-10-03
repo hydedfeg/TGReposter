@@ -85,6 +85,8 @@ function statusClasses(status: CuratedPost["status"]) {
 
 function OriginalPostPanel({ post }: { post: CuratedPost }) {
   const { t, i18n } = useTranslation("inbox");
+  const { t: th } = useTranslation("history");
+  const isHistory = mode === "history";
   const locale = normalizeAppLocale(i18n.language);
 
   return (
