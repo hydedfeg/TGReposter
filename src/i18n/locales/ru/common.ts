@@ -81,7 +81,6 @@ const common = {
       success: "Публикация успешно отправлена в ваш канал!",
       failed: "Telegram не смог опубликовать сообщение.",
       botError: "Ошибка Telegram-бота: {{error}}",
-    },
       errors: {
         postNotFound: "Эта публикация больше недоступна во входящем контенте.",
         postNotApproved: "Перед публикацией одобрите этот пост во входящем контенте.",
@@ -96,6 +95,7 @@ const common = {
         noEnabledTargets: "Нет включённых назначений Telegram для публикации.",
         inboxStateSaveFailed: "Отправка в Telegram завершена, но статус входящего контента сохранить не удалось.",
       },
+    },
   },
   languageSelector: {
     label: "Язык интерфейса",
