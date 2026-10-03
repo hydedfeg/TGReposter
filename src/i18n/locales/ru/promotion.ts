@@ -188,7 +188,7 @@ const promotion = {
       credentialMissingSuffix: "нет учётных данных",
       botHelp: "Бот уже должен быть участником/администратором назначения с правом публикации.",
       add: "Добавить цель",
-      registerHelp: "Сохраните личный токен бота в Destinations, затем зарегистрируйте этого бота для своего приватного пространства кампаний.",
+      registerHelp: "Сохраните личный токен бота в разделе «Назначения», затем зарегистрируйте этого бота для своего приватного пространства кампаний.",
       register: "Зарегистрировать моего Destination Bot",
       listTitle: "Цели кампаний",
       listDescription: "Эти каналы и группы образуют пул назначений, отображаемый при запуске кампании.",
@@ -289,7 +289,7 @@ const promotion = {
     ctaPlaceholder: "Читать далее / Присоединиться к каналу…",
     save: "Сохранить в кампанию",
     preview: "Предпросмотр Telegram",
-    previewEmpty: "Выберите публикацию кампании to preview the final promotion copy.",
+    previewEmpty: "Выберите публикацию кампании, чтобы просмотреть итоговый текст продвижения.",
     styles: {
       professional: "Профессиональный",
       news: "Новостной",
@@ -309,7 +309,7 @@ const promotion = {
       hashtags: { label: "Создать хэштеги", help: "Создайте 3–6 релевантных хэштегов Telegram." },
     },
     feedback: {
-      selectPost: "Выберите публикацию кампании first.",
+      selectPost: "Сначала выберите публикацию кампании.",
       editableOnly: "AI generation is available only for Черновик or Готово campaigns.",
       chooseLanguage: "Выберите язык перевода.",
       generated: "{{action}} создано. Проверьте перед применением.",
