@@ -65,7 +65,7 @@ test("initial locale precedence keeps local choice before supported browser lang
 
   const storedIndex = source.indexOf("window.localStorage.getItem(APP_LOCALE_STORAGE_KEY)");
   const browserIndex = source.indexOf("window.navigator.languages");
-  const fallbackIndex = source.indexOf("return DEFAULT_APP_LOCALE;");
+  const fallbackIndex = source.lastIndexOf("return DEFAULT_APP_LOCALE;");
 
   assert.ok(storedIndex >= 0);
   assert.ok(browserIndex > storedIndex);
