@@ -39,6 +39,7 @@ const common = {
       settingsUnavailable: "تعذر تحميل مساحة العمل. سجّل الدخول مرة أخرى للمحاولة.",
       sessionVerify: "تعذر التحقق من الجلسة. سجّل الدخول مرة أخرى.",
       configPersist: "تم حفظ الإعداد محليًا، لكن الخادم لم يتمكن من حفظه.",
+      sessionChanged: "تغيرت الجلسة. أعد فتح مساحة العمل.",
     },
     auth: {
       ownerReady: "تم إعداد حساب المشرف العام! أصبحت مساحة العمل متاحة.",
@@ -55,6 +56,8 @@ const common = {
       removed: "تمت إزالة القناة @{{username}}",
       fetching: "جارٍ جلب موجز @{{username}}…",
       fetched: "اكتمل الجمع! تم جلب منشورات @{{username}}.",
+      serverFetchFailed: "تعذر على الخادم جمع منشورات القناة.",
+      serverFetchAllFailed: "تعذر على الخادم جمع منشورات القنوات.",
       fetchFailed: "فشل جمع @{{username}}: {{error}}",
       allFetching: "جارٍ بدء جمع جميع الموجزات المستهدفة…",
       allFetched_zero: "اكتمل الجمع! لم يتم العثور على منشورات جديدة مطابقة للقواعد.",
