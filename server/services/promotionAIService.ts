@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId, type AIOutputLanguageId } from "../../shared/aiLanguages";
 import { dispatchCuration } from "../ai/curationDispatcher";
 import {
   buildPromotionAIPrompt,
@@ -66,6 +67,7 @@ export interface PromotionAIGenerateResult {
   result: string;
   action: PromotionAIAction;
   style: PromotionAIStyle;
+  outputLanguage?: AIOutputLanguageId;
   language?: string;
   provider: string;
   model: string;
@@ -136,9 +138,31 @@ export class PromotionAIService {
     }
     const style = requestedStyle as PromotionAIStyle;
 
-    const language = optionalText(body?.language, "language", 80);
+    let outputLanguage: AIOutputLanguageId | undefined;
+    let language: string | undefined;
+
+    if (body?.outputLanguage !== undefined) {
+      const resolvedLanguage = resolveAIOutputLanguageId(body.outputLanguage);
+      if (!resolvedLanguage) {
+        throw new PromotionAIError(
+          400,
+          "VALIDATION_ERROR",
+          "Unsupported output language."
+        );
+      }
+      outputLanguage = resolvedLanguage;
+      language = getAIOutputLanguagePromptName(resolvedLanguage);
+    } else {
+      const legacyLanguage = optionalText(body?.language, "language", 80);
+      const resolvedLegacyLanguage = resolveAIOutputLanguageId(legacyLanguage);
+      outputLanguage = resolvedLegacyLanguage ?? undefined;
+      language = resolvedLegacyLanguage
+        ? getAIOutputLanguagePromptName(resolvedLegacyLanguage)
+        : legacyLanguage;
+    }
+
     if (action === "translate" && !language) {
-      throw new PromotionAIError(400, "VALIDATION_ERROR", "language is required for translation.");
+      throw new PromotionAIError(400, "VALIDATION_ERROR", "outputLanguage is required for translation.");
     }
 
     const instructions = optionalText(body?.instructions, "instructions", 600);
@@ -185,6 +209,7 @@ export class PromotionAIService {
       result: dispatchResult.result,
       action,
       style,
+      outputLanguage,
       language,
       provider,
       model,
