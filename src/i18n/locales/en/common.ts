@@ -8,6 +8,16 @@ const common = {
     ar: "Arabic",
     fa: "Persian",
   },
+  aiLanguages: {
+    en: "English",
+    es: "Spanish",
+    ru: "Russian",
+    fr: "French",
+    de: "German",
+    zh: "Chinese",
+    ar: "Arabic",
+    fa: "Persian",
+  },
   runtime: {
     loading: {
       sessionTitle: "Checking your session",
