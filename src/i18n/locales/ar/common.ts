@@ -83,7 +83,6 @@ const common = {
       success: "تم إرسال المنشور إلى قناتك بنجاح!",
       failed: "تعذر على تيليجرام نشر الرسالة.",
       botError: "خطأ بوت تيليجرام: {{error}}",
-    },
       errors: {
         postNotFound: "لم يعد هذا المنشور متاحًا في صندوق المحتوى الخاص بك.",
         postNotApproved: "وافق على هذا المنشور في صندوق المحتوى قبل نشره.",
@@ -98,6 +97,7 @@ const common = {
         noEnabledTargets: "لا توجد وجهات Telegram مفعلة ومتاحة للنشر.",
         inboxStateSaveFailed: "اكتمل الإرسال إلى Telegram، لكن تعذر حفظ حالة صندوق المحتوى.",
       },
+    },
   },
   languageSelector: {
     label: "لغة الواجهة",
