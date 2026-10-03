@@ -96,6 +96,7 @@ test("UI locale remains separate from Telegram content and AI output language", 
   const aiStudio = readFileSync(resolve(root, "src/components/PromotionAIStudio.tsx"), "utf8");
 
   assert.match(migration, /Independent from Telegram content and AI output language/i);
-  assert.match(aiStudio, /const \[language, setLanguage\] = useState\("English"\)/);
-  assert.match(aiStudio, /language: language\.trim\(\) \|\| undefined/);
+  assert.match(aiStudio, /const \[outputLanguage, setOutputLanguage\] = useState<AIOutputLanguageId>\("en"\)/);
+  assert.match(aiStudio, /outputLanguage,/);
+  assert.match(aiStudio, /common:aiLanguages\.\$\{languageId\}/);
 });
