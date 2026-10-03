@@ -18,7 +18,8 @@ test("generic AI branding is provider-neutral while provider configuration stays
     "src/components/AIConfig.tsx",
     "src/App.tsx",
     "src/i18n/locales/en/navigation.ts",
-    "src/i18n/locales/en/inbox.ts"
+    "src/i18n/locales/en/inbox.ts",
+    "src/i18n/locales/en/ai.ts"
   ].map(readSource).join("\n");
 
   for (const staleCopy of [
@@ -39,7 +40,7 @@ test("generic AI branding is provider-neutral while provider configuration stays
     "AI Curation Toolkit",
     "Powered by server-side AI.",
     "edit posts using AI",
-    "deployment environment&apos;s secrets settings"
+    "deployment environment’s secret settings"
   ]) {
     assert.equal(genericUi.includes(neutralCopy), true, `Missing neutral branding: ${neutralCopy}`);
   }
