@@ -6,6 +6,7 @@ import {
   APP_LOCALE_STORAGE_KEY,
   DEFAULT_APP_LOCALE,
   getLocaleDirection,
+  matchAppLocale,
   normalizeAppLocale,
   type AppLocale,
 } from "./locales";
@@ -15,10 +16,26 @@ function readStoredLocale(): AppLocale {
   if (typeof window === "undefined") return DEFAULT_APP_LOCALE;
 
   try {
-    return normalizeAppLocale(window.localStorage.getItem(APP_LOCALE_STORAGE_KEY));
+    const storedLocale = matchAppLocale(window.localStorage.getItem(APP_LOCALE_STORAGE_KEY));
+    if (storedLocale) return storedLocale;
   } catch {
-    return DEFAULT_APP_LOCALE;
+    // Continue to browser-language detection when storage is unavailable.
   }
+
+  const browserLanguages =
+    typeof window.navigator !== "undefined"
+      ? [
+          ...(window.navigator.languages ?? []),
+          window.navigator.language,
+        ]
+      : [];
+
+  for (const language of browserLanguages) {
+    const locale = matchAppLocale(language);
+    if (locale) return locale;
+  }
+
+  return DEFAULT_APP_LOCALE;
 }
 
 export function applyDocumentLocale(locale: AppLocale): void {
@@ -71,6 +88,7 @@ export {
   APP_LOCALE_STORAGE_KEY,
   DEFAULT_APP_LOCALE,
   getLocaleDirection,
+  matchAppLocale,
   normalizeAppLocale,
 };
 
