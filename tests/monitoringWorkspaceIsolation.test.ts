@@ -116,7 +116,7 @@ test("personal reposting requires approval before Telegram dispatch", () => {
 
   assert.ok(publishRouteStart >= 0 && publishRouteEnd > publishRouteStart);
   assert.match(serverSource, /if \(post\.status !== "approved"\)/);
-  assert.match(serverSource, /code: "POST_NOT_APPROVED"/);
+  assert.match(serverSource, /code: API_ERROR_CODES\.publishing\.postNotApproved/);
   assert.ok(
     publishRouteSource.indexOf('post.status !== "approved"') <
       publishRouteSource.indexOf("getUserDestinationConfig")
