@@ -16,10 +16,26 @@ import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig,
 import { safeResponseJson } from "./utils/api";
 import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
 import { normalizeAppLocale } from "./i18n";
+import { API_ERROR_CODES } from "../shared/apiErrorCodes";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
 const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
+
+const PUBLISHING_ERROR_KEYS: Record<string, string> = {
+  [API_ERROR_CODES.publishing.postNotFound]: "runtime.publishing.errors.postNotFound",
+  [API_ERROR_CODES.publishing.postNotApproved]: "runtime.publishing.errors.postNotApproved",
+  [API_ERROR_CODES.publishing.destinationsLoadFailed]: "runtime.publishing.errors.destinationsLoadFailed",
+  [API_ERROR_CODES.publishing.credentialLoadFailed]: "runtime.publishing.errors.credentialLoadFailed",
+  [API_ERROR_CODES.publishing.botNotConfigured]: "runtime.publishing.errors.botNotConfigured",
+  [API_ERROR_CODES.publishing.targetIdsInvalid]: "runtime.publishing.errors.targetIdsInvalid",
+  [API_ERROR_CODES.publishing.targetIdInvalid]: "runtime.publishing.errors.targetIdInvalid",
+  [API_ERROR_CODES.publishing.noTargetsSelected]: "runtime.publishing.errors.noTargetsSelected",
+  [API_ERROR_CODES.publishing.unknownTargets]: "runtime.publishing.errors.unknownTargets",
+  [API_ERROR_CODES.publishing.disabledTargets]: "runtime.publishing.errors.disabledTargets",
+  [API_ERROR_CODES.publishing.noEnabledTargets]: "runtime.publishing.errors.noEnabledTargets",
+  [API_ERROR_CODES.publishing.inboxStateSaveFailed]: "runtime.publishing.errors.inboxStateSaveFailed",
+};
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
@@ -585,6 +601,7 @@ export default function App() {
   // 6. Post to Telegram Bot dispatch
   const handlePostToTelegram = async (postId: string, text: string, photoUrl?: string): Promise<boolean> => {
     if (!isCurrent()) return false;
+    let persistedErrorMessage = "";
     try {
       const res = await fetch("/api/post-telegram", {
   method: "POST",
@@ -611,15 +628,24 @@ export default function App() {
         showToast(t("runtime.publishing.success"));
         return true;
       } else {
-        throw new Error(data.error || t("runtime.publishing.failed"));
+        persistedErrorMessage =
+          typeof data.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : t("runtime.publishing.failed");
+        const errorKey =
+          typeof data.code === "string"
+            ? PUBLISHING_ERROR_KEYS[data.code]
+            : undefined;
+        throw new Error(errorKey ? t(errorKey) : persistedErrorMessage);
       }
     } catch (err: any) {
       if (!isCurrent()) return false;
       console.error(err);
-      showToast(t("runtime.publishing.botError", { error: err.message }), "error");
-      
-      // Update error state locally on post
-      handleUpdatePost(postId, { errorMessage: err.message });
+      const message = err?.message || t("runtime.publishing.failed");
+      showToast(message, "error");
+
+      // Keep backend/debug detail in post state while presenting localized UI copy.
+      handleUpdatePost(postId, { errorMessage: persistedErrorMessage || message });
       return false;
     }
   };
