@@ -24,6 +24,13 @@ test("Vercel rewrites dashboard preview paths to the SPA without changing API pr
   assert.ok(
     config.rewrites?.some(
       (rewrite) =>
+        rewrite.source === "/dashboard/" &&
+        rewrite.destination === "/index.html",
+    ),
+  );
+  assert.ok(
+    config.rewrites?.some(
+      (rewrite) =>
         rewrite.source === "/dashboard/:path*" &&
         rewrite.destination === "/index.html",
     ),
