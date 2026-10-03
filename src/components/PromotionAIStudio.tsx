@@ -17,6 +17,7 @@ import type {
   PromotionContentMode,
 } from "../types";
 import { safeResponseJson } from "../utils/api";
+import { AI_OUTPUT_LANGUAGE_IDS, type AIOutputLanguageId } from "../../shared/aiLanguages";
 
 type PromotionAIAction = "teaser" | "rewrite" | "shorten" | "expand" | "translate" | "cta" | "hashtags";
 type PromotionAIStyle = "professional" | "news" | "educational" | "friendly" | "casual" | "marketing" | "viral";
@@ -88,7 +89,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
   const [campaignPostId, setCampaignPostId] = useState("");
   const [action, setAction] = useState<PromotionAIAction>("rewrite");
   const [style, setStyle] = useState<PromotionAIStyle>("professional");
-  const [language, setLanguage] = useState("English");
+  const [outputLanguage, setOutputLanguage] = useState<AIOutputLanguageId>("en");
   const [instructions, setInstructions] = useState("");
   const [draftText, setDraftText] = useState("");
   const [ctaText, setCtaText] = useState("");
@@ -215,11 +216,6 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
       onToast(t("ai.feedback.editableOnly"), "error");
       return;
     }
-    if (action === "translate" && !language.trim()) {
-      onToast(t("ai.feedback.chooseLanguage"), "error");
-      return;
-    }
-
     setBusy(true);
     setError("");
     try {
@@ -230,7 +226,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
           body: JSON.stringify({
             action,
             style,
-            language: language.trim() || undefined,
+            outputLanguage,
             instructions: instructions.trim() || undefined,
             currentText: draftText.trim() || undefined,
           }),
@@ -368,7 +364,7 @@ export default function PromotionAIStudio({ currentUserRole, onToast }: Promotio
               <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.action")}</span><select value={action} onChange={event => setAction(event.target.value as PromotionAIAction)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white">{actions.map(item => <option key={item.value} value={item.value}>{t(item.labelKey)}</option>)}</select><p className="text-[10px] text-slate-400 mt-1">{t(selectedAction.helpKey)}</p></label>
               <div className="grid sm:grid-cols-2 gap-3">
                 <label><span className="text-[10px] font-bold text-slate-600">{t("ai.writingStyle")}</span><select value={style} onChange={event => setStyle(event.target.value as PromotionAIStyle)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white capitalize">{styles.map(item => <option key={item} value={item}>{t(`ai.styles.${item}`)}</option>)}</select></label>
-                <label><span className="text-[10px] font-bold text-slate-600">{t("ai.outputLanguage")}</span><input value={language} dir="auto" onChange={event => setLanguage(event.target.value)} placeholder={t("ai.outputLanguagePlaceholder")} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs outline-none focus:border-violet-400" /></label>
+                <label><span className="text-[10px] font-bold text-slate-600">{t("ai.outputLanguage")}</span><select value={outputLanguage} onChange={event => setOutputLanguage(event.target.value as AIOutputLanguageId)} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white outline-none focus:border-violet-400">{AI_OUTPUT_LANGUAGE_IDS.map(languageId => <option key={languageId} value={languageId}>{t(`common:aiLanguages.${languageId}`)}</option>)}</select></label>
               </div>
               <label className="block"><span className="text-[10px] font-bold text-slate-600">{t("ai.extraInstructions")} <span className="font-normal text-slate-400">{t("common.optional")}</span></span><textarea value={instructions} dir="auto" onChange={event => setInstructions(event.target.value)} rows={3} maxLength={600} placeholder={t("ai.instructionsPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs resize-y outline-none focus:border-violet-400" /></label>
               <button onClick={generate} disabled={busy || !selectedPost || !editableCampaign} className="w-full inline-flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 text-white rounded-xl px-4 py-3 text-xs font-bold transition-colors">{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}{t("ai.generate", { action: t(selectedAction.labelKey) })}</button>
