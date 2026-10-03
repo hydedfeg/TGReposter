@@ -15,6 +15,14 @@
   ],
   "rewrites": [
     {
+      "source": "/dashboard/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/dashboard/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://api.tgreposter.com/api/:path*"
     }

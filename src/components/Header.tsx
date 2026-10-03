@@ -1,5 +1,7 @@
 import { CheckCircle2, LogOut, Megaphone, Send, ShieldCheck } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { DestinationTarget } from "../types";
+import LanguageSelector from "./LanguageSelector";
 
 interface HeaderProps {
   channelId?: string;
@@ -12,6 +14,7 @@ interface HeaderProps {
 }
 
 export default function Header({ connected, currentUsername, currentUserRole, onLogout, targets }: HeaderProps) {
+  const { t } = useTranslation("navigation");
   const activeTargets = targets?.filter((target) => target.enabled).length || 0;
 
   return (
@@ -23,38 +26,39 @@ export default function Header({ connected, currentUsername, currentUserRole, on
           </span>
           <div className="min-w-0">
             <p className="truncate font-display text-xl font-bold tracking-tight text-slate-950">TGReposter</p>
-            <p className="hidden text-sm text-slate-500 sm:block">AI Powered Telegram content operations</p>
+            <p className="hidden text-sm text-slate-500 sm:block">{t("status.workspace")}</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
+          <LanguageSelector compact />
           {currentUsername ? (
             <div className="hidden min-h-10 items-center gap-2 rounded-xl bg-slate-100 px-3 text-sm font-semibold text-slate-700 sm:flex">
               <span>{currentUsername}</span>
-              <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-bold text-white">{currentUserRole === "super-admin" ? "Owner" : "Admin"}</span>
+              <span className="rounded-full bg-slate-950 px-2 py-0.5 text-xs font-bold text-white">{currentUserRole === "super-admin" ? t("account.owner") : t("account.admin")}</span>
             </div>
           ) : (
             <div className="hidden min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-600 sm:flex">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" /> Secure workspace
+              <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" /> {t("status.secureWorkspace")}
             </div>
           )}
           {connected && currentUsername ? (
             <div className="hidden min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-700 md:flex">
-              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {activeTargets || 1} target{activeTargets === 1 ? "" : "s"} ready
+              <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> {t("status.targetsReady", { count: activeTargets || 1 })}
             </div>
           ) : null}
           {currentUsername ? (
             <button
               type="button"
               onClick={() => { window.location.hash = "promotion"; }}
-              aria-label="Open Promotion Center"
+              aria-label={t("accessibility.openPromotionCenter")}
               className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
             >
               <Megaphone className="h-5 w-5" aria-hidden="true" />
             </button>
           ) : null}
           {onLogout ? (
-            <button type="button" onClick={onLogout} aria-label="Sign out" className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">
+            <button type="button" onClick={onLogout} aria-label={t("accessibility.signOut")} className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50">
               <LogOut className="h-5 w-5" aria-hidden="true" />
             </button>
           ) : null}

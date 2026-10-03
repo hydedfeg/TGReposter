@@ -54,7 +54,7 @@ test("promotion AI generation reuses configured provider/model and keeps output 
   const result = await service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", {
     action: "rewrite",
     style: "friendly",
-    language: "English",
+    outputLanguage: "en",
     currentText: "Current editor draft",
     instructions: "Keep the first sentence short",
   });
@@ -64,11 +64,14 @@ test("promotion AI generation reuses configured provider/model and keeps output 
   assert.equal(result.model, "test/model");
   assert.equal(result.action, "rewrite");
   assert.equal(result.style, "friendly");
+  assert.equal(result.outputLanguage, "en");
+  assert.equal(result.language, "English");
   assert.equal(captured.provider, "openrouter");
   assert.equal(captured.model, "test/model");
   assert.match(captured.prompt, /Reviewed source text/);
   assert.match(captured.prompt, /Current editor draft/);
   assert.match(captured.prompt, /Keep the first sentence short/);
+  assert.match(captured.prompt, /Write the output in English/);
 });
 
 test("promotion AI generation is blocked once campaign delivery has started", async () => {
@@ -106,15 +109,83 @@ test("promotion translation requires a target language before provider dispatch"
   );
 
   await assert.rejects(
-    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", { action: "translate", language: "" }),
+    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", { action: "translate" }),
     (error: any) => {
       assert.equal(error.status, 400);
       assert.equal(error.code, "VALIDATION_ERROR");
-      assert.match(error.message, /language is required/i);
+      assert.match(error.message, /outputLanguage is required/i);
       return true;
     }
   );
   assert.equal(called, false);
+});
+
+test("promotion AI resolves Persian output language IDs to provider prompt names", async () => {
+  let captured: any = null;
+  const service = new PromotionAIService(
+    async () => ({ aiConfig: { provider: "openrouter", model: "test/model" } }),
+    repository() as any,
+    (async input => {
+      captured = input;
+      return { ok: true, result: "ترجمه" } as const;
+    }) as any
+  );
+
+  const result = await service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", {
+    action: "translate",
+    outputLanguage: "fa",
+  });
+
+  assert.equal(result.outputLanguage, "fa");
+  assert.equal(result.language, "Persian (Farsi)");
+  assert.match(captured.prompt, /Translate the working copy faithfully into Persian \(Farsi\)/);
+});
+
+test("promotion AI rejects unsupported stable output language IDs before provider dispatch", async () => {
+  let called = false;
+  const service = new PromotionAIService(
+    async () => ({ aiConfig: { provider: "gemini", model: "model" } }),
+    repository() as any,
+    (async () => {
+      called = true;
+      return { ok: true, result: "should not happen" } as const;
+    }) as any
+  );
+
+  await assert.rejects(
+    () => service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", {
+      action: "translate",
+      outputLanguage: "xx",
+    }),
+    (error: any) => {
+      assert.equal(error.status, 400);
+      assert.equal(error.code, "VALIDATION_ERROR");
+      assert.match(error.message, /unsupported output language/i);
+      return true;
+    }
+  );
+  assert.equal(called, false);
+});
+
+test("promotion AI keeps the legacy language field compatible", async () => {
+  let captured: any = null;
+  const service = new PromotionAIService(
+    async () => ({ aiConfig: { provider: "openrouter", model: "test/model" } }),
+    repository() as any,
+    (async input => {
+      captured = input;
+      return { ok: true, result: "translated" } as const;
+    }) as any
+  );
+
+  const result = await service.generate(ownerPrincipal, "campaign-1", "campaign-post-1", {
+    action: "translate",
+    language: "French",
+  });
+
+  assert.equal(result.outputLanguage, "fr");
+  assert.equal(result.language, "French");
+  assert.match(captured.prompt, /Translate the working copy faithfully into French/);
 });
 
 test("promotion AI provider failures preserve dispatcher status and stay server-side", async () => {

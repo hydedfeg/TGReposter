@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Bot, Check, AlertCircle, HelpCircle, Trash2, Plus, RefreshCw, Eye, EyeOff, Radio, Settings } from "lucide-react";
-import { DestinationConfig as IDestinationConfig, DestinationTarget } from "../types";
+import type { DestinationConfig as IDestinationConfig, DestinationTarget } from "../types";
 import { safeResponseJson } from "../utils/api";
 
 interface DestinationConfigProps {
@@ -9,7 +10,17 @@ interface DestinationConfigProps {
   readOnly?: boolean;
 }
 
+interface DestinationFeedback {
+  success: boolean;
+  message?: string;
+  messageKey?: string;
+  values?: Record<string, string>;
+  targetId?: string;
+}
+
 export default function DestinationConfig({ destination, onSave, readOnly = false }: DestinationConfigProps) {
+  const { t } = useTranslation("destinations");
+
   // Stored credentials never come back from the backend. This state holds only
   // a newly-entered token until it is sent once to the Vault endpoint.
   const [botToken, setBotToken] = useState("");
@@ -25,16 +36,25 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
   // Form state for adding a new target
   const [newTargetName, setNewTargetName] = useState("");
   const [newTargetChannelId, setNewTargetChannelId] = useState("");
+  const [targetFormErrorKey, setTargetFormErrorKey] = useState<string | null>(null);
   
   // Testing states
   const [testingTargetId, setTestingTargetId] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string; targetId?: string } | null>(null);
+  const [testResult, setTestResult] = useState<DestinationFeedback | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const handleAddTarget = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTargetName.trim() || !newTargetChannelId.trim()) return;
+    if (!newTargetName.trim()) {
+      setTargetFormErrorKey("feedback.targetNameRequired");
+      return;
+    }
+    if (!newTargetChannelId.trim()) {
+      setTargetFormErrorKey("feedback.channelIdRequired");
+      return;
+    }
 
+    setTargetFormErrorKey(null);
     let cleanChannelId = newTargetChannelId.trim();
     if (!cleanChannelId.startsWith("@") && !cleanChannelId.startsWith("-") && isNaN(Number(cleanChannelId))) {
       cleanChannelId = `@${cleanChannelId}`;
@@ -79,7 +99,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     if (!destination.botTokenConfigured) {
       setTestResult({
         success: false,
-        message: "Save the Telegram Bot Token securely before testing a destination.",
+        messageKey: "feedback.saveTokenFirst",
         targetId: target.id
       });
       return;
@@ -106,18 +126,20 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       const isSuccess = res.ok && data.success;
       
       // Update local status
-      const updatedTargets = targets.map(t => 
-        t.id === target.id 
-          ? { ...t, status: (isSuccess ? "success" : "error") as 'success' | 'error', errorMessage: isSuccess ? undefined : (data.error || "Verification failed") }
-          : t
+      const updatedTargets = targets.map(targetItem =>
+        targetItem.id === target.id
+          ? { ...targetItem, status: (isSuccess ? "success" : "error") as 'success' | 'error', errorMessage: isSuccess ? undefined : (data.error || t("feedback.verificationFallback")) }
+          : targetItem
       );
       setTargets(updatedTargets);
 
       setTestResult({
         success: isSuccess,
-        message: isSuccess 
-          ? `Verified! Test message published to ${target.channelId}.` 
-          : (data.error || "Connection failed. Check bot token and admin privileges."),
+        ...(isSuccess
+          ? { messageKey: "feedback.testPublished", values: { channelId: target.channelId } }
+          : data.error
+            ? { message: data.error }
+            : { messageKey: "feedback.connectionFallback" }),
         targetId: target.id
       });
 
@@ -127,7 +149,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     } catch (err: any) {
       setTestResult({
         success: false,
-        message: err.message || "An unexpected network error occurred.",
+        ...(err?.message ? { message: err.message } : { messageKey: "feedback.networkError" }),
         targetId: target.id
       });
     } finally {
@@ -140,7 +162,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
     if (!token) {
       setTestResult({
         success: false,
-        message: "Enter a Telegram Bot Token before saving."
+        messageKey: "feedback.enterToken"
       });
       return;
     }
@@ -153,9 +175,14 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
       setBotToken("");
       setTestResult({
         success: true,
-        message: "Bot token stored securely for your account."
+        messageKey: "feedback.tokenStored"
       });
       setTimeout(() => setTestResult(null), 3000);
+    } else {
+      setTestResult({
+        success: false,
+        messageKey: "feedback.tokenSaveFailed"
+      });
     }
   };
 
@@ -168,31 +195,33 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
           <h2 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 mb-1.5">
             <Bot className="w-5 h-5 text-sky-500 animate-pulse" />
-            1. Your Telegram Bot Configuration
+            {t("bot.title")}
           </h2>
           <p className="text-slate-500 text-xs mb-5 font-sans leading-relaxed">
-            Your destination channels and groups use one private Telegram bot credential tied to your signed-in account. Stored tokens are never returned to this browser or shared with other users.
+            {t("bot.description")}
           </p>
 
           <div className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Telegram Bot Token
+                {t("bot.tokenLabel")}
               </label>
               <div className="relative flex gap-2">
                 <div className="relative flex-1">
                   <input
                     type={showToken ? "text" : "password"}
-                    placeholder={destination.botTokenConfigured ? "Enter a new token to replace the stored credential" : "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"}
+                    placeholder={destination.botTokenConfigured ? t("bot.placeholderReplace") : t("bot.placeholderNew")}
                     value={botToken}
+                    dir="ltr"
                     disabled={readOnly}
                     onChange={(e) => setBotToken(e.target.value)}
-                    className="w-full pl-3.5 pr-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800 disabled:opacity-85 disabled:cursor-not-allowed"
+                    className="w-full ps-3.5 pe-10 py-2.5 border border-slate-200 focus:border-sky-500 focus:ring-2 focus:ring-sky-100 rounded-lg text-xs bg-slate-50/50 outline-hidden font-mono text-slate-800 disabled:opacity-85 disabled:cursor-not-allowed"
                   />
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-3.5 top-2.5 text-slate-400 hover:text-slate-600 transition-colors"
+                    aria-label={showToken ? t("bot.hideToken") : t("bot.showToken")}
+                    className="absolute end-3.5 top-2.5 text-slate-400 hover:text-slate-600 transition-colors"
                   >
                     {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -204,7 +233,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                     disabled={isSaving}
                     className="px-4 py-2.5 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition-colors cursor-pointer"
                   >
-                    Save Token
+                    {isSaving ? t("bot.saving") : t("bot.save")}
                   </button>
                 )}
               </div>
@@ -212,18 +241,34 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                 {destination.botTokenConfigured ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">
                     <Check className="h-3 w-3" />
-                    Stored securely
+                    {t("bot.stored")}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">
                     <AlertCircle className="h-3 w-3" />
-                    Token not configured
+                    {t("bot.notConfigured")}
                   </span>
                 )}
                 <p className="text-[10px] text-slate-400">
-                  Acquire a token from <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline">@BotFather</a>. Saving stores or replaces only your account's credential in Supabase Vault.
+                  {t("bot.acquirePrefix")} <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-sky-500 hover:underline" dir="ltr">@BotFather</a>. {t("bot.acquireSuffix")}
                 </p>
               </div>
+              {testResult && !testResult.targetId ? (
+                <div className={`mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs ${
+                  testResult.success
+                    ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+                    : "border-rose-100 bg-rose-50 text-rose-800"
+                }`} role={testResult.success ? "status" : "alert"}>
+                  {testResult.success ? (
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+                  ) : (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                  )}
+                  <span dir="auto">
+                    {testResult.messageKey ? t(testResult.messageKey, testResult.values) : testResult.message}
+                  </span>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -232,10 +277,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
           <h2 className="font-display font-bold text-base text-slate-900 flex items-center gap-2 mb-1.5">
             <Radio className="w-5 h-5 text-indigo-500" />
-            2. Destination Channels & Groups
+            {t("targets.title")}
           </h2>
           <p className="text-slate-500 text-xs mb-5 font-sans leading-relaxed">
-            Manage your own public or private Telegram channels/groups. Only your signed-in account can list, edit, test, or publish to these targets.
+            {t("targets.description")}
           </p>
 
           {/* Target Addition Form */}
@@ -243,36 +288,50 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
             <form onSubmit={handleAddTarget} className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
               <div className="sm:col-span-5">
                 <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Friendly Name
+                  {t("targets.friendlyName")}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g., Tech Announcements"
+                  placeholder={t("targets.friendlyNamePlaceholder")}
                   value={newTargetName}
-                  onChange={(e) => setNewTargetName(e.target.value)}
+                  dir="auto"
+                  onChange={(e) => {
+                    setNewTargetName(e.target.value);
+                    setTargetFormErrorKey(null);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs outline-hidden"
                 />
               </div>
               <div className="sm:col-span-5">
                 <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Channel ID or Username
+                  {t("targets.channelId")}
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g., @my_channel or -100123456"
+                  placeholder={t("targets.channelIdPlaceholder")}
                   value={newTargetChannelId}
-                  onChange={(e) => setNewTargetChannelId(e.target.value)}
+                  dir="ltr"
+                  onChange={(e) => {
+                    setNewTargetChannelId(e.target.value);
+                    setTargetFormErrorKey(null);
+                  }}
                   className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 rounded-lg text-xs font-mono outline-hidden"
                 />
               </div>
               <div className="sm:col-span-2">
                 <button
                   type="submit"
+                  aria-label={t("targets.addTarget")}
                   className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
                 >
-                  <Plus className="w-3.5 h-3.5" /> Add
+                  <Plus className="w-3.5 h-3.5" /> {t("targets.add")}
                 </button>
               </div>
+              {targetFormErrorKey ? (
+                <p className="sm:col-span-12 text-xs font-semibold text-rose-600" role="alert">
+                  {t(targetFormErrorKey)}
+                </p>
+              ) : null}
             </form>
           )}
 
@@ -280,8 +339,8 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
           {targets.length === 0 ? (
             <div className="text-center py-8 border border-dashed border-slate-200 rounded-xl text-slate-400">
               <Settings className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-              <p className="text-xs font-semibold">No targets defined yet</p>
-              <p className="text-[10px] mt-0.5">Add a friendly target channel or group using the form above.</p>
+              <p className="text-xs font-semibold">{t("targets.emptyTitle")}</p>
+              <p className="text-[10px] mt-0.5">{t("targets.emptyDescription")}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -306,35 +365,36 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                           disabled={readOnly}
                           onChange={() => handleToggleTarget(target.id)}
                           className="mt-1 h-4 w-4 rounded-sm border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Toggle active state"
+                          title={t("targets.toggle", { name: target.name })}
+                          aria-label={t("targets.toggle", { name: target.name })}
                         />
                         <div>
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-bold text-slate-800">{target.name}</h4>
+                            <h4 className="text-xs font-bold text-slate-800" dir="auto">{target.name}</h4>
                             {target.enabled ? (
                               <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider">
-                                Active
+                                {t("targets.active")}
                               </span>
                             ) : (
                               <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-sm uppercase tracking-wider">
-                                Muted
+                                {t("targets.muted")}
                               </span>
                             )}
                           </div>
-                          <p className="text-[11px] font-mono text-slate-500 mt-0.5">{target.channelId}</p>
+                          <p className="text-[11px] font-mono text-slate-500 mt-0.5" dir="ltr">{target.channelId}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 ml-auto sm:ml-0">
+                      <div className="flex items-center gap-2 shrink-0 ms-auto sm:ms-0">
                         {/* Status indicators */}
                         {target.status === "success" && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md">
-                            <Check className="w-3 h-3" /> Connected
+                            <Check className="w-3 h-3" /> {t("targets.connected")}
                           </span>
                         )}
                         {target.status === "error" && (
                           <span className="inline-flex items-center gap-1 text-[10px] text-rose-600 font-bold bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-md" title={target.errorMessage}>
-                            <AlertCircle className="w-3 h-3" /> Failed
+                            <AlertCircle className="w-3 h-3" /> {t("targets.failed")}
                           </span>
                         )}
 
@@ -342,10 +402,11 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                           type="button"
                           onClick={() => handleTestTarget(target)}
                           disabled={isTesting || !target.enabled || readOnly}
+                          aria-label={isTesting ? t("targets.testing") : t("targets.test")}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 border border-slate-200 hover:border-slate-300 bg-white text-slate-600 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                         >
                           {isTesting ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-sky-500" />}
-                          Test Connection
+                          {isTesting ? t("targets.testing") : t("targets.test")}
                         </button>
 
                         {!readOnly && (
@@ -353,7 +414,8 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                             type="button"
                             onClick={() => handleRemoveTarget(target.id)}
                             className="p-1.5 hover:bg-rose-50 hover:text-rose-600 text-slate-400 rounded-lg transition-colors cursor-pointer"
-                            title="Remove destination"
+                            title={t("targets.remove", { name: target.name })}
+                            aria-label={t("targets.remove", { name: target.name })}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -374,8 +436,10 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
                           <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                         )}
                         <div>
-                          <p className="font-semibold">{targetTestResult.success ? "Verification Successful" : "Verification Failed"}</p>
-                          <p className="text-[10px] mt-0.5 leading-normal">{targetTestResult.message}</p>
+                          <p className="font-semibold">{targetTestResult.success ? t("feedback.verificationSuccessful") : t("feedback.verificationFailed")}</p>
+                          <p className="text-[10px] mt-0.5 leading-normal" dir="auto">
+                            {targetTestResult.messageKey ? t(targetTestResult.messageKey, targetTestResult.values) : targetTestResult.message}
+                          </p>
                         </div>
                       </div>
                     )}
@@ -392,37 +456,37 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         <div>
           <h3 className="font-display font-bold text-slate-800 text-sm flex items-center gap-1.5 mb-4">
             <HelpCircle className="w-4.5 h-4.5 text-sky-500" />
-            Multiple Destination Guide
+            {t("guide.title")}
           </h3>
           <p className="text-slate-500 text-xs mb-4 font-sans leading-relaxed">
-            Configure your private bot to broadcast curated content to your own target feeds. Other TGReposter users have separate bot credentials and destination lists.
+            {t("guide.intro")}
           </p>
 
           <ol className="space-y-4 text-xs">
             <li className="flex gap-2.5">
               <span className="w-5 h-5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
               <div>
-                <p className="font-bold text-slate-800">Assign Admin Privileges</p>
+                <p className="font-bold text-slate-800">{t("guide.adminTitle")}</p>
                 <p className="text-slate-500 text-[11px] mt-0.5 leading-relaxed">
-                  The bot must be added as an <b>Administrator</b> in every channel or group you configure on the left. Ensure it has <i>"Post Messages"</i> permissions.
+                  {t("guide.adminDescription")}
                 </p>
               </div>
             </li>
             <li className="flex gap-2.5">
               <span className="w-5 h-5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
               <div>
-                <p className="font-bold text-slate-800">Support Private Channels</p>
+                <p className="font-bold text-slate-800">{t("guide.privateTitle")}</p>
                 <p className="text-slate-500 text-[11px] mt-0.5 leading-relaxed">
-                  For private channels, retrieve the numeric channel ID (typically starting with <code>-100</code>) by forwarding a post from the channel to a diagnostic bot like <code>@userinfobot</code>.
+                  {t("guide.privateDescriptionPrefix")} <code dir="ltr">-100</code>{t("guide.privateDescriptionSuffix")} <code dir="ltr">@userinfobot</code>.
                 </p>
               </div>
             </li>
             <li className="flex gap-2.5">
               <span className="w-5 h-5 rounded-full bg-sky-100 text-sky-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
               <div>
-                <p className="font-bold text-slate-800">Multi-Publishing Flow</p>
+                <p className="font-bold text-slate-800">{t("guide.multiTitle")}</p>
                 <p className="text-slate-500 text-[11px] mt-0.5 leading-relaxed">
-                  When you click <b>Publish Now</b> on the feed, the server iterates through all checked active targets and publishes the message.
+                  {t("guide.multiDescription")}
                 </p>
               </div>
             </li>
@@ -430,7 +494,7 @@ export default function DestinationConfig({ destination, onSave, readOnly = fals
         </div>
 
         <div className="border-t border-slate-200 pt-4 mt-6 text-[10px] text-slate-400 leading-relaxed font-sans">
-          All targets run concurrently. If a target is temporarily down or lacking permission, other active channels will still receive the post perfectly.
+          {t("guide.footer")}
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Sparkles, Cpu, CheckCircle2, AlertTriangle, Play, HelpCircle, ArrowRight } from "lucide-react";
-import { AIConfig as IAIConfig } from "../types";
+import type { AIConfig as IAIConfig } from "../types";
 import { safeResponseJson } from "../utils/api";
 
 interface AIConfigProps {
@@ -11,6 +12,11 @@ interface AIConfigProps {
   readOnly?: boolean;
 }
 
+interface TestErrorState {
+  message?: string;
+  messageKey?: string;
+}
+
 export default function AIConfig({
   aiConfig = { provider: "gemini", model: "gemini-3.5-flash" },
   onUpdateAI,
@@ -18,17 +24,25 @@ export default function AIConfig({
   openrouterActive,
   readOnly = false
 }: AIConfigProps) {
+  const { t, i18n } = useTranslation("ai");
   const [customModel, setCustomModel] = useState("");
-  const [testText, setTestText] = useState("Scraping Telegram channels is a great way to curate industry newsletter posts.");
+  const [testText, setTestText] = useState(() => t("playground.sample"));
+  const [testTextEdited, setTestTextEdited] = useState(false);
   const [testResult, setTestResult] = useState("");
   const [isTesting, setIsTesting] = useState(false);
-  const [testError, setTestError] = useState("");
+  const [testError, setTestError] = useState<TestErrorState | null>(null);
+
+  useEffect(() => {
+    if (!testTextEdited) {
+      setTestText(t("playground.sample"));
+    }
+  }, [i18n.language, t, testTextEdited]);
 
   const providers = [
     {
       id: "gemini" as const,
       name: "Google Gemini",
-      description: "Fast, highly intelligent native Google AI model suite.",
+      descriptionKey: "providers.geminiDescription",
       envVar: "GEMINI_API_KEY",
       active: geminiActive,
       models: ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]
@@ -36,7 +50,7 @@ export default function AIConfig({
     {
       id: "openrouter" as const,
       name: "OpenRouter",
-      description: "Access any open-source or proprietary LLM via a unified endpoint.",
+      descriptionKey: "providers.openrouterDescription",
       envVar: "OPENROUTER_API_KEY",
       active: openrouterActive,
       models: [
@@ -57,7 +71,7 @@ export default function AIConfig({
       model: defaultModel
     });
     setTestResult("");
-    setTestError("");
+    setTestError(null);
   };
 
   const handleModelSelect = (modelName: string) => {
@@ -81,7 +95,7 @@ export default function AIConfig({
     if (!testText.trim()) return;
     setIsTesting(true);
     setTestResult("");
-    setTestError("");
+    setTestError(null);
 
     try {
       const savedToken = localStorage.getItem("curator_token");
@@ -101,12 +115,14 @@ export default function AIConfig({
       const data = await safeResponseJson(res);
       if (res.ok && data.result) {
         setTestResult(data.result);
+      } else if (data.error) {
+        setTestError({ message: data.error });
       } else {
-        throw new Error(data.error || "AI failed to generate test response");
+        setTestError({ messageKey: "errors.generationFallback" });
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setTestError(err.message || "Connection failed. Check your API key configuration.");
+      setTestError({ messageKey: "errors.connectionFallback" });
     } finally {
       setIsTesting(false);
     }
@@ -123,10 +139,10 @@ export default function AIConfig({
         <div>
           <h2 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-indigo-500 animate-pulse" />
-            AI Curation Engine
+            {t("header.title")}
           </h2>
           <p className="text-slate-500 text-xs mt-0.5 font-sans">
-            Configure the language model used to automatically rewrite, translate, and extract hashtags from posts.
+            {t("header.description")}
           </p>
         </div>
       </div>
@@ -137,7 +153,7 @@ export default function AIConfig({
           {/* Provider Selection */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
-              Select AI Provider
+              {t("providers.label")}
             </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {providers.map(p => {
@@ -147,7 +163,8 @@ export default function AIConfig({
                     key={p.id}
                     onClick={() => handleProviderSelect(p.id)}
                     disabled={readOnly}
-                    className={`text-left p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between disabled:opacity-80 disabled:cursor-not-allowed ${
+                    aria-label={t("providers.select", { provider: p.name })}
+                    className={`text-start p-4 rounded-xl border-2 transition-all cursor-pointer relative flex flex-col justify-between disabled:opacity-80 disabled:cursor-not-allowed ${
                       isSelected
                         ? "border-indigo-600 bg-indigo-50/20 shadow-2xs"
                         : "border-slate-100 hover:border-slate-200 hover:bg-slate-50"
@@ -159,19 +176,19 @@ export default function AIConfig({
                         <span className="font-bold text-sm text-slate-900">{p.name}</span>
                       </div>
                       <p className="text-xs text-slate-500 leading-relaxed mb-3">
-                        {p.description}
+                        {t(p.descriptionKey)}
                       </p>
                     </div>
 
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/50 w-full">
-                      <span className="text-[10px] font-mono text-slate-400">{p.envVar}</span>
+                      <span className="text-[10px] font-mono text-slate-400" dir="ltr">{p.envVar}</span>
                       {p.active ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                          <CheckCircle2 className="w-3 h-3" /> Enabled
+                          <CheckCircle2 className="w-3 h-3" /> {t("providers.enabled")}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="w-3 h-3" /> Missing Secret
+                          <AlertTriangle className="w-3 h-3" /> {t("providers.missingSecret")}
                         </span>
                       )}
                     </div>
@@ -182,14 +199,14 @@ export default function AIConfig({
 
             <p className="text-[11px] text-slate-400 mt-2.5 leading-relaxed flex items-start gap-1">
               <HelpCircle className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
-              To change API keys, configure <b>GEMINI_API_KEY</b> or <b>OPENROUTER_API_KEY</b> in your deployment environment&apos;s secrets settings. No manual keys can be written client-side.
+              {t("providers.secretHelpPrefix")} <b dir="ltr">GEMINI_API_KEY</b> {t("providers.secretHelpMiddle")} <b dir="ltr">OPENROUTER_API_KEY</b> {t("providers.secretHelpSuffix")}
             </p>
           </div>
 
           {/* Model Selection */}
           <div className="pt-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-3">
-              Select AI Model
+              {t("models.label")}
             </label>
             <div className="flex flex-wrap gap-2 mb-4">
               {providers
@@ -201,13 +218,14 @@ export default function AIConfig({
                       key={m}
                       onClick={() => handleModelSelect(m)}
                       disabled={readOnly}
+                      aria-label={t("models.select", { model: m })}
                       className={`px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-all disabled:opacity-80 disabled:cursor-not-allowed ${
                         isSelected
                           ? "bg-slate-900 text-white shadow-2xs border border-slate-900"
                           : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"
                       }`}
                     >
-                      {m}
+                      <span dir="ltr">{m}</span>
                     </button>
                   );
                 })}
@@ -221,7 +239,7 @@ export default function AIConfig({
                     : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"
                 }`}
               >
-                Custom Model...
+                {t("models.custom")}
               </button>
             </div>
 
@@ -229,7 +247,9 @@ export default function AIConfig({
               <form onSubmit={handleCustomModelSubmit} className="flex gap-2 max-w-md bg-slate-50 p-1 rounded-lg border border-slate-200">
                 <input
                   type="text"
-                  placeholder="e.g. meta-llama/llama-3.1-405b-instruct"
+                  dir="ltr"
+                  aria-label={t("models.customInputLabel")}
+                  placeholder={t("models.customPlaceholder")}
                   value={customModel}
                   onChange={(e) => setCustomModel(e.target.value)}
                   className="flex-1 px-2.5 py-1.5 text-xs outline-hidden font-mono bg-transparent"
@@ -238,14 +258,14 @@ export default function AIConfig({
                   type="submit"
                   className="bg-slate-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-md hover:bg-slate-800 transition-colors cursor-pointer"
                 >
-                  Apply
+                  {t("models.apply")}
                 </button>
               </form>
             )}
 
             <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
               <p className="text-xs text-slate-600">
-                Current Active AI Model: <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-sm">{aiConfig.model}</span>
+                {t("models.current")} <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-sm" dir="ltr">{aiConfig.model}</span>
               </p>
             </div>
           </div>
@@ -256,37 +276,41 @@ export default function AIConfig({
           <div>
             <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2 flex items-center gap-1.5">
               <Play className="w-3.5 h-3.5 text-indigo-500 fill-indigo-500" />
-              AI test playground
+              {t("playground.title")}
             </h3>
             <p className="text-slate-500 text-[11px] leading-relaxed mb-3">
-              Test your active AI provider and selected model instantly. This helper will attempt to curate the test text in a creative, viral tone.
+              {t("playground.description")}
             </p>
 
             <div className="space-y-3">
               <div>
                 <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">
-                  Input Sample Text
+                  {t("playground.inputLabel")}
                 </label>
                 <textarea
                   rows={3}
                   value={testText}
-                  onChange={(e) => setTestText(e.target.value)}
-                  placeholder="Paste some test text here..."
+                  dir="auto"
+                  onChange={(e) => {
+                    setTestText(e.target.value);
+                    setTestTextEdited(true);
+                  }}
+                  placeholder={t("playground.placeholder")}
                   className="w-full p-2 text-xs border border-slate-200 rounded-lg bg-white outline-hidden font-sans resize-none focus:ring-1 focus:ring-indigo-100 focus:border-indigo-500"
                 />
               </div>
 
               {testResult && (
                 <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-2.5">
-                  <p className="text-[10px] font-bold text-indigo-700 uppercase mb-1">Curated Output</p>
-                  <p className="text-xs text-slate-700 leading-relaxed font-sans">{testResult}</p>
+                  <p className="text-[10px] font-bold text-indigo-700 uppercase mb-1">{t("playground.output")}</p>
+                  <p className="text-xs text-slate-700 leading-relaxed font-sans" dir="auto">{testResult}</p>
                 </div>
               )}
 
               {testError && (
                 <div className="bg-rose-50 border border-rose-100 rounded-lg p-2.5">
-                  <p className="text-[10px] font-bold text-rose-700 uppercase mb-1">Curation Error</p>
-                  <p className="text-xs text-rose-700 leading-relaxed font-sans">{testError}</p>
+                  <p className="text-[10px] font-bold text-rose-700 uppercase mb-1">{t("playground.error")}</p>
+                  <p className="text-xs text-rose-700 leading-relaxed font-sans" dir="auto">{testError.messageKey ? t(testError.messageKey) : testError.message}</p>
                 </div>
               )}
             </div>
@@ -301,12 +325,12 @@ export default function AIConfig({
               {isTesting ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Testing AI Connection...
+                  {t("playground.testing")}
                 </>
               ) : (
                 <>
-                  <span>Run AI Test</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span>{t("playground.run")}</span>
+                  <ArrowRight className="rtl-mirror w-3.5 h-3.5" />
                 </>
               )}
             </button>

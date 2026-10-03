@@ -19,11 +19,13 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "form-data": "^4.0.6",
+    "i18next": "^26.4.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "pg": "^8.22.0",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1"
+    "react-dom": "^19.0.1",
+    "react-i18next": "^17.0.15"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

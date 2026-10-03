@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
   Bot,
@@ -15,6 +16,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
+import { normalizeAppLocale } from "../i18n";
 import type { CuratorUser } from "../types";
 
 interface UserManagementProps {
@@ -26,6 +28,12 @@ interface UserManagementProps {
   ) => Promise<boolean>;
   onDeleteUser: (username: string) => Promise<boolean>;
   currentUsername: string | null;
+}
+
+interface TeamFeedback {
+  message?: string;
+  messageKey?: string;
+  values?: Record<string, string>;
 }
 
 function isCurrentUser(user: CuratorUser, currentUsername: string | null) {
@@ -44,11 +52,20 @@ export default function UserManagement({
   onDeleteUser,
   currentUsername,
 }: UserManagementProps) {
+  const { t, i18n } = useTranslation("team");
+  const locale = normalizeAppLocale(i18n.language);
+  const numberFormatter = new Intl.NumberFormat(locale);
+  const dateFormatter = new Intl.DateTimeFormat(`${locale}-u-ca-gregory`, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"super-admin" | "admin">("admin");
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [error, setError] = useState<TeamFeedback | null>(null);
+  const [success, setSuccess] = useState<TeamFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const activeUsers = useMemo(
@@ -62,17 +79,17 @@ export default function UserManagement({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
-    setSuccess("");
+    setError(null);
+    setSuccess(null);
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes("@")) {
-      setError("Enter a valid email address. New workspace members use Supabase Auth.");
+      setError({ messageKey: "feedback.validEmail" });
       return;
     }
 
     if (!password || password.length < 8) {
-      setError("Temporary passwords must be at least 8 characters.");
+      setError({ messageKey: "feedback.passwordLength" });
       return;
     }
 
@@ -80,17 +97,18 @@ export default function UserManagement({
     try {
       const ok = await onAddUser(cleanEmail, password, role);
       if (ok) {
-        setSuccess(
-          `Workspace member "${cleanEmail}" was provisioned with a fully private curation and publishing workspace.`
-        );
+        setSuccess({
+          messageKey: "feedback.provisionSuccess",
+          values: { identity: cleanEmail },
+        });
         setEmail("");
         setPassword("");
         setRole("admin");
       } else {
-        setError("Unable to provision this workspace member.");
+        setError({ messageKey: "feedback.provisionFailed" });
       }
     } catch (err: any) {
-      setError(err?.message || "Unable to provision this workspace member.");
+      setError(err?.message ? { message: err.message } : { messageKey: "feedback.provisionFailed" });
     } finally {
       setIsSubmitting(false);
     }
@@ -98,26 +116,25 @@ export default function UserManagement({
 
   const handleDelete = async (identity: string) => {
     const confirmed = window.confirm(
-      `Revoke access for "${identity}"? Their sources, filters, AI preferences, monitored posts, Inbox, Destinations, and publishing history will be retained for audit/recovery, but they will no longer be able to sign in.`
+      t("feedback.revokeConfirm", { identity })
     );
     if (!confirmed) return;
 
-    setError("");
-    setSuccess("");
+    setError(null);
+    setSuccess(null);
 
     try {
       const ok = await onDeleteUser(identity);
       if (ok) {
-        setSuccess(
-          `Access for "${identity}" was revoked. Personal workspace data was retained.`
-        );
+        setSuccess({
+          messageKey: "feedback.revokeSuccess",
+          values: { identity },
+        });
       } else {
-        setError(
-          "Unable to revoke access. Make sure you are not revoking yourself or the final Super-Admin."
-        );
+        setError({ messageKey: "feedback.revokeFailed" });
       }
     } catch (err: any) {
-      setError(err?.message || "Unable to revoke this account.");
+      setError(err?.message ? { message: err.message } : { messageKey: "feedback.revokeAccountFailed" });
     }
   };
 
@@ -129,22 +146,19 @@ export default function UserManagement({
             <div className="flex items-center gap-2">
               <Users className="h-5 w-5 text-indigo-600" aria-hidden="true" />
               <h2 className="font-display text-lg font-bold text-slate-950">
-                Team & Workspace Access
+                {t("header.title")}
               </h2>
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Every member has an isolated curation and publishing workspace: their own
-              Sources, Filters, AI Configuration, monitored posts, Content Inbox, review
-              status, publishing history, Telegram bot credential, and Destinations. Only
-              Team and System Settings are Super-Admin controls.
+              {t("header.description")}
             </p>
           </div>
 
           <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
             <ShieldCheck className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
             <div>
-              <p className="font-bold">{currentUsername || "Super-Admin"}</p>
-              <p className="text-xs text-indigo-700">Current system administrator</p>
+              <p className="font-bold" dir="auto">{currentUsername || t("header.superAdminFallback")}</p>
+              <p className="text-xs text-indigo-700">{t("header.currentAdministrator")}</p>
             </div>
           </div>
         </div>
@@ -153,30 +167,30 @@ export default function UserManagement({
           <article className="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
             <div className="flex items-center gap-2">
               <Inbox className="h-4 w-4 text-sky-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Private Content Inbox</h3>
+              <h3 className="text-sm font-bold text-slate-900">{t("isolation.inboxTitle")}</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Edits, approvals, archives, publish results, and history belong only to that member.
+              {t("isolation.inboxDescription")}
             </p>
           </article>
 
           <article className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Private Destinations</h3>
+              <h3 className="text-sm font-bold text-slate-900">{t("isolation.destinationsTitle")}</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Each member owns a separate Telegram bot credential and destination list.
+              {t("isolation.destinationsDescription")}
             </p>
           </article>
 
           <article className="rounded-xl border border-violet-100 bg-violet-50/70 p-4">
             <div className="flex items-center gap-2">
               <Database className="h-4 w-4 text-violet-600" aria-hidden="true" />
-              <h3 className="text-sm font-bold text-slate-900">Private Curation Setup</h3>
+              <h3 className="text-sm font-bold text-slate-900">{t("isolation.setupTitle")}</h3>
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              Every member controls separate sources, filters, AI preferences, and monitored post records.
+              {t("isolation.setupDescription")}
             </p>
           </article>
         </div>
@@ -188,10 +202,10 @@ export default function UserManagement({
             <UserPlus className="h-5 w-5 text-slate-700" aria-hidden="true" />
             <div>
               <h3 className="font-display text-base font-bold text-slate-950">
-                Add Workspace Member
+                {t("form.title")}
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                New accounts use Supabase Auth and get a separate personal workspace.
+                {t("form.description")}
               </p>
             </div>
           </div>
@@ -200,60 +214,62 @@ export default function UserManagement({
             {error ? (
               <div className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs leading-5 text-rose-800">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" aria-hidden="true" />
-                <span>{error}</span>
+                <span dir="auto">{error.messageKey ? t(error.messageKey, error.values) : error.message}</span>
               </div>
             ) : null}
 
             {success ? (
               <div className="flex gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
                 <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" aria-hidden="true" />
-                <span>{success}</span>
+                <span dir="auto">{success.messageKey ? t(success.messageKey, success.values) : success.message}</span>
               </div>
             ) : null}
 
             <div>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
-                Email address
+                {t("form.email")}
               </label>
               <div className="relative">
-                <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <Mail className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
                   type="email"
                   required
                   autoComplete="email"
                   value={email}
+                  dir="ltr"
                   onChange={(event) => setEmail(event.target.value)}
-                  placeholder="member@example.com"
-                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  placeholder={t("form.emailPlaceholder")}
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-10 pe-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
                 />
               </div>
               <p className="mt-1.5 text-xs leading-5 text-slate-400">
-                Email becomes the durable Supabase identity used to isolate personal data.
+                {t("form.emailHelp")}
               </p>
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
-                Temporary password
+                {t("form.password")}
               </label>
               <div className="relative">
-                <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+                <LockKeyhole className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
                 <input
                   type="password"
                   required
                   minLength={8}
                   autoComplete="new-password"
                   value={password}
+                  dir="ltr"
                   onChange={(event) => setPassword(event.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
+                  placeholder={t("form.passwordPlaceholder")}
+                  className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 ps-10 pe-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
                 />
               </div>
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
-                Access role
+                {t("form.role")}
               </label>
               <select
                 value={role}
@@ -263,22 +279,22 @@ export default function UserManagement({
                 className="min-h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-hidden focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-100"
               >
                 <option value="admin">
-                  Admin — Personal curation & publishing
+                  {t("form.roles.adminOption")}
                 </option>
                 <option value="super-admin">
-                  Super-Admin — Personal workspace + system administration
+                  {t("form.roles.superAdminOption")}
                 </option>
               </select>
             </div>
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <p className="text-xs font-bold text-slate-700">
-                {role === "super-admin" ? "Super-Admin access" : "Admin access"}
+                {role === "super-admin" ? t("form.roles.superAdminTitle") : t("form.roles.adminTitle")}
               </p>
               <p className="mt-1 text-xs leading-5 text-slate-500">
                 {role === "super-admin"
-                  ? "Gets a fully private curation workspace plus permission to manage team members and system health."
-                  : "Gets private sources, filters, AI preferences, monitored posts, Inbox, Destinations, and publishing history."}
+                  ? t("form.roles.superAdminDescription")
+                  : t("form.roles.adminDescription")}
               </p>
             </div>
 
@@ -288,7 +304,7 @@ export default function UserManagement({
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800 disabled:bg-slate-400"
             >
               <KeyRound className="h-4 w-4 text-sky-400" aria-hidden="true" />
-              {isSubmitting ? "Provisioning member..." : "Provision workspace member"}
+              {isSubmitting ? t("form.submitting") : t("form.submit")}
             </button>
           </form>
         </section>
@@ -297,16 +313,21 @@ export default function UserManagement({
           <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="font-display text-base font-bold text-slate-950">
-                Workspace Members
+                {t("members.title")}
               </h3>
               <p className="mt-0.5 text-xs text-slate-500">
-                {activeUsers.length} active · {users.length} total
-                {legacyUsers.length ? ` · ${legacyUsers.length} legacy` : ""}
+                {t("members.summary", {
+                  active: numberFormatter.format(activeUsers.length),
+                  total: numberFormatter.format(users.length),
+                })}
+                {legacyUsers.length
+                  ? t("members.legacySuffix", { legacy: numberFormatter.format(legacyUsers.length) })
+                  : ""}
               </p>
             </div>
             <div className="inline-flex items-center gap-2 self-start rounded-lg bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              Personal workspace isolation enabled
+              {t("members.isolationEnabled")}
             </div>
           </div>
 
@@ -314,10 +335,9 @@ export default function UserManagement({
             <div className="mx-5 mt-4 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
               <div>
-                <p className="font-bold">Legacy accounts still exist</p>
+                <p className="font-bold">{t("members.legacyTitle")}</p>
                 <p className="mt-0.5 text-amber-700">
-                  They remain compatible and use a normalized username as their personal workspace key.
-                  New members should be created with email so ownership is tied to an immutable Supabase user ID.
+                  {t("members.legacyDescription")}
                 </p>
               </div>
             </div>
@@ -339,11 +359,11 @@ export default function UserManagement({
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-bold text-slate-950">
-                        {user.username}
+                        <span dir="auto">{user.username}</span>
                       </p>
                       {self ? (
                         <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-700">
-                          You
+                          {t("members.you")}
                         </span>
                       ) : null}
                       <span
@@ -358,7 +378,7 @@ export default function UserManagement({
                         ) : (
                           <UserCheck className="h-3 w-3" aria-hidden="true" />
                         )}
-                        {isSuper ? "Super-Admin" : "Admin"}
+                        {isSuper ? t("members.roles.superAdmin") : t("members.roles.admin")}
                       </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-bold ${
@@ -367,12 +387,12 @@ export default function UserManagement({
                             : "bg-slate-100 text-slate-500"
                         }`}
                       >
-                        {active ? "Active" : "Revoked"}
+                        {active ? t("members.status.active") : t("members.status.revoked")}
                       </span>
                     </div>
 
                     {user.email ? (
-                      <p className="mt-1 truncate text-xs font-medium text-slate-500">
+                      <p className="mt-1 truncate text-xs font-medium text-slate-500" dir="ltr">
                         {user.email}
                       </p>
                     ) : null}
@@ -380,23 +400,21 @@ export default function UserManagement({
                     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400">
                       <span className="inline-flex items-center gap-1">
                         <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
-                        Added{" "}
-                        {new Date(user.createdAt || Date.now()).toLocaleDateString(
-                          undefined,
-                          { year: "numeric", month: "short", day: "numeric" }
-                        )}
+                        {t("members.added", {
+                          date: dateFormatter.format(new Date(user.createdAt || Date.now())),
+                        })}
                       </span>
                       <span>·</span>
                       <span className="font-semibold">
-                        {isSupabase ? "Supabase Auth" : "Legacy identity"}
+                        {isSupabase ? t("members.providers.supabase") : t("members.providers.legacy")}
                       </span>
                       <span>·</span>
-                      <span>Private Inbox + Destinations</span>
+                      <span>{t("members.privateWorkspace")}</span>
                     </div>
 
                     {!isSupabase ? (
                       <p className="mt-2 text-xs font-medium text-amber-600">
-                        Legacy workspace ownership is username-based. Prefer an email/Supabase account for new members.
+                        {t("members.legacyWarning")}
                       </p>
                     ) : null}
                   </div>
@@ -408,7 +426,7 @@ export default function UserManagement({
                       className="inline-flex min-h-11 items-center justify-center gap-2 self-start rounded-xl border border-slate-200 px-3 text-sm font-bold text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 sm:self-center"
                     >
                       <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      Revoke access
+                      {t("members.revoke")}
                     </button>
                   ) : null}
                 </article>
@@ -419,10 +437,10 @@ export default function UserManagement({
               <div className="py-12 text-center">
                 <Users className="mx-auto h-9 w-9 text-slate-300" aria-hidden="true" />
                 <p className="mt-3 text-sm font-bold text-slate-700">
-                  No workspace members found
+                  {t("members.emptyTitle")}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Provision the first account from the form on the left.
+                  {t("members.emptyDescription")}
                 </p>
               </div>
             ) : null}

@@ -3,14 +3,21 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import MarketingHome from './MarketingHome.tsx';
 import PromotionPage from './PromotionPage.tsx';
+import './i18n';
 import './index.css';
 
 function Root() {
   const [hash, setHash] = useState(window.location.hash);
   const hostname = window.location.hostname.toLowerCase();
+  const dashboardPathRequested = window.location.pathname.startsWith('/dashboard');
   const isLocalDashboard = ['localhost', '127.0.0.1', 'terminal.local'].includes(hostname)
-    && window.location.pathname.startsWith('/dashboard');
-  const isDashboardHost = hostname === 'api.tgreposter.com' || isLocalDashboard;
+    && dashboardPathRequested;
+  const isVercelPreviewDashboard = hostname.endsWith('.vercel.app')
+    && dashboardPathRequested;
+  const isDashboardHost =
+    hostname === 'api.tgreposter.com'
+    || isLocalDashboard
+    || isVercelPreviewDashboard;
 
   useEffect(() => {
     const onHashChange = () => setHash(window.location.hash);

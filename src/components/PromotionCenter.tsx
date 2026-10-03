@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BrainCircuit, Megaphone } from "lucide-react";
 import type { CuratedPost } from "../types";
 import PromotionAIStudio from "./PromotionAIStudio";
@@ -14,6 +15,7 @@ interface PromotionCenterProps {
 }
 
 export default function PromotionCenter({ posts, currentUserRole, onToast }: PromotionCenterProps) {
+  const { t } = useTranslation("promotion");
   const [view, setView] = useState<PromotionView>("campaigns");
 
   return (
@@ -26,7 +28,7 @@ export default function PromotionCenter({ posts, currentUserRole, onToast }: Pro
           }`}
         >
           <Megaphone className="w-4 h-4" />
-          Campaign Workspace
+          {t("center.campaignWorkspace")}
         </button>
         <button
           onClick={() => setView("ai")}
@@ -35,7 +37,7 @@ export default function PromotionCenter({ posts, currentUserRole, onToast }: Pro
           }`}
         >
           <BrainCircuit className="w-4 h-4" />
-          AI Promotion Studio
+          {t("center.aiStudio")}
         </button>
       </div>
 

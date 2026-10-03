@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import Header from "./components/Header";
 import AppShell, { type WorkspaceView } from "./components/AppShell";
@@ -13,10 +14,28 @@ import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
+import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
+import { normalizeAppLocale } from "./i18n";
+import { API_ERROR_CODES } from "../shared/apiErrorCodes";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
 const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
+
+const PUBLISHING_ERROR_KEYS: Record<string, string> = {
+  [API_ERROR_CODES.publishing.postNotFound]: "runtime.publishing.errors.postNotFound",
+  [API_ERROR_CODES.publishing.postNotApproved]: "runtime.publishing.errors.postNotApproved",
+  [API_ERROR_CODES.publishing.destinationsLoadFailed]: "runtime.publishing.errors.destinationsLoadFailed",
+  [API_ERROR_CODES.publishing.credentialLoadFailed]: "runtime.publishing.errors.credentialLoadFailed",
+  [API_ERROR_CODES.publishing.botNotConfigured]: "runtime.publishing.errors.botNotConfigured",
+  [API_ERROR_CODES.publishing.targetIdsInvalid]: "runtime.publishing.errors.targetIdsInvalid",
+  [API_ERROR_CODES.publishing.targetIdInvalid]: "runtime.publishing.errors.targetIdInvalid",
+  [API_ERROR_CODES.publishing.noTargetsSelected]: "runtime.publishing.errors.noTargetsSelected",
+  [API_ERROR_CODES.publishing.unknownTargets]: "runtime.publishing.errors.unknownTargets",
+  [API_ERROR_CODES.publishing.disabledTargets]: "runtime.publishing.errors.disabledTargets",
+  [API_ERROR_CODES.publishing.noEnabledTargets]: "runtime.publishing.errors.noEnabledTargets",
+  [API_ERROR_CODES.publishing.inboxStateSaveFailed]: "runtime.publishing.errors.inboxStateSaveFailed",
+};
 
 function sanitizeClientSettings(settings: CuratorSettings): CuratorSettings {
   return {
@@ -60,6 +79,9 @@ function emptyWorkspace(): CuratorSettings {
 }
 
 export default function App() {
+  const { t, i18n } = useTranslation("common");
+  const locale = normalizeAppLocale(i18n.language);
+  const numberFormatter = new Intl.NumberFormat(locale);
   const session = useRef(new WorkspaceSession()).current;
   const [settings, setSettings] = useState<CuratorSettings>(emptyWorkspace);
 
@@ -151,8 +173,8 @@ export default function App() {
       } catch (_) {}
       setSettings(fallback);
       setErrorMessage(cached
-        ? "Unable to fetch settings from server. Showing your saved workspace."
-        : "Unable to load your workspace. Please sign in again to retry.");
+        ? t("runtime.errors.settingsCached")
+        : t("runtime.errors.settingsUnavailable"));
     } finally {
       if (current()) setIsLoading(false);
     }
@@ -178,6 +200,8 @@ export default function App() {
           clearSession();
           return;
         }
+        await reconcileAuthenticatedAppLocale(data.uiLocale, savedToken);
+        if (!current()) return;
         setIsAuthenticated(true);
         setAuthToken(savedToken);
         setCurrentUserRole(data.role);
@@ -190,7 +214,7 @@ export default function App() {
         if (!current()) return;
         clearSession();
         setPasswordSet(true);
-        setErrorMessage("Unable to verify your session. Please sign in again.");
+        setErrorMessage(t("runtime.errors.sessionVerify"));
       } finally {
         if (current()) setAuthChecking(false);
       }
@@ -218,7 +242,7 @@ export default function App() {
 
   // Generic authenticated fetch helper
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    if (!isCurrent()) throw new Error("Session changed");
+    if (!isCurrent()) throw new Error(t("runtime.errors.sessionChanged"));
     const savedToken = authToken;
     const headers = {
       ...options.headers,
@@ -247,7 +271,7 @@ export default function App() {
         body: JSON.stringify(serverPatch)
       });
       if (!response.ok) {
-        throw new Error("Failed to save settings on server");
+        throw new Error(t("runtime.errors.configPersist"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
@@ -260,18 +284,20 @@ export default function App() {
     } catch (err: any) {
       if (!isCurrent()) return false;
       console.error("Error saving configuration:", err);
-      showToast("Config saved locally, but server failed to persist.", "error");
+      showToast(t("runtime.errors.configPersist"), "error");
     }
   };
 
-  const handleLoginSuccess = (
+  const handleLoginSuccess = async (
     token: string,
     isNewSetup: boolean,
     role: 'super-admin' | 'admin',
     username: string,
-    accountKey: string
+    accountKey: string,
+    uiLocale: string | null
   ) => {
     if (!isCurrent()) return;
+    await reconcileAuthenticatedAppLocale(uiLocale, token);
     resetWorkspace();
     localStorage.setItem("curator_token", token);
     localStorage.setItem("curator_role", role);
@@ -282,7 +308,7 @@ export default function App() {
     setCurrentUsername(username);
     setIsAuthenticated(true);
     setPasswordSet(true);
-    setSuccessToast(isNewSetup ? "Super-admin account set! Workspace unlocked." : `Welcome, ${username}! Workspace unlocked.`);
+    setSuccessToast(isNewSetup ? t("runtime.auth.ownerReady") : t("runtime.auth.welcome", { username }));
     loadSettings(token, session.capture());
   };
 
@@ -312,16 +338,16 @@ export default function App() {
       if (!response.ok) {
         const data = await safeResponseJson(response);
         if (!isCurrent()) return false;
-        throw new Error(data.error || "Failed to add user");
+        throw new Error(data.error || t("runtime.users.addFailed"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
       setSettings(prev => ({ ...prev, users: data.users }));
-      showToast(`User "${username}" successfully registered.`);
+      showToast(t("runtime.users.registered", { username }));
       return true;
     } catch (err: any) {
       if (!isCurrent()) return false;
-      showToast(err.message || "Unable to add user", "error");
+      showToast(err.message || t("runtime.users.addFailed"), "error");
       return false;
     }
   };
@@ -336,16 +362,16 @@ export default function App() {
       if (!response.ok) {
         const data = await safeResponseJson(response);
         if (!isCurrent()) return false;
-        throw new Error(data.error || "Failed to revoke user access");
+        throw new Error(data.error || t("runtime.users.revokeFailed"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
       setSettings(prev => ({ ...prev, users: data.users }));
-      showToast(`User "${username}" access revoked.`);
+      showToast(t("runtime.users.revoked", { username }));
       return true;
     } catch (err: any) {
       if (!isCurrent()) return false;
-      showToast(err.message || "Unable to revoke user access", "error");
+      showToast(err.message || t("runtime.users.revokeFailed"), "error");
       return false;
     }
   };
@@ -383,7 +409,7 @@ export default function App() {
     const updated = { ...settings, channels: updatedChannels };
     await saveSettingsToServer(updated, { channels: updatedChannels });
     if (!isCurrent()) return;
-    showToast(`Added channel @${cleanUsername}! Automatically fetching posts...`);
+    showToast(t("runtime.channels.added", { username: cleanUsername }));
     // Auto fetch the newly added channel
     handleFetchChannel(cleanUsername);
   };
@@ -394,7 +420,7 @@ export default function App() {
     const updated = { ...settings, channels: updatedChannels };
     await saveSettingsToServer(updated, { channels: updatedChannels });
     if (!isCurrent()) return;
-    showToast(`Removed channel @${username}`);
+    showToast(t("runtime.channels.removed", { username }));
   };
 
   // 2. Filter actions
@@ -403,7 +429,7 @@ export default function App() {
     const updated = { ...settings, filters: updatedFilters };
     await saveSettingsToServer(updated, { filters: updatedFilters });
     if (!isCurrent()) return;
-    showToast("Filtering criteria updated successfully.");
+    showToast(t("runtime.filters.updated"));
   };
 
   // 3. Destination configuration actions
@@ -421,13 +447,13 @@ export default function App() {
         if (!isCurrent()) return false;
 
         if (!tokenResponse.ok || !tokenResult.success) {
-          throw new Error(tokenResult.error || "Unable to store Telegram bot token.");
+          throw new Error(tokenResult.error || t("runtime.destinations.tokenStoreFailed"));
         }
 
         botTokenConfigured = true;
       } catch (err: any) {
         if (!isCurrent()) return false;
-        showToast(err?.message || "Unable to store Telegram bot token.", "error");
+        showToast(err?.message || t("runtime.destinations.tokenStoreFailed"), "error");
         return false;
       }
     }
@@ -445,7 +471,7 @@ export default function App() {
     const updated = { ...settings, destination: updatedDestination };
     await saveSettingsToServer(updated, { destination: updatedDestination });
     if (!isCurrent()) return false;
-    showToast(botToken.trim() ? "Telegram bot token stored securely and destinations updated." : "Telegram destinations updated.");
+    showToast(botToken.trim() ? t("runtime.destinations.tokenStored") : t("runtime.destinations.updated"));
     return true;
   };
 
@@ -454,7 +480,7 @@ export default function App() {
     const updated = { ...settings, aiConfig: updatedAI };
     await saveSettingsToServer(updated, { aiConfig: updatedAI });
     if (!isCurrent()) return;
-    showToast("AI configuration updated successfully.");
+    showToast(t("runtime.ai.updated"));
   };
 
   // 4. Manual Post Tweaks or status changes
@@ -481,7 +507,7 @@ export default function App() {
     if (!isCurrent()) return;
     const cacheKey = settingsCacheKey();
     setIsScraping(true);
-    showToast(`Fetching feed for @${username}...`);
+    showToast(t("runtime.channels.fetching", { username }));
     try {
       const response = await fetch("/api/fetch-posts", {
         method: "POST",
@@ -495,7 +521,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Server failed to scrape channel.");
+        throw new Error(t("runtime.channels.serverFetchFailed"));
       }
 
       const data = await safeResponseJson(response);
@@ -516,11 +542,11 @@ export default function App() {
         })
       );
 
-      showToast(`Scrape completed! Collected posts for @${username}.`);
+      showToast(t("runtime.channels.fetched", { username }));
     } catch (err: any) {
       if (!isCurrent()) return;
       console.error(err);
-      showToast(`Scrape failed for @${username}: ${err.message}`, "error");
+      showToast(t("runtime.channels.fetchFailed", { username, error: err.message }), "error");
     } finally {
       if (isCurrent()) setIsScraping(false);
     }
@@ -530,7 +556,7 @@ export default function App() {
     if (!isCurrent()) return;
     const cacheKey = settingsCacheKey();
     setIsScraping(true);
-    showToast("Initiating scraping for all target feeds...");
+    showToast(t("runtime.channels.allFetching"));
     try {
       const response = await fetch("/api/fetch-posts", {
   method: "POST",
@@ -544,7 +570,7 @@ export default function App() {
 });
 
       if (!response.ok) {
-        throw new Error("Server failed to scrape channels.");
+        throw new Error(t("runtime.channels.serverFetchAllFailed"));
       }
 
       const data = await safeResponseJson(response);
@@ -562,11 +588,11 @@ export default function App() {
         posts: data.posts
       }));
 
-      showToast(`Feed scrape complete! Found ${data.fetchedCount} new posts matching rules.`);
+      showToast(t("runtime.channels.allFetched", { count: data.fetchedCount, formattedCount: numberFormatter.format(data.fetchedCount) }));
     } catch (err: any) {
       if (!isCurrent()) return;
       console.error(err);
-      showToast(`Scrape error: ${err.message}`, "error");
+      showToast(t("runtime.channels.allFailed", { error: err.message }), "error");
     } finally {
       if (isCurrent()) setIsScraping(false);
     }
@@ -575,6 +601,7 @@ export default function App() {
   // 6. Post to Telegram Bot dispatch
   const handlePostToTelegram = async (postId: string, text: string, photoUrl?: string): Promise<boolean> => {
     if (!isCurrent()) return false;
+    let persistedErrorMessage = "";
     try {
       const res = await fetch("/api/post-telegram", {
   method: "POST",
@@ -598,18 +625,27 @@ export default function App() {
           posts: prev.posts.map(p => p.id === postId ? data.post : p),
           destination: { ...prev.destination, connected: true }
         }));
-        showToast("Post dispatched successfully to your channel!");
+        showToast(t("runtime.publishing.success"));
         return true;
       } else {
-        throw new Error(data.error || "Telegram failed to post message.");
+        persistedErrorMessage =
+          typeof data.error === "string" && data.error.trim()
+            ? data.error.trim()
+            : t("runtime.publishing.failed");
+        const errorKey =
+          typeof data.code === "string"
+            ? PUBLISHING_ERROR_KEYS[data.code]
+            : undefined;
+        throw new Error(errorKey ? t(errorKey) : persistedErrorMessage);
       }
     } catch (err: any) {
       if (!isCurrent()) return false;
       console.error(err);
-      showToast(`Telegram Bot Error: ${err.message}`, "error");
-      
-      // Update error state locally on post
-      handleUpdatePost(postId, { errorMessage: err.message });
+      const message = err?.message || t("runtime.publishing.failed");
+      showToast(message, "error");
+
+      // Keep backend/debug detail in post state while presenting localized UI copy.
+      handleUpdatePost(postId, { errorMessage: persistedErrorMessage || message });
       return false;
     }
   };
@@ -619,9 +655,9 @@ export default function App() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
           <RefreshCw className="mx-auto mb-4 h-10 w-10 animate-spin text-sky-500" aria-hidden="true" />
-          <h2 className="font-display text-lg font-bold text-slate-800">Checking your session</h2>
+          <h2 className="font-display text-lg font-bold text-slate-800">{t("runtime.loading.sessionTitle")}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            TGReposter is securely verifying your access.
+            {t("runtime.loading.sessionDescription")}
           </p>
         </div>
       </div>
@@ -638,7 +674,7 @@ export default function App() {
         <footer className="mt-8 border-t border-slate-200 bg-white py-5 text-center text-sm text-slate-500">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-3">
             <p>© 2026 TGReposter</p>
-            <p>Secure Telegram content operations</p>
+            <p>{t("runtime.footer.secureOperations")}</p>
           </div>
         </footer>
       </div>
@@ -650,9 +686,9 @@ export default function App() {
       <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 py-12">
         <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-xl">
           <RefreshCw className="mx-auto mb-4 h-10 w-10 animate-spin text-sky-500" aria-hidden="true" />
-          <h2 className="font-display text-lg font-bold text-slate-800">Opening your workspace</h2>
+          <h2 className="font-display text-lg font-bold text-slate-800">{t("runtime.loading.workspaceTitle")}</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Loading sources, posts, destinations, and publishing status.
+            {t("runtime.loading.workspaceDescription")}
           </p>
         </div>
       </div>
@@ -675,7 +711,7 @@ export default function App() {
         {successToast && (
           <div className="flex items-center gap-2.5 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md" role="status">
             <CheckCircle2 className="h-5 w-5 shrink-0" aria-hidden="true" />
-            <span>{successToast}</span>
+            <span dir="auto">{successToast}</span>
           </div>
         )}
 
@@ -683,8 +719,8 @@ export default function App() {
           <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5 text-sm text-rose-800 shadow-sm" role="alert">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" aria-hidden="true" />
             <div>
-              <p className="font-bold">Notice</p>
-              <p className="mt-0.5 leading-relaxed text-rose-700">{errorMessage}</p>
+              <p className="font-bold">{t("runtime.notice")}</p>
+              <p className="mt-0.5 leading-relaxed text-rose-700" dir="auto">{errorMessage}</p>
             </div>
           </div>
         )}
@@ -693,12 +729,12 @@ export default function App() {
           <div className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 shadow-xs">
             <Info className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
             <div>
-              <p className="font-bold">Publishing setup required</p>
+              <p className="font-bold">{t("runtime.publishingSetup.title")}</p>
               <p className="mt-1 leading-relaxed text-amber-700">
-                Content collection and editing are available. Configure and enable a Telegram destination before publishing.
+                {t("runtime.publishingSetup.description")}
               </p>
               <button type="button" onClick={() => handleNavigate("destination")} className="mt-2 min-h-11 rounded-lg px-2 text-sm font-bold text-amber-800 underline underline-offset-4">
-                Configure my destinations
+                {t("runtime.publishingSetup.action")}
               </button>
             </div>
           </div>
@@ -711,6 +747,7 @@ export default function App() {
         {activeWorkspaceTab === "feed" || activeWorkspaceTab === "history" ? (
           <CurationFeed
             initialTab={activeWorkspaceTab === "history" ? "posted" : "pending"}
+            mode={activeWorkspaceTab === "history" ? "history" : "review"}
             posts={settings.posts}
             onUpdatePost={handleUpdatePost}
             onPostToTelegram={handlePostToTelegram}

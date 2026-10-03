@@ -9,6 +9,10 @@ const systemSource = fs.readFileSync(
   path.join(repoRoot, "src/components/DatabaseConfig.tsx"),
   "utf8"
 );
+const systemLocaleSource = fs.readFileSync(
+  path.join(repoRoot, "src/i18n/locales/en/system.ts"),
+  "utf8"
+);
 const healthSource = fs.readFileSync(
   path.join(repoRoot, "server/services/databaseHealthService.ts"),
   "utf8"
@@ -16,13 +20,20 @@ const healthSource = fs.readFileSync(
 const serverSource = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
 
 test("System Settings explains the fully personal application-data boundary", () => {
-  assert.match(systemSource, /System Architecture & Health/);
-  assert.match(systemSource, /Personal Monitoring Data/);
-  assert.match(systemSource, /Personal Workspace Data/);
-  assert.match(systemSource, /Runtime Data Boundaries/);
-  assert.match(systemSource, /Workspace Isolation Checks/);
-  assert.match(systemSource, /System administration scope/);
-  assert.doesNotMatch(systemSource, /Shared Platform Data/);
+  assert.match(systemSource, /useTranslation\("system"\)/);
+  assert.match(systemSource, /t\("header\.title"\)/);
+  assert.match(systemSource, /t\("monitoring\.title"\)/);
+  assert.match(systemSource, /t\("workspace\.title"\)/);
+  assert.match(systemSource, /t\("runtime\.title"\)/);
+  assert.match(systemSource, /t\("isolation\.title"\)/);
+
+  assert.match(systemLocaleSource, /title: "System Architecture & Health"/);
+  assert.match(systemLocaleSource, /title: "Personal Monitoring Data"/);
+  assert.match(systemLocaleSource, /title: "Personal Workspace Data"/);
+  assert.match(systemLocaleSource, /title: "Runtime Data Boundaries"/);
+  assert.match(systemLocaleSource, /title: "Workspace Isolation Checks"/);
+  assert.match(systemLocaleSource, /scope: "System administration scope"/);
+  assert.doesNotMatch(systemLocaleSource, /Shared Platform Data/);
 });
 
 test("System Settings recognizes user-owned destination and inbox tables", () => {
@@ -51,7 +62,9 @@ test("platform health endpoint is restricted to super-admins", () => {
 });
 
 test("System Settings never presents personal bot credentials as global config", () => {
-  assert.match(systemSource, /Credentials[\s\S]*remain managed from each member/);
-  assert.match(systemSource, /user-scoped Vault secrets/);
-  assert.doesNotMatch(systemSource, /Telegram Bot Token Configuration/);
+  assert.match(systemSource, /t\("header\.description"\)/);
+  assert.match(systemSource, /t\("isolation\.note"\)/);
+  assert.match(systemLocaleSource, /Credentials remain managed from each member/);
+  assert.match(systemLocaleSource, /user-scoped Vault secrets/);
+  assert.doesNotMatch(systemLocaleSource, /Telegram Bot Token Configuration/);
 });

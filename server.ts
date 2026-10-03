@@ -5,6 +5,8 @@ import channelRoutes from "./server/routes/channels";
 import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
+import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
+import { API_ERROR_CODES } from "./shared/apiErrorCodes";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
@@ -12,7 +14,7 @@ import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotTo
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
-import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, validateSupabaseAccessToken } from "./server/services/appAuthService";
+import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, isAppUiLocale, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, updateSupabaseAppUserUiLocale, validateSupabaseAccessToken } from "./server/services/appAuthService";
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -539,22 +541,56 @@ app.post("/api/auth/status", async (req, res) => {
     role: session?.role ?? null,
     username: session?.username ?? null,
     authProvider: session?.authProvider ?? null,
+    uiLocale: session?.uiLocale ?? null,
     accountKey: session ? ownerPrincipalForUser(session) : null,
   });
+});
+
+// Persist the current Supabase user's interface language. Legacy local accounts
+// keep using browser localStorage until they are migrated to Supabase Auth.
+app.put("/api/auth/ui-locale", authMiddleware, async (req: any, res: any) => {
+  const locale = req.body?.locale;
+
+  if (!isAppUiLocale(locale)) {
+    return res.status(400).json({
+      error: "Unsupported interface locale. Expected one of: en, ru, ar, fa.",
+    });
+  }
+
+  if (req.user?.authProvider !== "supabase" || !req.user?.id) {
+    return res.json({
+      success: true,
+      persisted: false,
+      uiLocale: null,
+    });
+  }
+
+  try {
+    const savedLocale = await updateSupabaseAppUserUiLocale(req.user.id, locale);
+    return res.json({
+      success: true,
+      persisted: true,
+      uiLocale: savedLocale,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      error: error?.message || "Unable to persist interface locale.",
+    });
+  }
 });
 
 // Setup initial super-admin account
 app.post("/api/auth/setup", async (req, res) => {
   const db = await readDb();
   if (db.users && db.users.length > 0) {
-    return res.status(400).json({ error: "Administration account has already been configured." });
+    return res.status(400).json({ code: API_ERROR_CODES.auth.alreadyConfigured, error: "Administration account has already been configured." });
   }
   const { username, password } = req.body;
   if (!username || username.trim().length < 3) {
-    return res.status(400).json({ error: "Username must be at least 3 characters." });
+    return res.status(400).json({ code: API_ERROR_CODES.auth.usernameTooShort, error: "Username must be at least 3 characters." });
   }
   if (!password || password.length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters long." });
+    return res.status(400).json({ code: API_ERROR_CODES.auth.passwordTooShort, error: "Password must be at least 4 characters long." });
   }
 
   const newUser: CuratorUser = {
@@ -578,6 +614,7 @@ app.post("/api/auth/setup", async (req, res) => {
     role: newUser.role,
     username: newUser.username,
     accountKey: ownerPrincipalForUser({ username: newUser.username, authProvider: "legacy" }),
+    uiLocale: null,
     message: "Super-admin account configured successfully!",
   });
 });
@@ -589,7 +626,7 @@ app.post("/api/auth/login", async (req, res) => {
   const supabaseUsersExist = (await countActiveSupabaseAppUsers()) > 0;
 
   if (!legacyUsersExist && !supabaseUsersExist) {
-    return res.status(400).json({ error: "No accounts configured. Please set up owner credentials." });
+    return res.status(400).json({ code: API_ERROR_CODES.auth.noAccountsConfigured, error: "No accounts configured. Please set up owner credentials." });
   }
 
   const identity =
@@ -602,7 +639,7 @@ app.post("/api/auth/login", async (req, res) => {
       : "";
 
   if (!identity || !password) {
-    return res.status(400).json({ error: "Username/email and password are required." });
+    return res.status(400).json({ code: API_ERROR_CODES.auth.credentialsRequired, error: "Username/email and password are required." });
   }
 
   // Email identities authenticate directly with Supabase Auth.
@@ -619,13 +656,23 @@ app.post("/api/auth/login", async (req, res) => {
           username: result.user.username,
           email: result.user.email,
           authProvider: "supabase",
+          uiLocale: result.user.uiLocale,
           accountKey: ownerPrincipalForUser(result.user),
         });
       }
     } catch (error: any) {
-      return res.status(401).json({
-        error: error?.message || "Invalid email or password.",
-      });
+      const message = error?.message || "Invalid email or password.";
+      const normalizedMessage = String(message).toLowerCase();
+      const code =
+        normalizedMessage.includes("email not confirmed")
+          ? API_ERROR_CODES.auth.emailNotConfirmed
+          : normalizedMessage.includes("rate limit") || normalizedMessage.includes("too many requests")
+            ? API_ERROR_CODES.auth.rateLimited
+            : normalizedMessage.includes("invalid login credentials")
+              ? API_ERROR_CODES.auth.invalidCredentials
+              : API_ERROR_CODES.auth.failed;
+
+      return res.status(401).json({ code, error: message });
     }
   }
 
@@ -636,12 +683,12 @@ app.post("/api/auth/login", async (req, res) => {
   );
 
   if (!user) {
-    return res.status(401).json({ error: "Invalid username/email or password." });
+    return res.status(401).json({ code: API_ERROR_CODES.auth.invalidCredentials, error: "Invalid username/email or password." });
   }
 
   const hash = hashPassword(password);
   if (hash !== user.passwordHash) {
-    return res.status(401).json({ error: "Invalid username/email or password." });
+    return res.status(401).json({ code: API_ERROR_CODES.auth.invalidCredentials, error: "Invalid username/email or password." });
   }
 
   const token = crypto.randomBytes(32).toString("hex");
@@ -653,6 +700,7 @@ app.post("/api/auth/login", async (req, res) => {
     role: user.role,
     username: user.username,
     authProvider: "legacy",
+    uiLocale: null,
     accountKey: ownerPrincipalForUser({ username: user.username, authProvider: "legacy" }),
   });
 });
@@ -1422,7 +1470,7 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
   const aiProvider = db.aiConfig?.provider || "gemini";
   const aiModel = db.aiConfig?.model || "gemini-3.5-flash";
 
-  const { action, text, context } = req.body;
+  const { action, text, context, targetLanguage } = req.body;
   if (!text) {
     return res.status(400).json({ error: "Missing post text" });
   }
@@ -1431,7 +1479,19 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
     return res.status(400).json({ error: "Invalid curation action" });
   }
 
-  const prompt = buildCurationPrompt(action, text, context);
+  let promptContext = typeof context === "string" ? context : undefined;
+  if (action === "translate" && targetLanguage !== undefined) {
+    const languageId = resolveAIOutputLanguageId(targetLanguage);
+    if (!languageId) {
+      return res.status(400).json({
+        error: "Unsupported target language.",
+        code: "UNSUPPORTED_AI_OUTPUT_LANGUAGE",
+      });
+    }
+    promptContext = getAIOutputLanguagePromptName(languageId);
+  }
+
+  const prompt = buildCurationPrompt(action, text, promptContext);
 
   const result = await dispatchCuration({
     provider: aiProvider,
@@ -1470,13 +1530,13 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   }
 
   if (!post) {
-    return res.status(404).json({ error: "Post not found in your Content Inbox." });
+    return res.status(404).json({ code: API_ERROR_CODES.publishing.postNotFound, error: "Post not found in your Content Inbox." });
   }
 
   if (post.status !== "approved") {
     return res.status(409).json({
       error: "Approve this Content Inbox post before publishing it.",
-      code: "POST_NOT_APPROVED",
+      code: API_ERROR_CODES.publishing.postNotApproved,
       status: post.status,
     });
   }
@@ -1488,6 +1548,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     } catch (error) {
       console.error("Failed resolving user-scoped destinations:", error);
       return res.status(500).json({
+        code: API_ERROR_CODES.publishing.destinationsLoadFailed,
         error: "Your Telegram destinations could not be loaded.",
       });
     }
@@ -1506,7 +1567,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   } catch {
     if (process.env.DATABASE_URL) {
       console.error("Failed resolving Telegram bot credential.");
-      return res.status(500).json({ error: "Telegram bot credential could not be loaded." });
+      return res.status(500).json({ code: API_ERROR_CODES.publishing.credentialLoadFailed, error: "Telegram bot credential could not be loaded." });
     }
   }
 
@@ -1518,7 +1579,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   }
 
   if (!botToken) {
-    return res.status(400).json({ error: "Telegram bot token is not configured for your account." });
+    return res.status(400).json({ code: API_ERROR_CODES.publishing.botNotConfigured, error: "Telegram bot token is not configured for your account." });
   }
 
   const configuredTargets = Array.isArray(targets) ? targets : [];
@@ -1526,14 +1587,14 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
 
   if (targetIds !== undefined) {
     if (!Array.isArray(targetIds)) {
-      return res.status(400).json({ error: "targetIds must be an array when provided." });
+      return res.status(400).json({ code: API_ERROR_CODES.publishing.targetIdsInvalid, error: "targetIds must be an array when provided." });
     }
 
     const hasMalformedTargetId = targetIds.some(
       (targetId: unknown) => typeof targetId !== "string" || targetId.trim().length === 0
     );
     if (hasMalformedTargetId) {
-      return res.status(400).json({ error: "Every selected target ID must be a non-empty string." });
+      return res.status(400).json({ code: API_ERROR_CODES.publishing.targetIdInvalid, error: "Every selected target ID must be a non-empty string." });
     }
 
     const requestedTargetIds = Array.from(
@@ -1541,13 +1602,14 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     );
 
     if (requestedTargetIds.length === 0) {
-      return res.status(400).json({ error: "No Telegram targets were selected." });
+      return res.status(400).json({ code: API_ERROR_CODES.publishing.noTargetsSelected, error: "No Telegram targets were selected." });
     }
 
     const configuredById = new Map(configuredTargets.map(target => [target.id, target]));
     const unknownTargetIds = requestedTargetIds.filter(targetId => !configuredById.has(targetId));
     if (unknownTargetIds.length > 0) {
       return res.status(400).json({
+        code: API_ERROR_CODES.publishing.unknownTargets,
         error: `Unknown Telegram target ID${unknownTargetIds.length === 1 ? "" : "s"}: ${unknownTargetIds.join(", ")}.`,
         invalidTargetIds: unknownTargetIds
       });
@@ -1558,6 +1620,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     );
     if (disabledTargetIds.length > 0) {
       return res.status(400).json({
+        code: API_ERROR_CODES.publishing.disabledTargets,
         error: `Disabled Telegram target${disabledTargetIds.length === 1 ? "" : "s"} cannot be selected for publishing: ${disabledTargetIds.join(", ")}.`,
         disabledTargetIds
       });
@@ -1602,7 +1665,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
   }
 
   if (activeTargets.length === 0) {
-    return res.status(400).json({ error: "No enabled Telegram targets found to publish to." });
+    return res.status(400).json({ code: API_ERROR_CODES.publishing.noEnabledTargets, error: "No enabled Telegram targets found to publish to." });
   }
 
   const formattedText =
@@ -1683,6 +1746,7 @@ app.post("/api/post-telegram", authMiddleware, async (req: any, res) => {
     } catch (error) {
       console.error("Failed persisting user Content Inbox publishing state:", error);
       return res.status(500).json({
+        code: API_ERROR_CODES.publishing.inboxStateSaveFailed,
         error: "Telegram delivery completed, but your Content Inbox state could not be saved.",
         outcome: publishResult.outcome,
         results: publishResult.results,

@@ -226,7 +226,7 @@ test("AI curation route regression suite", { timeout: 45_000 }, async t => {
     },
     {
       name: "translate",
-      payload: { action: "translate", text: "Original post", context: "French" },
+      payload: { action: "translate", text: "Original post", targetLanguage: "fr" },
       prompt: "Translate the following Telegram post into French. Retain the original layout, bullet points, and any link URLs. Respond with ONLY the translated text, no meta-comments.\n\nPost:\nOriginal post"
     }
   ];
@@ -252,6 +252,55 @@ test("AI curation route regression suite", { timeout: 45_000 }, async t => {
       assert.equal(calls[0].appTitle, "Telegram Curator");
     });
   }
+
+  await t.test("Persian target language IDs resolve to stable provider prompt names", async () => {
+    writeControl(tempDir, { content: "  ترجمه آزمایشی  " });
+    clearCalls(tempDir);
+
+    const { response, body } = await postJson(
+      "/api/ai/curate",
+      { action: "translate", text: "Original post", targetLanguage: "fa" },
+      token
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, { result: "ترجمه آزمایشی" });
+    const calls = readCalls(tempDir);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].messages[0].content, /into Persian \(Farsi\)/);
+  });
+
+  await t.test("unsupported target language IDs are rejected before provider dispatch", async () => {
+    clearCalls(tempDir);
+
+    const { response, body } = await postJson(
+      "/api/ai/curate",
+      { action: "translate", text: "Original post", targetLanguage: "xx" },
+      token
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(body.code, "UNSUPPORTED_AI_OUTPUT_LANGUAGE");
+    assert.equal(body.error, "Unsupported target language.");
+    assert.deepEqual(readCalls(tempDir), []);
+  });
+
+  await t.test("legacy translation context remains compatible", async () => {
+    writeControl(tempDir, { content: "  Legacy translated result  " });
+    clearCalls(tempDir);
+
+    const { response, body } = await postJson(
+      "/api/ai/curate",
+      { action: "translate", text: "Original post", context: "German" },
+      token
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body, { result: "Legacy translated result" });
+    const calls = readCalls(tempDir);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].messages[0].content, /into German/);
+  });
 
   await t.test("empty provider output returns a provider-neutral API error", async () => {
     writeControl(tempDir, { content: "   " });

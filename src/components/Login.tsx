@@ -1,6 +1,46 @@
 import React, { useState } from "react";
 import { Lock, Key, ShieldAlert, Sparkles, RefreshCw, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { safeResponseJson } from "../utils/api";
+import LanguageSelector from "./LanguageSelector";
+import { API_ERROR_CODES } from "../../shared/apiErrorCodes";
+
+const AUTH_ERROR_CODE_KEYS: Record<string, string> = {
+  [API_ERROR_CODES.auth.alreadyConfigured]: "errors.alreadyConfigured",
+  [API_ERROR_CODES.auth.noAccountsConfigured]: "errors.noAccountsConfigured",
+  [API_ERROR_CODES.auth.credentialsRequired]: "errors.credentialsRequired",
+  [API_ERROR_CODES.auth.invalidCredentials]: "errors.invalidCredentials",
+  [API_ERROR_CODES.auth.emailNotConfirmed]: "errors.emailNotConfirmed",
+  [API_ERROR_CODES.auth.rateLimited]: "errors.rateLimited",
+  [API_ERROR_CODES.auth.usernameTooShort]: "validation.usernameTooShort",
+  [API_ERROR_CODES.auth.passwordTooShort]: "validation.passwordTooShort",
+  [API_ERROR_CODES.auth.failed]: "errors.authenticationFailed",
+};
+
+const AUTH_ERROR_KEYS: Record<string, string> = {
+  "administration account has already been configured.": "errors.alreadyConfigured",
+  "no accounts configured. please set up owner credentials.": "errors.noAccountsConfigured",
+  "username/email and password are required.": "errors.credentialsRequired",
+  "invalid username/email or password.": "errors.invalidCredentials",
+  "invalid email or password.": "errors.invalidEmailPassword",
+  "username must be at least 3 characters.": "validation.usernameTooShort",
+  "password must be at least 4 characters long.": "validation.passwordTooShort",
+};
+
+function getAuthErrorKey(code: unknown, error: unknown): string {
+  if (typeof code === "string" && AUTH_ERROR_CODE_KEYS[code]) {
+    return AUTH_ERROR_CODE_KEYS[code];
+  }
+
+  const message = typeof error === "string" ? error.trim().toLowerCase() : "";
+
+  if (AUTH_ERROR_KEYS[message]) return AUTH_ERROR_KEYS[message];
+  if (message.includes("invalid login credentials")) return "errors.invalidLoginCredentials";
+  if (message.includes("email not confirmed")) return "errors.emailNotConfirmed";
+  if (message.includes("rate limit") || message.includes("too many requests")) return "errors.rateLimited";
+
+  return "errors.authenticationFailed";
+}
 
 interface LoginProps {
   passwordSet: boolean;
@@ -9,46 +49,48 @@ interface LoginProps {
     isNewSetup: boolean,
     role: 'super-admin' | 'admin',
     username: string,
-    accountKey: string
+    accountKey: string,
+    uiLocale: string | null
   ) => void;
 }
 
 export default function Login({ passwordSet, onSuccess }: LoginProps) {
+  const { t } = useTranslation("auth");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  const [errorKey, setErrorKey] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [setupSuccess, setSetupSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setError("Username or email cannot be empty.");
+      setErrorKey("validation.identityRequired");
       return;
     }
     if (!password.trim()) {
-      setError("Password cannot be empty.");
+      setErrorKey("validation.passwordRequired");
       return;
     }
 
     if (!passwordSet) {
       if (username.trim().length < 3) {
-        setError("Username must be at least 3 characters.");
+        setErrorKey("validation.usernameTooShort");
         return;
       }
       if (password.length < 4) {
-        setError("Password must be at least 4 characters long.");
+        setErrorKey("validation.passwordTooShort");
         return;
       }
       if (password !== confirmPassword) {
-        setError("Passwords do not match.");
+        setErrorKey("validation.passwordsMismatch");
         return;
       }
     }
 
-    setError("");
+    setErrorKey(null);
     setIsSubmitting(true);
 
     const endpoint = passwordSet ? "/api/auth/login" : "/api/auth/setup";
@@ -74,7 +116,8 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
               true,
               data.role || "super-admin",
               data.username || username.trim(),
-              data.accountKey
+              data.accountKey,
+              data.uiLocale ?? null
             );
           }, 1500);
         } else {
@@ -83,14 +126,15 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             false,
             data.role || "admin",
             data.username || username.trim(),
-            data.accountKey
+            data.accountKey,
+            data.uiLocale ?? null
           );
         }
       } else {
-        setError(data.error || "Authentication failed. Please verify credentials.");
+        setErrorKey(getAuthErrorKey(data.code, data.error));
       }
-    } catch (err: any) {
-      setError(err.message || "An unexpected server network error occurred.");
+    } catch {
+      setErrorKey("errors.network");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,7 +143,10 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
   return (
     <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-md space-y-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-9">
-        
+        <div className="flex justify-end">
+          <LanguageSelector />
+        </div>
+
         {/* Branding/Header */}
         <div className="text-center">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-lg shadow-sky-100">
@@ -110,31 +157,31 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             )}
           </div>
           <h2 className="mt-6 text-2xl font-display font-bold tracking-tight text-slate-900">
-            {passwordSet ? "Sign in to TGReposter" : "Create the owner account"}
+            {passwordSet ? t("title.signIn") : t("title.setup")}
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
             {passwordSet 
-              ? "Use your legacy username or Supabase Auth email to access TGReposter."
-              : "Create the first super-admin account to secure this workspace and establish ownership."}
+              ? t("description.signIn")
+              : t("description.setup")}
           </p>
         </div>
 
         {setupSuccess ? (
           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 text-center space-y-2">
             <CheckCircle2 className="h-10 w-10 text-emerald-500 mx-auto animate-pulse" />
-            <h3 className="text-base font-semibold text-emerald-950">Account created</h3>
+            <h3 className="text-base font-semibold text-emerald-950">{t("success.title")}</h3>
             <p className="text-sm leading-6 text-emerald-700">
-              Your super-admin account is ready. Opening the dashboard…
+              {t("success.description")}
             </p>
           </div>
         ) : (
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-            {error && (
+            {errorKey && (
               <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-sm text-rose-800" role="alert">
                 <ShieldAlert className="h-4 w-4 text-rose-500 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold">Sign-in problem</p>
-                  <p className="mt-0.5 leading-5 text-rose-700">{error}</p>
+                  <p className="font-bold">{t("alert.title")}</p>
+                  <p className="mt-0.5 leading-5 text-rose-700">{t(errorKey)}</p>
                 </div>
               </div>
             )}
@@ -142,22 +189,23 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
             <div className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-bold text-slate-700">
-                  {passwordSet ? "Username or Email" : "Super-Admin Username"}
+                  {passwordSet ? t("fields.usernameOrEmail") : t("fields.superAdminUsername")}
                 </label>
                 <input
                   type="text"
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder={passwordSet ? "Enter legacy username or Supabase email" : "e.g. owner"}
+                  placeholder={passwordSet ? t("placeholders.usernameOrEmail") : t("placeholders.ownerUsername")}
                   autoComplete="username"
+                  dir="auto"
                   className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                 />
               </div>
 
               <div>
                 <label className="mb-1.5 block text-sm font-bold text-slate-700">
-                  Password
+                  {t("fields.password")}
                 </label>
                 <div className="relative">
                   <input
@@ -167,20 +215,21 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete={passwordSet ? "current-password" : "new-password"}
-                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-3.5 pr-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
+                    dir="ltr"
+                    className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-3.5 pe-12 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-0 top-0 flex h-12 w-12 items-center justify-center text-slate-400 transition-colors hover:text-slate-600"
+                    aria-label={showPassword ? t("actions.hidePassword") : t("actions.showPassword")}
+                    className="absolute end-0 top-0 flex h-12 w-12 items-center justify-center text-slate-400 transition-colors hover:text-slate-600"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
                 {!passwordSet && (
                   <p className="mt-1.5 text-sm leading-5 text-slate-500">
-                    Use at least 4 characters. This account controls workspace configuration and publishing.
+                    {t("passwordHelp")}
                   </p>
                 )}
               </div>
@@ -188,7 +237,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
               {!passwordSet && (
                 <div>
                   <label className="mb-1.5 block text-sm font-bold text-slate-700">
-                    Confirm Password
+                    {t("fields.confirmPassword")}
                   </label>
                   <input
                     type={showPassword ? "text" : "password"}
@@ -197,6 +246,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder="••••••••••••"
                     autoComplete="new-password"
+                    dir="ltr"
                     className="min-h-12 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 font-mono text-base text-slate-800 outline-hidden focus:border-sky-500 focus:ring-4 focus:ring-sky-100"
                   />
                 </div>
@@ -212,12 +262,12 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="h-4 w-4 animate-spin" />
-                    {passwordSet ? "Signing in…" : "Creating account…"}
+                    {passwordSet ? t("actions.signingIn") : t("actions.creatingOwner")}
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4 text-sky-400" />
-                    {passwordSet ? "Sign in" : "Create owner account"}
+                    {passwordSet ? t("actions.signIn") : t("actions.createOwner")}
                   </>
                 )}
               </button>
@@ -227,7 +277,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
 
         {/* Footer info */}
         <div className="border-t border-slate-100 pt-5 text-center text-sm leading-6 text-slate-500">
-          Supabase Auth sessions are validated server-side against the profiles RBAC table; legacy usernames remain available during migration.
+          {t("footer")}
         </div>
       </div>
     </div>

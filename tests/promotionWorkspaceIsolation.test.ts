@@ -17,6 +17,7 @@ const adminRepositorySource = read("server/repositories/promotionRepository.ts")
 const campaignRepositorySource = read("server/repositories/promotionCampaignRepository.ts");
 const credentialSource = read("server/services/telegramCredentialService.ts");
 const workspaceSource = read("src/components/PromotionWorkspace.tsx");
+const englishPromotionSource = read("src/i18n/locales/en/promotion.ts");
 const migrationSource = read(
   "supabase/migrations/20260905152000_finalize_personal_promotion_runtime.sql"
 );
@@ -93,7 +94,8 @@ test("personal promotion credentials resolve through the owner's Vault token", (
     /ownerPrincipal\s*\?\s*await getUserTelegramBotToken\(ownerPrincipal\)/
   );
   assert.match(workspaceSource, /\/api\/promotion\/bot-accounts\/personal/);
-  assert.match(workspaceSource, /Register my Destination Bot/);
+  assert.match(workspaceSource, /t\("workspace\.targets\.register"\)/);
+  assert.match(englishPromotionSource, /register: "Register my Destination Bot"/);
   assert.doesNotMatch(workspaceSource, /currentUserRole === "super-admin"/);
   assert.doesNotMatch(workspaceSource, /currentUserRole !== "super-admin"/);
 });
