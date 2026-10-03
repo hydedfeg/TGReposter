@@ -77,9 +77,9 @@ test("promotion AI action and style values remain independent from translated la
     assert.match(studio, new RegExp(`"${style}"`));
   }
 
-  assert.match(studio, /useState<PromotionAIAction>("rewrite")/);
-  assert.match(studio, /useState<PromotionAIStyle>("professional")/);
-  assert.match(studio, /useState<AIOutputLanguageId>("en")/);
+  assert.match(studio, /useState<PromotionAIAction>\("rewrite"\)/);
+  assert.match(studio, /useState<PromotionAIStyle>\("professional"\)/);
+  assert.match(studio, /useState<AIOutputLanguageId>\("en"\)/);
   assert.match(studio, /AI_OUTPUT_LANGUAGE_IDS\.map/);
   assert.match(studio, /common:aiLanguages\.\$\{languageId\}/);
   assert.match(studio, /body: JSON\.stringify\(\{[\s\S]*?action,[\s\S]*?style,[\s\S]*?outputLanguage/);
@@ -88,8 +88,8 @@ test("promotion AI action and style values remain independent from translated la
 test("promotion dates and counts use the selected interface locale", () => {
   const workspace = readFileSync(resolve(root, "src/components/PromotionWorkspace.tsx"), "utf8");
 
-  assert.match(workspace, /normalizeAppLocale(i18n.language)/);
-  assert.match(workspace, /new Intl.NumberFormat(locale)/);
+  assert.match(workspace, /normalizeAppLocale\(i18n\.language\)/);
+  assert.match(workspace, /new Intl\.NumberFormat\(locale\)/);
   assert.match(workspace, /new Intl\.DateTimeFormat\(`\$\{locale\}-u-ca-gregory`/);
   assert.match(workspace, /formattedCount: numberFormatter.format(selectedTargetIds.length)/);
   assert.match(workspace, /formattedCount: numberFormatter.format(detail.posts.length)/);
