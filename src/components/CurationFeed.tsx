@@ -95,9 +95,7 @@ function statusClasses(status: CuratedPost["status"]) {
 
 function OriginalPostPanel({ post }: { post: CuratedPost }) {
   const { t, i18n } = useTranslation("inbox");
-  const { t: th } = useTranslation("history");
   const locale = normalizeAppLocale(i18n.language);
-  const isHistory = mode === "history";
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-white" aria-label={t("accessibility.originalPost")}>
