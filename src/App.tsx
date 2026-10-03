@@ -226,7 +226,7 @@ export default function App() {
 
   // Generic authenticated fetch helper
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    if (!isCurrent()) throw new Error("Session changed");
+    if (!isCurrent()) throw new Error(t("runtime.errors.sessionChanged"));
     const savedToken = authToken;
     const headers = {
       ...options.headers,
@@ -255,7 +255,7 @@ export default function App() {
         body: JSON.stringify(serverPatch)
       });
       if (!response.ok) {
-        throw new Error("Failed to save settings on server");
+        throw new Error(t("runtime.errors.configPersist"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
@@ -322,7 +322,7 @@ export default function App() {
       if (!response.ok) {
         const data = await safeResponseJson(response);
         if (!isCurrent()) return false;
-        throw new Error(data.error || "Failed to add user");
+        throw new Error(data.error || t("runtime.users.addFailed"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
@@ -346,7 +346,7 @@ export default function App() {
       if (!response.ok) {
         const data = await safeResponseJson(response);
         if (!isCurrent()) return false;
-        throw new Error(data.error || "Failed to revoke user access");
+        throw new Error(data.error || t("runtime.users.revokeFailed"));
       }
       const data = await safeResponseJson(response);
       if (!isCurrent()) return false;
@@ -505,7 +505,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error("Server failed to scrape channel.");
+        throw new Error(t("runtime.channels.serverFetchFailed"));
       }
 
       const data = await safeResponseJson(response);
@@ -554,7 +554,7 @@ export default function App() {
 });
 
       if (!response.ok) {
-        throw new Error("Server failed to scrape channels.");
+        throw new Error(t("runtime.channels.serverFetchAllFailed"));
       }
 
       const data = await safeResponseJson(response);
