@@ -8,6 +8,16 @@ const common = {
     ar: "عربی",
     fa: "فارسی",
   },
+  aiLanguages: {
+    en: "انگلیسی",
+    es: "اسپانیایی",
+    ru: "روسی",
+    fr: "فرانسوی",
+    de: "آلمانی",
+    zh: "چینی",
+    ar: "عربی",
+    fa: "فارسی",
+  },
   runtime: {
     loading: {
       sessionTitle: "در حال بررسی نشست شما",
