@@ -58,10 +58,13 @@ test("UI translations stay separate from stable AI machine values", () => {
   const source = readFileSync(resolve(root, "src/components/CurationFeed.tsx"), "utf8");
 
   assert.match(source, /value: "Professional", labelKey: "ai\.tones\.professional"/);
-  assert.match(source, /value: "English", labelKey: "ai\.languages\.english"/);
-  assert.match(source, /value: "Persian", labelKey: "ai\.languages\.persian"/);
+  assert.match(source, /AI_OUTPUT_LANGUAGE_IDS/);
+  assert.match(source, /useState<AIOutputLanguageId>\("en"\)/);
+  assert.match(source, /common:aiLanguages\.\$\{languageId\}/);
   assert.match(source, /runAiAction\("rephrase", activeTone\)/);
-  assert.match(source, /runAiAction\("translate", activeLanguage\)/);
+  assert.match(source, /runAiAction\("translate"\)/);
+  assert.match(source, /targetLanguage: activeLanguage/);
+  assert.doesNotMatch(source, /value: "Persian"/);
 });
 
 test("content inbox localizes dates and counts while preserving content direction", () => {
