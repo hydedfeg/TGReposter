@@ -8,6 +8,70 @@ const common = {
     ar: "العربية",
     fa: "الفارسية",
   },
+  runtime: {
+    loading: {
+      sessionTitle: "جارٍ التحقق من جلستك",
+      sessionDescription: "يتحقق TGReposter من صلاحية وصولك بأمان.",
+      workspaceTitle: "جارٍ فتح مساحة العمل",
+      workspaceDescription: "جارٍ تحميل المصادر والمنشورات والوجهات وحالة النشر.",
+    },
+    footer: {
+      secureOperations: "عمليات آمنة لمحتوى تيليجرام",
+    },
+    notice: "تنبيه",
+    publishingSetup: {
+      title: "إعداد النشر مطلوب",
+      description: "جمع المحتوى وتحريره متاحان. قم بإعداد وجهة تيليجرام وتفعيلها قبل النشر.",
+      action: "إعداد وجهاتي",
+    },
+    errors: {
+      settingsCached: "تعذر جلب الإعدادات من الخادم. يتم عرض مساحة العمل المحفوظة.",
+      settingsUnavailable: "تعذر تحميل مساحة العمل. سجّل الدخول مرة أخرى للمحاولة.",
+      sessionVerify: "تعذر التحقق من الجلسة. سجّل الدخول مرة أخرى.",
+      configPersist: "تم حفظ الإعداد محليًا، لكن الخادم لم يتمكن من حفظه.",
+    },
+    auth: {
+      ownerReady: "تم إعداد حساب المشرف العام! أصبحت مساحة العمل متاحة.",
+      welcome: "مرحبًا {{username}}! أصبحت مساحة العمل متاحة.",
+    },
+    users: {
+      registered: "تم تسجيل المستخدم «{{username}}» بنجاح.",
+      revoked: "تم إلغاء وصول المستخدم «{{username}}».",
+      addFailed: "تعذر إضافة المستخدم",
+      revokeFailed: "تعذر إلغاء وصول المستخدم",
+    },
+    channels: {
+      added: "تمت إضافة القناة @{{username}}! جارٍ جلب المنشورات تلقائيًا…",
+      removed: "تمت إزالة القناة @{{username}}",
+      fetching: "جارٍ جلب موجز @{{username}}…",
+      fetched: "اكتمل الجمع! تم جلب منشورات @{{username}}.",
+      fetchFailed: "فشل جمع @{{username}}: {{error}}",
+      allFetching: "جارٍ بدء جمع جميع الموجزات المستهدفة…",
+      allFetched_zero: "اكتمل الجمع! لم يتم العثور على منشورات جديدة مطابقة للقواعد.",
+      allFetched_one: "اكتمل الجمع! تم العثور على منشور جديد واحد مطابق للقواعد.",
+      allFetched_two: "اكتمل الجمع! تم العثور على منشورين جديدين مطابقين للقواعد.",
+      allFetched_few: "اكتمل الجمع! تم العثور على {{formattedCount}} منشورات جديدة مطابقة للقواعد.",
+      allFetched_many: "اكتمل الجمع! تم العثور على {{formattedCount}} منشورًا جديدًا مطابقًا للقواعد.",
+      allFetched_other: "اكتمل الجمع! تم العثور على {{formattedCount}} منشور جديد مطابق للقواعد.",
+      allFailed: "خطأ في الجمع: {{error}}",
+    },
+    filters: {
+      updated: "تم تحديث معايير التصفية بنجاح.",
+    },
+    destinations: {
+      tokenStoreFailed: "تعذر حفظ رمز بوت تيليجرام.",
+      tokenStored: "تم حفظ رمز بوت تيليجرام بأمان وتحديث الوجهات.",
+      updated: "تم تحديث وجهات تيليجرام.",
+    },
+    ai: {
+      updated: "تم تحديث إعدادات الذكاء الاصطناعي بنجاح.",
+    },
+    publishing: {
+      success: "تم إرسال المنشور إلى قناتك بنجاح!",
+      failed: "تعذر على تيليجرام نشر الرسالة.",
+      botError: "خطأ بوت تيليجرام: {{error}}",
+    },
+  },
   languageSelector: {
     label: "لغة الواجهة",
   },
