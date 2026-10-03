@@ -100,11 +100,11 @@ test("promotion technical IDs stay LTR while human and generated copy is directi
   const studio = readFileSync(resolve(root, "src/components/PromotionAIStudio.tsx"), "utf8");
 
   assert.match(workspace, /value=\{targetChatId\}[\s\S]*?dir="ltr"/);
-  assert.match(workspace, /value={editSourceLink} dir="ltr"/);
+  assert.match(workspace, /value=\{editSourceLink\} dir="ltr"/);
   assert.match(workspace, /delivery\.warningMessage[\s\S]*?dir="auto"/);
   assert.match(workspace, /delivery\.errorMessage[\s\S]*?dir="auto"/);
-  assert.match(studio, /value={generatedResult} dir="auto"/);
-  assert.match(studio, /value={draftText} dir="auto"/);
+  assert.match(studio, /value=\{generatedResult\} dir="auto"/);
+  assert.match(studio, /value=\{draftText\} dir="auto"/);
   assert.match(studio, /dir="ltr">\{providerInfo\}<\/span>/);
 });
 
