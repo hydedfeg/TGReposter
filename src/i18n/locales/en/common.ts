@@ -39,6 +39,7 @@ const common = {
       settingsUnavailable: "Unable to load your workspace. Please sign in again to retry.",
       sessionVerify: "Unable to verify your session. Please sign in again.",
       configPersist: "Config saved locally, but server failed to persist.",
+      sessionChanged: "Session changed. Please reopen your workspace.",
     },
     auth: {
       ownerReady: "Super-admin account set! Workspace unlocked.",
@@ -55,6 +56,8 @@ const common = {
       removed: "Removed channel @{{username}}",
       fetching: "Fetching feed for @{{username}}…",
       fetched: "Scrape completed! Collected posts for @{{username}}.",
+      serverFetchFailed: "Server failed to scrape the channel.",
+      serverFetchAllFailed: "Server failed to scrape channels.",
       fetchFailed: "Scrape failed for @{{username}}: {{error}}",
       allFetching: "Initiating scraping for all target feeds…",
       allFetched_one: "Feed scrape complete! Found {{formattedCount}} new post matching rules.",
