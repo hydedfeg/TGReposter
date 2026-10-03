@@ -18,3 +18,10 @@ View your app in AI Studio: https://ai.studio/apps/18993dd1-5d20-4dc0-b45a-7f0d8
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+## Development policy
+
+TGReposter is multilingual by default. Every user-facing change must be completed in **English, Russian, Arabic, and Persian** in the same change, including RTL support where applicable.
+
+See [AGENTS.md](./AGENTS.md) for the mandatory repository rules and multilingual definition of done.
