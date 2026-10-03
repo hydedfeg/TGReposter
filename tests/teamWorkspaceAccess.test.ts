@@ -13,6 +13,10 @@ const appShellSource = fs.readFileSync(
   path.join(repoRoot, "src/components/AppShell.tsx"),
   "utf8"
 );
+const englishTeamSource = fs.readFileSync(
+  path.join(repoRoot, "src/i18n/locales/en/team.ts"),
+  "utf8"
+);
 const englishNavigationSource = fs.readFileSync(
   path.join(repoRoot, "src/i18n/locales/en/navigation.ts"),
   "utf8"
@@ -20,17 +24,25 @@ const englishNavigationSource = fs.readFileSync(
 const serverSource = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
 
 test("Team explains the new private workspace ownership model", () => {
-  assert.match(teamSource, /Team & Workspace Access/);
-  assert.match(teamSource, /Private Content Inbox/);
-  assert.match(teamSource, /Private Destinations/);
-  assert.match(teamSource, /Private Curation Setup/);
-  assert.match(teamSource, /Sources, Filters, AI Configuration, monitored posts/);
-  assert.match(teamSource, /Personal workspace isolation enabled/);
+  assert.match(teamSource, /useTranslation\("team"\)/);
+  assert.match(teamSource, /t\("header\.title"\)/);
+  assert.match(teamSource, /t\("isolation\.inboxTitle"\)/);
+  assert.match(teamSource, /t\("isolation\.destinationsTitle"\)/);
+  assert.match(teamSource, /t\("isolation\.setupTitle"\)/);
+  assert.match(teamSource, /t\("members\.isolationEnabled"\)/);
+
+  assert.match(englishTeamSource, /title: "Team & Workspace Access"/);
+  assert.match(englishTeamSource, /inboxTitle: "Private Content Inbox"/);
+  assert.match(englishTeamSource, /destinationsTitle: "Private Destinations"/);
+  assert.match(englishTeamSource, /setupTitle: "Private Curation Setup"/);
+  assert.match(englishTeamSource, /Sources, Filters, AI Configuration, monitored posts/);
+  assert.match(englishTeamSource, /isolationEnabled: "Personal workspace isolation enabled"/);
 });
 
 test("new production team members are provisioned with durable Supabase identities", () => {
   assert.match(teamSource, /type="email"/);
-  assert.match(teamSource, /New accounts use Supabase Auth/);
+  assert.match(teamSource, /t\("form\.description"\)/);
+  assert.match(englishTeamSource, /New accounts use Supabase Auth/);
   assert.match(
     serverSource,
     /New production workspace members require an email-based Supabase Auth account/
