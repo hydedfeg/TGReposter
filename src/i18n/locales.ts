@@ -44,8 +44,8 @@ export function isAppLocale(value: string | null | undefined): value is AppLocal
   return !!value && APP_LOCALES.includes(value as AppLocale);
 }
 
-export function normalizeAppLocale(value: string | null | undefined): AppLocale {
-  if (!value) return DEFAULT_APP_LOCALE;
+export function matchAppLocale(value: string | null | undefined): AppLocale | null {
+  if (!value) return null;
 
   const language = value
     .trim()
@@ -53,7 +53,11 @@ export function normalizeAppLocale(value: string | null | undefined): AppLocale 
     .replace("_", "-")
     .split("-")[0];
 
-  return isAppLocale(language) ? language : DEFAULT_APP_LOCALE;
+  return isAppLocale(language) ? language : null;
+}
+
+export function normalizeAppLocale(value: string | null | undefined): AppLocale {
+  return matchAppLocale(value) ?? DEFAULT_APP_LOCALE;
 }
 
 export function getLocaleDirection(locale: string | null | undefined): AppDirection {
