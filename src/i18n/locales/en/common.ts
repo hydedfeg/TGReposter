@@ -79,7 +79,6 @@ const common = {
       success: "Post dispatched successfully to your channel!",
       failed: "Telegram failed to post message.",
       botError: "Telegram Bot Error: {{error}}",
-    },
       errors: {
         postNotFound: "This post is no longer available in your Content Inbox.",
         postNotApproved: "Approve this Content Inbox post before publishing it.",
@@ -94,6 +93,7 @@ const common = {
         noEnabledTargets: "No enabled Telegram destinations are available for publishing.",
         inboxStateSaveFailed: "Telegram delivery completed, but your Content Inbox status could not be saved.",
       },
+    },
   },
   languageSelector: {
     label: "Interface language",
