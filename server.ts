@@ -688,7 +688,7 @@ app.post("/api/auth/login", async (req, res) => {
 
   const hash = hashPassword(password);
   if (hash !== user.passwordHash) {
-    return res.status(401).json({ error: "Invalid username/email or password." });
+    return res.status(401).json({ code: API_ERROR_CODES.auth.invalidCredentials, error: "Invalid username/email or password." });
   }
 
   const token = crypto.randomBytes(32).toString("hex");
