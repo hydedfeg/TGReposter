@@ -293,7 +293,7 @@ const promotion = {
     ctaPlaceholder: "اقرأ المزيد / انضم إلى القناة…",
     save: "حفظ في الحملة",
     preview: "معاينة تيليجرام",
-    previewEmpty: "اختر منشور الحملة to preview the final promotion copy.",
+    previewEmpty: "اختر منشور الحملة لمعاينة نص الترويج النهائي.",
     styles: {
       professional: "احترافي",
       news: "أخباري",
@@ -313,7 +313,7 @@ const promotion = {
       hashtags: { label: "إنشاء وسوم", help: "أنشئ 3–6 وسوم تيليجرام ذات صلة." },
     },
     feedback: {
-      selectPost: "اختر منشور الحملة first.",
+      selectPost: "اختر منشور الحملة أولًا.",
       editableOnly: "AI generation is available only for مسودة or جاهز campaigns.",
       chooseLanguage: "اختر اللغة المستهدفة للترجمة.",
       generated: "تم إنشاء {{action}}. راجعه قبل التطبيق.",
