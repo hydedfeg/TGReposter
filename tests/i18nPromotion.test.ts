@@ -79,8 +79,10 @@ test("promotion AI action and style values remain independent from translated la
 
   assert.match(studio, /useState<PromotionAIAction>("rewrite")/);
   assert.match(studio, /useState<PromotionAIStyle>("professional")/);
-  assert.match(studio, /useState("English")/);
-  assert.match(studio, /body: JSON.stringify({[sS]*?action,[sS]*?style,[sS]*?language: language.trim()/);
+  assert.match(studio, /useState<AIOutputLanguageId>("en")/);
+  assert.match(studio, /AI_OUTPUT_LANGUAGE_IDS\.map/);
+  assert.match(studio, /common:aiLanguages\.\$\{languageId\}/);
+  assert.match(studio, /body: JSON.stringify({[sS]*?action,[sS]*?style,[sS]*?outputLanguage/);
 });
 
 test("promotion dates and counts use the selected interface locale", () => {
