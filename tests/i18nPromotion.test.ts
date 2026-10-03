@@ -91,8 +91,8 @@ test("promotion dates and counts use the selected interface locale", () => {
   assert.match(workspace, /normalizeAppLocale\(i18n\.language\)/);
   assert.match(workspace, /new Intl\.NumberFormat\(locale\)/);
   assert.match(workspace, /new Intl\.DateTimeFormat\(`\$\{locale\}-u-ca-gregory`/);
-  assert.match(workspace, /formattedCount: numberFormatter\.format\(selectedTargetIds\.length\)/);
-  assert.match(workspace, /formattedCount: numberFormatter\.format\(detail\.posts\.length\)/);
+  assert.equal(workspace.includes("formattedCount: numberFormatter.format(selectedTargetIds.length)"), true);
+  assert.equal(workspace.includes("formattedCount: numberFormatter.format(detail.posts.length)"), true);
 });
 
 test("promotion technical IDs stay LTR while human and generated copy is direction-aware", () => {
