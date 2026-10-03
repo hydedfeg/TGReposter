@@ -58,10 +58,10 @@ test("campaign, delivery, target, and content-mode machine values stay stable", 
   const workspace = readFileSync(resolve(root, "src/components/PromotionWorkspace.tsx"), "utf8");
   const types = readFileSync(resolve(root, "src/types.ts"), "utf8");
 
-  assert.match(types, /PromotionCampaignStatus =[sS]*?'draft'[sS]*?'ready'[sS]*?'running'[sS]*?'completed'[sS]*?'partial'[sS]*?'failed'[sS]*?'cancelled'/);
-  assert.match(types, /PromotionContentMode = 'original' | 'teaser' | 'ai' | 'custom'/);
-  assert.match(types, /PromotionDeliveryStatus = 'pending' | 'in_progress' | 'success' | 'failed' | 'skipped'/);
-  assert.match(types, /PromotionTargetChatType = 'channel' | 'group' | 'supergroup'/);
+  assert.match(types, /PromotionCampaignStatus =[\s\S]*?'draft'[\s\S]*?'ready'[\s\S]*?'running'[\s\S]*?'completed'[\s\S]*?'partial'[\s\S]*?'failed'[\s\S]*?'cancelled'/);
+  assert.match(types, /PromotionContentMode =[\s\S]*?'original'[\s\S]*?'teaser'[\s\S]*?'ai'[\s\S]*?'custom'/);
+  assert.match(types, /PromotionDeliveryStatus =[\s\S]*?'pending'[\s\S]*?'in_progress'[\s\S]*?'success'[\s\S]*?'failed'[\s\S]*?'skipped'/);
+  assert.match(types, /PromotionTargetChatType =[\s\S]*?'channel'[\s\S]*?'group'[\s\S]*?'supergroup'/);
   assert.match(workspace, /connectionStatus === "ok"/);
   assert.match(workspace, /status === "draft"/);
   assert.match(workspace, /status === "ready"/);
@@ -82,7 +82,7 @@ test("promotion AI action and style values remain independent from translated la
   assert.match(studio, /useState<AIOutputLanguageId>("en")/);
   assert.match(studio, /AI_OUTPUT_LANGUAGE_IDS\.map/);
   assert.match(studio, /common:aiLanguages\.\$\{languageId\}/);
-  assert.match(studio, /body: JSON.stringify({[sS]*?action,[sS]*?style,[sS]*?outputLanguage/);
+  assert.match(studio, /body: JSON\.stringify\(\{[\s\S]*?action,[\s\S]*?style,[\s\S]*?outputLanguage/);
 });
 
 test("promotion dates and counts use the selected interface locale", () => {
@@ -90,7 +90,7 @@ test("promotion dates and counts use the selected interface locale", () => {
 
   assert.match(workspace, /normalizeAppLocale(i18n.language)/);
   assert.match(workspace, /new Intl.NumberFormat(locale)/);
-  assert.match(workspace, /new Intl.DateTimeFormat(`${locale}-u-ca-gregory`/);
+  assert.match(workspace, /new Intl\.DateTimeFormat\(`\$\{locale\}-u-ca-gregory`/);
   assert.match(workspace, /formattedCount: numberFormatter.format(selectedTargetIds.length)/);
   assert.match(workspace, /formattedCount: numberFormatter.format(detail.posts.length)/);
 });
@@ -99,13 +99,13 @@ test("promotion technical IDs stay LTR while human and generated copy is directi
   const workspace = readFileSync(resolve(root, "src/components/PromotionWorkspace.tsx"), "utf8");
   const studio = readFileSync(resolve(root, "src/components/PromotionAIStudio.tsx"), "utf8");
 
-  assert.match(workspace, /value={targetChatId}[sS]*?dir="ltr"/);
+  assert.match(workspace, /value=\{targetChatId\}[\s\S]*?dir="ltr"/);
   assert.match(workspace, /value={editSourceLink} dir="ltr"/);
-  assert.match(workspace, /delivery.warningMessage[sS]*?dir="auto"/);
-  assert.match(workspace, /delivery.errorMessage[sS]*?dir="auto"/);
+  assert.match(workspace, /delivery\.warningMessage[\s\S]*?dir="auto"/);
+  assert.match(workspace, /delivery\.errorMessage[\s\S]*?dir="auto"/);
   assert.match(studio, /value={generatedResult} dir="auto"/);
   assert.match(studio, /value={draftText} dir="auto"/);
-  assert.match(studio, /dir="ltr">{providerInfo}</span>/);
+  assert.match(studio, /dir="ltr">\{providerInfo\}<\/span>/);
 });
 
 test("promotion RTL layout uses logical directional utilities", () => {
@@ -113,14 +113,14 @@ test("promotion RTL layout uses logical directional utilities", () => {
   const studio = readFileSync(resolve(root, "src/components/PromotionAIStudio.tsx"), "utf8");
 
   for (const source of [workspace, studio]) {
-    assert.doesNotMatch(source, /text-left/);
-    assert.doesNotMatch(source, /(?:left|right|pl|pr|ml|mr)-/);
+    assert.doesNotMatch(source, /\btext-left\b/);
+    assert.doesNotMatch(source, /\b(?:left|right|pl|pr|ml|mr)-/);
   }
 
-  assert.match(workspace, /start-3/);
-  assert.match(workspace, /ps-9/);
+  assert.match(workspace, /\bstart-3\b/);
+  assert.match(workspace, /\bps-9\b/);
   assert.match(workspace, /rtl-mirror/);
-  assert.match(studio, /end-20/);
+  assert.match(studio, /\bend-20\b/);
 });
 
 test("promotion frontend never introduces Telegram bot tokens or secret provider keys", () => {
