@@ -5,6 +5,7 @@ import channelRoutes from "./server/routes/channels";
 import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
+import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
@@ -1459,7 +1460,7 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
   const aiProvider = db.aiConfig?.provider || "gemini";
   const aiModel = db.aiConfig?.model || "gemini-3.5-flash";
 
-  const { action, text, context } = req.body;
+  const { action, text, context, targetLanguage } = req.body;
   if (!text) {
     return res.status(400).json({ error: "Missing post text" });
   }
@@ -1468,7 +1469,19 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
     return res.status(400).json({ error: "Invalid curation action" });
   }
 
-  const prompt = buildCurationPrompt(action, text, context);
+  let promptContext = typeof context === "string" ? context : undefined;
+  if (action === "translate" && targetLanguage !== undefined) {
+    const languageId = resolveAIOutputLanguageId(targetLanguage);
+    if (!languageId) {
+      return res.status(400).json({
+        error: "Unsupported target language.",
+        code: "UNSUPPORTED_AI_OUTPUT_LANGUAGE",
+      });
+    }
+    promptContext = getAIOutputLanguagePromptName(languageId);
+  }
+
+  const prompt = buildCurationPrompt(action, text, promptContext);
 
   const result = await dispatchCuration({
     provider: aiProvider,
