@@ -440,7 +440,6 @@ export default function CurationFeed({
           </div>
           <textarea
             aria-label={t("accessibility.curatedVersion")}
-            dir="auto"
             value={draftText}
             onChange={(event) => setDraftText(event.target.value)}
             rows={8}
