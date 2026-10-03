@@ -85,8 +85,6 @@ function statusClasses(status: CuratedPost["status"]) {
 
 function OriginalPostPanel({ post }: { post: CuratedPost }) {
   const { t, i18n } = useTranslation("inbox");
-  const { t: th } = useTranslation("history");
-  const isHistory = mode === "history";
   const locale = normalizeAppLocale(i18n.language);
 
   return (
@@ -189,6 +187,8 @@ export default function CurationFeed({
   targets,
 }: CurationFeedProps) {
   const { t, i18n } = useTranslation("inbox");
+  const { t: th } = useTranslation("history");
+  const isHistory = mode === "history";
   const locale = normalizeAppLocale(i18n.language);
   const numberFormatter = new Intl.NumberFormat(locale);
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
