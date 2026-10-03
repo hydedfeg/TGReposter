@@ -3,6 +3,19 @@ import { Lock, Key, ShieldAlert, Sparkles, RefreshCw, Eye, EyeOff, CheckCircle2 
 import { useTranslation } from "react-i18next";
 import { safeResponseJson } from "../utils/api";
 import LanguageSelector from "./LanguageSelector";
+import { API_ERROR_CODES } from "../../shared/apiErrorCodes";
+
+const AUTH_ERROR_CODE_KEYS: Record<string, string> = {
+  [API_ERROR_CODES.auth.alreadyConfigured]: "errors.alreadyConfigured",
+  [API_ERROR_CODES.auth.noAccountsConfigured]: "errors.noAccountsConfigured",
+  [API_ERROR_CODES.auth.credentialsRequired]: "errors.credentialsRequired",
+  [API_ERROR_CODES.auth.invalidCredentials]: "errors.invalidCredentials",
+  [API_ERROR_CODES.auth.emailNotConfirmed]: "errors.emailNotConfirmed",
+  [API_ERROR_CODES.auth.rateLimited]: "errors.rateLimited",
+  [API_ERROR_CODES.auth.usernameTooShort]: "validation.usernameTooShort",
+  [API_ERROR_CODES.auth.passwordTooShort]: "validation.passwordTooShort",
+  [API_ERROR_CODES.auth.failed]: "errors.authenticationFailed",
+};
 
 const AUTH_ERROR_KEYS: Record<string, string> = {
   "administration account has already been configured.": "errors.alreadyConfigured",
@@ -14,7 +27,11 @@ const AUTH_ERROR_KEYS: Record<string, string> = {
   "password must be at least 4 characters long.": "validation.passwordTooShort",
 };
 
-function getAuthErrorKey(error: unknown): string {
+function getAuthErrorKey(code: unknown, error: unknown): string {
+  if (typeof code === "string" && AUTH_ERROR_CODE_KEYS[code]) {
+    return AUTH_ERROR_CODE_KEYS[code];
+  }
+
   const message = typeof error === "string" ? error.trim().toLowerCase() : "";
 
   if (AUTH_ERROR_KEYS[message]) return AUTH_ERROR_KEYS[message];
@@ -114,7 +131,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
           );
         }
       } else {
-        setErrorKey(getAuthErrorKey(data.error));
+        setErrorKey(getAuthErrorKey(data.code, data.error));
       }
     } catch {
       setErrorKey("errors.network");
