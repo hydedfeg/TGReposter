@@ -774,11 +774,11 @@ export default function App() {
           <AIConfigView
             aiConfig={settings.aiConfig}
             onUpdateAI={handleUpdateAI}
-            onCredentialConfigured={(provider) => {
+            onCredentialStatusChange={(provider, configured) => {
               if (provider === "gemini") {
-                setGeminiActive(true);
+                setGeminiActive(configured);
               } else {
-                setOpenrouterActive(true);
+                setOpenrouterActive(configured);
               }
             }}
             geminiActive={geminiActive}
