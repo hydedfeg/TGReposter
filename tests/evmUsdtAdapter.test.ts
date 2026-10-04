@@ -39,8 +39,14 @@ test("EVM watcher decodes USDT Transfer logs and preserves confirmation overlap"
 
     let result: unknown;
     switch (body.method) {
+      case "eth_chainId":
+        result = "0x38";
+        break;
       case "eth_blockNumber":
         result = "0x64";
+        break;
+      case "eth_getCode":
+        result = "0x60016000";
         break;
       case "eth_call":
         result = "0x6";
@@ -125,8 +131,12 @@ test("EVM watcher caches ERC-20 decimals between scans", async () => {
     };
 
     let result: unknown;
-    if (body.method === "eth_blockNumber") {
+    if (body.method === "eth_chainId") {
+      result = "0x38";
+    } else if (body.method === "eth_blockNumber") {
       result = "0xa";
+    } else if (body.method === "eth_getCode") {
+      result = "0x60016000";
     } else if (body.method === "eth_call") {
       decimalsCalls += 1;
       result = "0x6";
@@ -172,5 +182,82 @@ test("EVM watcher rejects a scan for a different token or merchant wallet", asyn
         tokenIdentifier: token,
       }),
     /does not match configured/
+  );
+});
+
+test("EVM watcher rejects an RPC endpoint for the wrong chain", async () => {
+  const fetchMock: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      id: number;
+      method: string;
+    };
+
+    if (body.method !== "eth_chainId") {
+      throw new Error("No payment data should be queried on the wrong chain.");
+    }
+
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: body.id,
+        result: "0x1",
+      }),
+      { status: 200 }
+    );
+  };
+
+  const adapter = new EvmUsdtAdapter(config(), fetchMock);
+
+  await assert.rejects(
+    () =>
+      adapter.scanTransfers({
+        receivingAddress: merchant,
+        tokenIdentifier: token,
+        cursor: "1",
+      }),
+    /reported chain ID 1, expected 56/
+  );
+});
+
+test("EVM watcher rejects a token identifier with no deployed contract", async () => {
+  const fetchMock: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as {
+      id: number;
+      method: string;
+    };
+
+    const result =
+      body.method === "eth_chainId"
+        ? "0x38"
+        : body.method === "eth_blockNumber"
+          ? "0xa"
+          : body.method === "eth_getCode"
+            ? "0x"
+            : null;
+
+    if (result === null) {
+      throw new Error(`Unexpected RPC method ${body.method}`);
+    }
+
+    return new Response(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: body.id,
+        result,
+      }),
+      { status: 200 }
+    );
+  };
+
+  const adapter = new EvmUsdtAdapter(config(), fetchMock);
+
+  await assert.rejects(
+    () =>
+      adapter.scanTransfers({
+        receivingAddress: merchant,
+        tokenIdentifier: token,
+        cursor: "1",
+      }),
+    /not a deployed contract/
   );
 });
