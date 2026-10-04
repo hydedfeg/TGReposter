@@ -651,17 +651,29 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
             </div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-slate-50 p-3">
-              <p className="text-lg font-bold text-slate-900">{numberFormatter.format(detail.posts.length)}</p>
-              <p className="mt-0.5 text-[9px] font-semibold text-slate-400">{t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })}</p>
+            <div
+              className="flex min-w-0 items-center gap-2 rounded-xl bg-slate-50 p-3"
+              aria-label={t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })}
+              title={t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })}
+            >
+              <FileText className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+              <p className="truncate text-lg font-bold text-slate-900">{numberFormatter.format(detail.posts.length)}</p>
             </div>
-            <div className="rounded-xl bg-sky-50 p-3">
-              <p className="text-lg font-bold text-sky-700">{numberFormatter.format(selectedTargetIds.length)}</p>
-              <p className="mt-0.5 text-[9px] font-semibold text-sky-500">{t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}</p>
+            <div
+              className="flex min-w-0 items-center gap-2 rounded-xl bg-sky-50 p-3"
+              aria-label={t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}
+              title={t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}
+            >
+              <Target className="h-4 w-4 shrink-0 text-sky-500" aria-hidden="true" />
+              <p className="truncate text-lg font-bold text-sky-700">{numberFormatter.format(selectedTargetIds.length)}</p>
             </div>
-            <div className="rounded-xl bg-emerald-50 p-3">
-              <p className="text-lg font-bold text-emerald-700">{numberFormatter.format(detail.posts.length * selectedTargetIds.length)}</p>
-              <p className="mt-0.5 text-[9px] font-semibold text-emerald-500">{t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}</p>
+            <div
+              className="flex min-w-0 items-center gap-2 rounded-xl bg-emerald-50 p-3"
+              aria-label={t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}
+              title={t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}
+            >
+              <Send className="h-4 w-4 shrink-0 text-emerald-500" aria-hidden="true" />
+              <p className="truncate text-lg font-bold text-emerald-700">{numberFormatter.format(detail.posts.length * selectedTargetIds.length)}</p>
             </div>
           </div>
         </div>
@@ -936,7 +948,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
           </aside>
 
           {!detail ? (
-            <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-3xs">
+            <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center shadow-3xs xl:col-span-2">
               <Megaphone className="w-10 h-10 text-slate-300 mx-auto" />
               <h3 className="text-sm font-bold text-slate-800 mt-3">{t("workspace.campaigns.selectTitle")}</h3>
               <p className="text-xs text-slate-500 mt-1">{t("workspace.campaigns.selectDescription")}</p>
