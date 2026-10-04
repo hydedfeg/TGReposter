@@ -771,7 +771,19 @@ export default function App() {
         ) : null}
 
         {activeWorkspaceTab === "ai" ? (
-          <AIConfigView aiConfig={settings.aiConfig} onUpdateAI={handleUpdateAI} geminiActive={geminiActive} openrouterActive={openrouterActive} />
+          <AIConfigView
+            aiConfig={settings.aiConfig}
+            onUpdateAI={handleUpdateAI}
+            onCredentialConfigured={(provider) => {
+              if (provider === "gemini") {
+                setGeminiActive(true);
+              } else {
+                setOpenrouterActive(true);
+              }
+            }}
+            geminiActive={geminiActive}
+            openrouterActive={openrouterActive}
+          />
         ) : null}
 
         {activeWorkspaceTab === "database" && currentUserRole === "super-admin" ? <DatabaseConfig /> : null}
