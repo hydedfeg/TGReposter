@@ -109,6 +109,12 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
     }
   }
 
+  async getAssetDecimals(): Promise<number> {
+    return this.getJettonDecimals(
+      cleanRequiredValue(this.config.tokenIdentifier, "Jetton master")
+    );
+  }
+
   async scanTransfers(
     request: CryptoPaymentScanRequest
   ): Promise<CryptoPaymentScanResult> {
@@ -145,7 +151,7 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
       TON_MAX_TRANSFER_BATCH
     );
 
-    const decimals = await this.getJettonDecimals(tokenIdentifier);
+    const decimals = await this.getAssetDecimals();
     const response = await this.getJson<TonJettonTransfersResponse>(
       "/api/v3/jetton/transfers",
       {
@@ -254,8 +260,10 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
     const rawDecimals = master?.jetton_content?.decimals;
     const decimals = parsePositiveInteger(rawDecimals, "Jetton decimals");
 
-    if (decimals > 255) {
-      throw new Error("TON Jetton decimals are out of range.");
+    if (decimals > 18) {
+      throw new Error(
+        "Configured TON Jetton precision exceeds the payment ledger limit of 18 decimals."
+      );
     }
 
     this.decimals = decimals;
