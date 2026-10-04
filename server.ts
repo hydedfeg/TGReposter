@@ -6,6 +6,7 @@ import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
+import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { API_ERROR_CODES } from "./shared/apiErrorCodes";
@@ -2258,6 +2259,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
+    startCryptoPaymentScheduler();
   });
 }
 
