@@ -60,6 +60,7 @@ test("enabled USDT networks require complete server-side configuration", () => {
       tokenIdentifier: "0xtoken",
       requiredConfirmations: 4,
       maxBlocksPerScan: 1000,
+      requestTimeoutMs: 10000,
     },
   ]);
 });
