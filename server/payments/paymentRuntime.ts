@@ -1,4 +1,5 @@
 import { EvmUsdtAdapter } from "./evmUsdtAdapter";
+import { TonCenterUsdtAdapter } from "./tonCenterUsdtAdapter";
 import { loadCryptoPaymentNetworkConfigs } from "./paymentConfig";
 import { CryptoPaymentWatcher } from "./paymentWatcher";
 import type {
@@ -47,17 +48,11 @@ export async function scanConfiguredCryptoPayments(
   const networks: CryptoPaymentNetworkRuntimeResult[] = [];
 
   for (const config of configs) {
-    if (config.family !== "evm") {
-      networks.push({
-        network: config.id,
-        ok: false,
-        error: `Payment adapter for ${config.id} is not implemented yet.`,
-      });
-      continue;
-    }
-
     try {
-      const adapter = new EvmUsdtAdapter(config);
+      const adapter =
+        config.family === "evm"
+          ? new EvmUsdtAdapter(config)
+          : new TonCenterUsdtAdapter(config);
       const watcher = new CryptoPaymentWatcher(config, adapter);
       const result = await watcher.runOnce();
       networks.push({
