@@ -87,9 +87,29 @@ const titleKeys: Record<WorkspaceView, string> = {
   database: "titles.database",
 };
 
+function splitGraphemes(value: string) {
+  if (typeof Intl.Segmenter === "function") {
+    return Array.from(
+      new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value),
+      (entry) => entry.segment,
+    );
+  }
+
+  return Array.from(value);
+}
+
 function initials(username: string | null) {
-  if (!username) return "TG";
-  return username.trim().slice(0, 2).toUpperCase();
+  const normalized = username?.trim();
+  if (!normalized) return "TG";
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  const selected =
+    words.length > 1
+      ? [splitGraphemes(words[0])[0], splitGraphemes(words[words.length - 1])[0]]
+      : splitGraphemes(normalized).slice(0, 2);
+
+  const value = selected.filter(Boolean).join("");
+  return value ? value.toLocaleUpperCase() : "TG";
 }
 
 function SidebarButton({
@@ -195,7 +215,7 @@ export default function AppShell({
   };
 
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-950">
+    <div className="app-shell min-h-screen bg-slate-100/70 text-slate-950">
       <aside
         id="desktop-sidebar"
         className={`fixed inset-y-0 start-0 z-50 w-64 flex-col bg-slate-950 px-3 py-4 text-white ${sidebarOpen ? "hidden lg:flex" : "hidden"}`}
@@ -280,8 +300,8 @@ export default function AppShell({
         </div>
       </aside>
 
-      <div className={`min-h-screen transition-[padding] duration-200 ${sidebarOpen ? "lg:ps-64" : "lg:ps-0"}`}>
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-sm">
+      <div className={`min-h-[100dvh] transition-[padding] duration-200 ${sidebarOpen ? "lg:ps-64" : "lg:ps-0"}`}>
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:pt-0">
           <div className="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 xl:px-8">
             <div className="flex min-w-0 items-center gap-3">
               {!sidebarOpen ? (
@@ -337,7 +357,7 @@ export default function AppShell({
       {moreOpen ? (
         <>
           <button type="button" tabIndex={-1} onClick={() => setMoreOpen(false)} aria-label={t("accessibility.closeMoreNavigation")} className="fixed inset-0 z-[55] bg-slate-950/25 lg:hidden" />
-          <div role="dialog" aria-modal="true" aria-labelledby="mobile-more-heading" className="fixed inset-x-4 bottom-20 z-[60] max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
+          <div role="dialog" aria-modal="true" aria-labelledby="mobile-more-heading" className="fixed inset-x-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-[60] max-h-[70dvh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
           <div className="flex items-center justify-between px-2 py-2">
             <div>
               <p id="mobile-more-heading" className="font-display text-lg font-bold">{t("mobile.more")}</p>
