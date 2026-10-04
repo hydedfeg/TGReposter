@@ -32,6 +32,7 @@ export interface CryptoPaymentNetworkConfig {
   tokenIdentifier: string;
   requiredConfirmations: number;
   maxBlocksPerScan: number;
+  requestTimeoutMs: number;
 }
 
 export interface CryptoPaymentTransferObservation {
