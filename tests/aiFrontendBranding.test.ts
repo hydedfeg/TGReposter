@@ -40,7 +40,7 @@ test("generic AI branding is provider-neutral while provider configuration stays
     "AI Curation Toolkit",
     "Powered by server-side AI.",
     "edit posts using AI",
-    "deployment environment’s secret settings"
+    "Personal API credential"
   ]) {
     assert.equal(genericUi.includes(neutralCopy), true, `Missing neutral branding: ${neutralCopy}`);
   }
@@ -49,9 +49,8 @@ test("generic AI branding is provider-neutral while provider configuration stays
   for (const providerIdentity of [
     "Google Gemini",
     "OpenRouter",
-    "GEMINI_API_KEY",
-    "OPENROUTER_API_KEY",
-    "gemini-3.5-flash"
+    "gemini-3.5-flash",
+    "/api/ai/credentials/"
   ]) {
     assert.equal(
       providerConfig.includes(providerIdentity),
