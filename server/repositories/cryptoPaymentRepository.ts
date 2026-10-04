@@ -1,4 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
+import { assertCryptoInvoiceTransition } from "../payments/paymentState";
 import type {
   CryptoPaymentInvoiceStatus,
   CryptoPaymentNetwork,
@@ -118,36 +119,70 @@ export class CryptoPaymentRepository {
     status: CryptoPaymentInvoiceStatus
   ): Promise<CryptoPaymentInvoiceRecord | null> {
     const owner = cleanOwnerPrincipal(ownerPrincipal);
-    const detectedAt =
-      status === "detected" || status === "confirming" || status === "paid";
-    const confirmedAt = status === "paid";
-    const cancelledAt = status === "cancelled";
+    const client = await getPostgresPool().connect();
 
-    const { rows } = await getPostgresPool().query(
-      `
-        update public.crypto_payment_invoices
-        set status = $3,
-            detected_at = case
-              when $4::boolean then coalesce(detected_at, now())
-              else detected_at
-            end,
-            confirmed_at = case
-              when $5::boolean then coalesce(confirmed_at, now())
-              else confirmed_at
-            end,
-            cancelled_at = case
-              when $6::boolean then coalesce(cancelled_at, now())
-              else cancelled_at
-            end,
-            updated_at = now()
-        where owner_principal = $1
-          and id = $2::uuid
-        returning *
-      `,
-      [owner, invoiceId, status, detectedAt, confirmedAt, cancelledAt]
-    );
+    try {
+      await client.query("begin");
 
-    return rows[0] ?? null;
+      const currentResult = await client.query(
+        `
+          select *
+          from public.crypto_payment_invoices
+          where owner_principal = $1
+            and id = $2::uuid
+          for update
+        `,
+        [owner, invoiceId]
+      );
+
+      const current = currentResult.rows[0] as
+        | CryptoPaymentInvoiceRecord
+        | undefined;
+
+      if (!current) {
+        await client.query("rollback");
+        return null;
+      }
+
+      assertCryptoInvoiceTransition(current.status, status);
+
+      const detectedAt =
+        status === "detected" || status === "confirming" || status === "paid";
+      const confirmedAt = status === "paid";
+      const cancelledAt = status === "cancelled";
+
+      const { rows } = await client.query(
+        `
+          update public.crypto_payment_invoices
+          set status = $3,
+              detected_at = case
+                when $4::boolean then coalesce(detected_at, now())
+                else detected_at
+              end,
+              confirmed_at = case
+                when $5::boolean then coalesce(confirmed_at, now())
+                else confirmed_at
+              end,
+              cancelled_at = case
+                when $6::boolean then coalesce(cancelled_at, now())
+                else cancelled_at
+              end,
+              updated_at = now()
+          where owner_principal = $1
+            and id = $2::uuid
+          returning *
+        `,
+        [owner, invoiceId, status, detectedAt, confirmedAt, cancelledAt]
+      );
+
+      await client.query("commit");
+      return rows[0] ?? null;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async upsertObservedTransfer(
