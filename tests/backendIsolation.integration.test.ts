@@ -171,6 +171,52 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
     assert.equal(aiCalls[1].body.model, "bob-model");
   });
 
+  await t.test("personal AI keys can be tested, replaced and removed without crossing owners", async () => {
+    const before = (await outbound()).length;
+    const candidateKey = "bob-candidate-openrouter-key-987654";
+
+    const tested = await ok(api(
+      bob,
+      "/api/ai/credentials/openrouter/test",
+      { apiKey: candidateKey, model: "bob-model" }
+    ));
+    assert.equal(tested.success, true);
+    assert.equal(tested.provider, "openrouter");
+
+    const testCalls = (await outbound()).slice(before).filter(call => call.kind === "ai");
+    assert.equal(testCalls.length, 1);
+    assert.equal(testCalls[0].authorization, `Bearer ${candidateKey}`);
+
+    await ok(api(bob, "/api/ai/curate", {
+      action: "summarize",
+      text: "Verify the tested key was not persisted",
+    }));
+    const afterCurate = (await outbound()).filter(call => call.kind === "ai");
+    assert.equal(
+      afterCurate.at(-1)?.authorization,
+      "Bearer bob-personal-openrouter-key-123456"
+    );
+
+    await ok(api(bob, "/api/ai/credentials/openrouter", undefined, "DELETE"));
+    assert.equal((await ok(api(bob, "/api/settings"))).openrouterActive, false);
+    assert.equal((await ok(api(alice, "/api/settings"))).openrouterActive, true);
+
+    const missing = await api(bob, "/api/ai/curate", {
+      action: "summarize",
+      text: "This should not leave the server",
+    });
+    assert.equal(missing.status, 400);
+    assert.match(missing.data.error, /OpenRouter API key is not configured/);
+
+    await ok(api(
+      bob,
+      "/api/ai/credentials/openrouter",
+      { apiKey: "bob-personal-openrouter-key-123456" },
+      "PUT"
+    ));
+    assert.equal((await ok(api(bob, "/api/settings"))).openrouterActive, true);
+  });
+
   await t.test("editing one inbox cannot alter another user's same-ID post or inject foreign IDs", async () => {
     await db!.query("insert into posts(owner_principal,id,channel_username,original_text,published_at) values($1,'alice-only/1','alice-only','Alice private',now())", [owner(aliceId)]);
     await ok(api(alice, "/api/settings", { posts: [{ id: "shared/1", text: "Alice edit", status: "approved" }] }));
