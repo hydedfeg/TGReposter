@@ -283,6 +283,58 @@ export class CryptoPaymentRepository {
     return String(rows[0].id);
   }
 
+  async getNetworkCursor(input: {
+    network: CryptoPaymentNetwork;
+    tokenIdentifier: string;
+    receivingAddress: string;
+  }): Promise<string | null> {
+    const { rows } = await getPostgresPool().query(
+      `
+        select cursor
+        from public.crypto_payment_network_state
+        where network = $1
+          and token_identifier = $2
+          and receiving_address = $3
+        limit 1
+      `,
+      [input.network, input.tokenIdentifier, input.receivingAddress]
+    );
+
+    return rows[0]?.cursor ? String(rows[0].cursor) : null;
+  }
+
+  async saveNetworkCursor(input: {
+    network: CryptoPaymentNetwork;
+    tokenIdentifier: string;
+    receivingAddress: string;
+    cursor: string;
+  }): Promise<void> {
+    await getPostgresPool().query(
+      `
+        insert into public.crypto_payment_network_state
+          (
+            network,
+            token_identifier,
+            receiving_address,
+            cursor,
+            last_scanned_at,
+            updated_at
+          )
+        values ($1, $2, $3, $4, now(), now())
+        on conflict (network, token_identifier, receiving_address) do update
+        set cursor = excluded.cursor,
+            last_scanned_at = now(),
+            updated_at = now()
+      `,
+      [
+        input.network,
+        input.tokenIdentifier,
+        input.receivingAddress,
+        input.cursor,
+      ]
+    );
+  }
+
   async appendEvent(input: {
     ownerPrincipal: string;
     invoiceId: string;
