@@ -18,6 +18,8 @@ body {
 
 html {
   scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 html[lang="ar"] {
@@ -54,6 +56,32 @@ input,
 select,
 textarea {
   font: inherit;
+}
+
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+button,
+[role="button"] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 button:focus-visible,
