@@ -142,6 +142,35 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
     assert.equal((await ok(api(bob, "/api/channels"))).length, 0);
   });
 
+  await t.test("AI requests use only the authenticated user's personal OpenRouter key", async () => {
+    const before = (await outbound()).length;
+
+    for (const [token, name] of [[alice, "alice"], [bob, "bob"]] as const) {
+      const response = await ok(api(token, "/api/ai/curate", {
+        action: "summarize",
+        text: `${name} private AI request`,
+      }));
+
+      assert.equal(typeof response.result, "string");
+    }
+
+    const aiCalls = (await outbound())
+      .slice(before)
+      .filter(call => call.kind === "ai");
+
+    assert.equal(aiCalls.length, 2);
+    assert.equal(
+      aiCalls[0].authorization,
+      "Bearer alice-personal-openrouter-key-123456"
+    );
+    assert.equal(
+      aiCalls[1].authorization,
+      "Bearer bob-personal-openrouter-key-123456"
+    );
+    assert.equal(aiCalls[0].body.model, "alice-model");
+    assert.equal(aiCalls[1].body.model, "bob-model");
+  });
+
   await t.test("editing one inbox cannot alter another user's same-ID post or inject foreign IDs", async () => {
     await db!.query("insert into posts(owner_principal,id,channel_username,original_text,published_at) values($1,'alice-only/1','alice-only','Alice private',now())", [owner(aliceId)]);
     await ok(api(alice, "/api/settings", { posts: [{ id: "shared/1", text: "Alice edit", status: "approved" }] }));
