@@ -66,6 +66,19 @@ export function loadCryptoPaymentNetworkConfigs(
       return [];
     }
 
+    const requiredConfirmations = parsePositiveInteger(
+      env[`${definition.prefix}_CONFIRMATIONS`],
+      definition.id,
+      "required confirmations",
+      1
+    );
+
+    if (definition.family === "ton" && requiredConfirmations !== 1) {
+      throw new Error(
+        'Crypto payment network "ton" requires CRYPTO_USDT_TON_CONFIRMATIONS=1 when using indexed finalized transfers.'
+      );
+    }
+
     return [
       {
         id: definition.id,
@@ -77,6 +90,9 @@ export function loadCryptoPaymentNetworkConfigs(
           `${definition.prefix}_RPC_URL`,
           definition.id
         ),
+        ...(definition.family === "ton" && env.CRYPTO_USDT_TON_API_KEY?.trim()
+          ? { apiKey: env.CRYPTO_USDT_TON_API_KEY.trim() }
+          : {}),
         receivingAddress: requiredValue(
           env,
           `${definition.prefix}_RECEIVING_ADDRESS`,
@@ -87,12 +103,7 @@ export function loadCryptoPaymentNetworkConfigs(
           `${definition.prefix}_TOKEN_IDENTIFIER`,
           definition.id
         ),
-        requiredConfirmations: parsePositiveInteger(
-          env[`${definition.prefix}_CONFIRMATIONS`],
-          definition.id,
-          "required confirmations",
-          1
-        ),
+        requiredConfirmations,
         maxBlocksPerScan: parsePositiveInteger(
           env[`${definition.prefix}_MAX_BLOCKS_PER_SCAN`],
           definition.id,
