@@ -110,6 +110,12 @@ export function loadCryptoPaymentNetworkConfigs(
           "max blocks per scan",
           1000
         ),
+        requestTimeoutMs: parsePositiveInteger(
+          env.CRYPTO_PAYMENT_REQUEST_TIMEOUT_MS,
+          definition.id,
+          "request timeout",
+          10_000
+        ),
       },
     ];
   });
