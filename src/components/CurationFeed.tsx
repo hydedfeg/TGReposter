@@ -201,6 +201,21 @@ export default function CurationFeed({
   const [mobileReviewOpen, setMobileReviewOpen] = useState(false);
   const [mobileReviewView, setMobileReviewView] = useState<MobileReviewView>("edit");
   const [copied, setCopied] = useState(false);
+  const [isDesktopWorkspace, setIsDesktopWorkspace] = useState(() =>
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function"
+      ? window.matchMedia("(min-width: 1280px)").matches
+      : false,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const mediaQuery = window.matchMedia("(min-width: 1280px)");
+    const syncLayout = () => setIsDesktopWorkspace(mediaQuery.matches);
+    syncLayout();
+    mediaQuery.addEventListener("change", syncLayout);
+    return () => mediaQuery.removeEventListener("change", syncLayout);
+  }, []);
 
   useEffect(() => {
     setActiveTab(isHistory ? "posted" : initialTab);
@@ -595,9 +610,8 @@ export default function CurationFeed({
             </button>
           ) : null}
         </section>
-      ) : (
-        <>
-          <section className="hidden h-[calc(100dvh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs xl:grid">
+      ) : isDesktopWorkspace ? (
+          <section className="grid h-[calc(100dvh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
             <aside className="flex min-h-0 flex-col border-e border-slate-200" aria-label={isHistory ? th("accessibility.historyList") : t("accessibility.postQueue")}>
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
                 <div>
@@ -641,8 +655,8 @@ export default function CurationFeed({
               </section>
             ) : null}
           </section>
-
-          <section className="space-y-3 xl:hidden" aria-label={t("accessibility.mobilePostList")}>
+      ) : (
+          <section className="space-y-3" aria-label={t("accessibility.mobilePostList")}>
             {filteredPosts.map((post) => (
               <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-start shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{getInitials(post.channelUsername, "TG")}</span>
@@ -651,7 +665,6 @@ export default function CurationFeed({
               </button>
             ))}
           </section>
-        </>
       )}
 
       {mobileReviewOpen && selectedPost ? (
