@@ -189,7 +189,11 @@ export class CryptoPaymentWatcher {
               observation.tokenIdentifier
             ) &&
           canonicalDecimal(invoice.expected_amount) ===
-            canonicalDecimal(observation.amount)
+            canonicalDecimal(observation.amount) &&
+          new Date(observation.observedAt).getTime() >=
+            new Date(invoice.created_at).getTime() &&
+          new Date(observation.observedAt).getTime() <=
+            new Date(invoice.expires_at).getTime()
         );
       });
 
