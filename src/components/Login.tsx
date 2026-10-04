@@ -141,7 +141,7 @@ export default function Login({ passwordSet, onSuccess }: LoginProps) {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col items-center justify-center px-4 py-8 sm:px-6">
+    <div className="flex min-h-[calc(100dvh-8rem)] flex-col items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-md space-y-7 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-9">
         <div className="flex justify-end">
           <LanguageSelector />
