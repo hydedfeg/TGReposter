@@ -73,7 +73,7 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
     cwd: temp, stdio: ["ignore", "pipe", "pipe"],
     env: { PATH: process.env.PATH, NODE_ENV: "production", DATABASE_URL: databaseUrl,
       SUPABASE_URL: "https://tenant-auth.invalid", SUPABASE_ANON_KEY: "test-key",
-      OPENROUTER_API_KEY: "test-ai-key", TELEGRAM_RATE_LIMIT_DISABLED: "true" },
+      TELEGRAM_RATE_LIMIT_DISABLED: "true" },
   }));
   const api = async (token: string | null, url: string, body?: unknown, method = body === undefined ? "GET" : "POST") => {
     const response = await fetch(`http://127.0.0.1:3000${url}`, {
@@ -119,6 +119,12 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
         filters: { positiveKeywords: [], negativeKeywords: [name], requiredHashtags: [], caseSensitive: false },
         aiConfig: { provider: "openrouter", model: `${name}-model` },
       }));
+      await ok(api(
+        token,
+        "/api/ai/credentials/openrouter",
+        { apiKey: `${name}-personal-openrouter-key-123456` },
+        "PUT"
+      ));
       await ok(api(token, "/api/fetch-posts", { usernames: ["shared"], ownerPrincipal: owner(aliceId) }));
     }
     const rows = await db!.query("select owner_principal from posts where id='shared/1'");
@@ -128,6 +134,7 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
       assert.equal(data.channels[0].name, `${name} source`);
       assert.deepEqual(data.filters.negativeKeywords, [name]);
       assert.equal(data.aiConfig.model, `${name}-model`);
+      assert.equal(data.openrouterActive, true);
       assert.equal(data.posts.length, 1);
     }
     await ok(api(bob, "/api/channels/shared", undefined, "DELETE"));
