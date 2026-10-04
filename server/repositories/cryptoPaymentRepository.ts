@@ -185,6 +185,33 @@ export class CryptoPaymentRepository {
     }
   }
 
+  async getTransactionAssignment(input: {
+    network: CryptoPaymentNetwork;
+    txHash: string;
+    eventIndex: string;
+  }): Promise<{ ownerPrincipal: string; invoiceId: string } | null> {
+    const { rows } = await getPostgresPool().query(
+      `
+        select owner_principal, invoice_id
+        from public.crypto_payment_transactions
+        where network = $1
+          and tx_hash = $2
+          and event_index = $3
+        limit 1
+      `,
+      [input.network, input.txHash, input.eventIndex]
+    );
+
+    if (!rows[0]) {
+      return null;
+    }
+
+    return {
+      ownerPrincipal: String(rows[0].owner_principal),
+      invoiceId: String(rows[0].invoice_id),
+    };
+  }
+
   async upsertObservedTransfer(
     ownerPrincipal: string,
     invoiceId: string,
