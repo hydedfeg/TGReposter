@@ -88,3 +88,29 @@ test("marketing namespace is registered in i18n resources and startup config", (
   assert.match(resourcesSource, /marketing: faMarketing/);
   assert.match(i18nSource, /"marketing"/);
 });
+
+
+test("demo access CTA is localized and wired to the public API", () => {
+  const source = readFileSync(resolve(root, "src/MarketingHome.tsx"), "utf8");
+  const expectedTitles = {
+    en: "Request demo access.",
+    ru: "Запросите демо-доступ.",
+    ar: "اطلب وصولاً تجريبياً.",
+    fa: "دسترسی دمو درخواست کنید.",
+  } as const;
+
+  for (const locale of APP_LOCALES) {
+    assert.equal(
+      readNestedString(i18nResources[locale].marketing, "cta.title"),
+      expectedTitles[locale],
+    );
+    assert.ok(readNestedString(i18nResources[locale].marketing, "demoForm.submit"));
+    assert.ok(readNestedString(i18nResources[locale].marketing, "nav.demo"));
+  }
+
+  assert.match(source, /id="request-demo"/);
+  assert.match(source, /fetch\("\/api\/demo-requests"/);
+  assert.match(source, /name="website"/);
+  assert.match(source, /name="message"[\s\S]*?dir="auto"/);
+  assert.match(source, /const demoUseCases = \["curation", "campaigns", "both", "other"\] as const/);
+});
