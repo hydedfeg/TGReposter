@@ -125,6 +125,15 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
     this.fetchFn = fetchFn;
   }
 
+  async getAssetDecimals(): Promise<number> {
+    await this.verifyChain();
+    const tokenIdentifier = normalizeEvmAddress(
+      this.config.tokenIdentifier,
+      "configured token"
+    );
+    return this.getTokenDecimals(tokenIdentifier);
+  }
+
   async scanTransfers(
     request: CryptoPaymentScanRequest
   ): Promise<CryptoPaymentScanResult> {
@@ -185,7 +194,7 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
 
     const requestedTo = fromBlock + maxBlocks - 1n;
     const toBlock = requestedTo < latestBlock ? requestedTo : latestBlock;
-    const decimals = await this.getTokenDecimals(tokenIdentifier);
+    const decimals = await this.getAssetDecimals();
     const logs = await this.rpc<EvmLog[]>("eth_getLogs", [
       {
         fromBlock: toRpcHex(fromBlock),
@@ -342,8 +351,10 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
       encodedDecimals,
       "token decimals response"
     );
-    if (decimalsBigInt > 255n) {
-      throw new Error("ERC-20 token decimals response is out of range.");
+    if (decimalsBigInt > 18n) {
+      throw new Error(
+        "Configured ERC-20 token precision exceeds the payment ledger limit of 18 decimals."
+      );
     }
 
     const decimals = Number(decimalsBigInt);
