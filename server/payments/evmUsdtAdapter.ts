@@ -358,6 +358,7 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
       headers: {
         "content-type": "application/json",
       },
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs),
       body: JSON.stringify({
         jsonrpc: "2.0",
         id,
