@@ -166,21 +166,29 @@ function StatusPill({ status }: { status: PrototypePost["status"] }) {
   );
 }
 
-function SourceIdentity({ post, compact = false }: { post: PrototypePost; compact?: boolean }) {
+function SourceIdentity({
+  post,
+  compact = false,
+  inverse = false,
+}: {
+  post: PrototypePost;
+  compact?: boolean;
+  inverse?: boolean;
+}) {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <span
-        className={`flex shrink-0 items-center justify-center rounded-full bg-slate-950 font-bold text-white ${
+        className={`flex shrink-0 items-center justify-center rounded-full font-bold ${
           compact ? "h-9 w-9 text-xs" : "h-11 w-11 text-sm"
-        }`}
+        } ${inverse ? "bg-white/10 text-white" : "bg-slate-950 text-white"}`}
       >
         {getInitials(post.channel, "TG")}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-sm font-bold text-slate-900" dir="auto" title={post.channel}>
+        <p className={`truncate text-sm font-bold ${inverse ? "text-white" : "text-slate-900"}`} dir="auto" title={post.channel}>
           @{post.channel}
         </p>
-        <p className="mt-0.5 text-xs text-slate-400">{post.time}</p>
+        <p className={`mt-0.5 text-xs ${inverse ? "text-slate-400" : "text-slate-400"}`}>{post.time}</p>
       </div>
     </div>
   );
@@ -441,7 +449,7 @@ function FocusedReview({
         <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-100 px-5 py-5 sm:px-7">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <SourceIdentity post={selected} />
+              <SourceIdentity post={selected} inverse />
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill status={selected.status} />
                 <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500">
