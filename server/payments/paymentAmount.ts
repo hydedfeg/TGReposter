@@ -116,5 +116,11 @@ export function applyPaymentDiscriminator(input: {
   const expectedUnits =
     baseUnits + BigInt(slot) * discriminatorStep;
 
-  return formatUnits(expectedUnits, tokenDecimals);
+  const expectedAmount = formatUnits(expectedUnits, tokenDecimals);
+  const integerDigits = expectedAmount.split(".", 1)[0].replace(/^0+(?=\d)/, "");
+  if (integerDigits.length > 18) {
+    throw new Error("Payment amount exceeds the ledger integer precision.");
+  }
+
+  return expectedAmount;
 }
