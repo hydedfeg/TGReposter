@@ -603,6 +603,138 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
   const launchableCampaign = !!detail && ["draft", "ready", "running"].includes(detail.campaign.status);
   const failedDeliveries = detail?.deliveries.filter(delivery => delivery.status === "failed") || [];
 
+  const renderCampaignSidePanel = () => {
+    if (!detail) return null;
+
+    if (!launchableCampaign) {
+      return (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+          <div className="border-b border-slate-100 p-4">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-sky-600" />
+              <h4 className="text-sm font-bold text-slate-900">{t("workspace.delivery.title")}</h4>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-500">{t("workspace.delivery.description")}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 p-4">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-xl font-bold text-slate-900">{numberFormatter.format(detail.summary.total)}</p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-400">{t("workspace.campaigns.deliveries")}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-xl font-bold text-emerald-700">{numberFormatter.format(detail.summary.succeeded)}</p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-emerald-500">{t("workspace.campaigns.succeeded")}</p>
+            </div>
+            <div className="rounded-xl bg-rose-50 p-3">
+              <p className="text-xl font-bold text-rose-700">{numberFormatter.format(detail.summary.failed)}</p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-rose-500">{t("workspace.campaigns.failed")}</p>
+            </div>
+            <div className="rounded-xl bg-amber-50 p-3">
+              <p className="text-xl font-bold text-amber-700">{numberFormatter.format(detail.summary.warnings)}</p>
+              <p className="mt-1 text-[9px] font-bold uppercase tracking-wide text-amber-500">{t("workspace.campaigns.warnings")}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs">
+        <div className="border-b border-slate-100 p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <Target className="h-4.5 w-4.5" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="text-sm font-bold text-slate-900">{t("workspace.launch.title")}</h4>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500">{t("workspace.launch.description")}</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-slate-50 p-3">
+              <p className="text-lg font-bold text-slate-900">{numberFormatter.format(detail.posts.length)}</p>
+              <p className="mt-0.5 text-[9px] font-semibold text-slate-400">{t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })}</p>
+            </div>
+            <div className="rounded-xl bg-sky-50 p-3">
+              <p className="text-lg font-bold text-sky-700">{numberFormatter.format(selectedTargetIds.length)}</p>
+              <p className="mt-0.5 text-[9px] font-semibold text-sky-500">{t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}</p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-3">
+              <p className="text-lg font-bold text-emerald-700">{numberFormatter.format(detail.posts.length * selectedTargetIds.length)}</p>
+              <p className="mt-0.5 text-[9px] font-semibold text-emerald-500">{t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-h-[calc(100dvh-25rem)] min-h-0 space-y-2 overflow-y-auto p-3">
+          {targets.map(target => {
+            const ready = verifiedTargets.some(item => item.id === target.id);
+            const selected = selectedTargetIds.includes(target.id);
+            return (
+              <button
+                key={target.id}
+                disabled={!ready || detail.campaign.status === "running"}
+                onClick={() => toggleTarget(target.id)}
+                className={`content-visibility-auto w-full rounded-xl border p-3 text-start transition-colors ${
+                  selected
+                    ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100"
+                    : ready
+                      ? "border-slate-200 bg-white hover:border-slate-300"
+                      : "cursor-not-allowed border-slate-100 bg-slate-50 opacity-65"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                    selected ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white"
+                  }`}>
+                    {selected && <Check className="h-3 w-3" />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 break-words text-xs font-bold text-slate-800" dir="auto">{target.name}</p>
+                      <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold ${
+                        ready ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"
+                      }`}>
+                        {ready ? t("workspace.launch.verified") : t(`common.deliveryStatus.${target.connectionStatus === "ok" ? "success" : target.connectionStatus === "error" ? "failed" : "pending"}`)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-[10px] text-slate-400" dir="ltr">{target.chatId} · {target.chatType ? t(`common.chatType.${target.chatType}`) : t("common.unknownType")}</p>
+                    <p className="mt-0.5 truncate text-[9px] text-slate-400">{t("common.bot")} <span dir="auto">{target.botAccount?.name || t("common.unknownBot")}</span></p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+          {targets.length === 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-800">{t("workspace.launch.noTargets")}</div>
+          )}
+        </div>
+
+        {detail.campaign.status === "running" && detail.deliveries.length > 0 ? (
+          <div className="mx-3 mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{t("workspace.launch.running")}</div>
+        ) : null}
+
+        <div className="border-t border-slate-200 bg-white p-4 shadow-[0_-8px_24px_rgba(15,23,42,0.04)]">
+          {launchArmed ? (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] font-bold text-amber-700">
+              {t("workspace.launch.confirmHint")}
+            </div>
+          ) : null}
+          <button
+            disabled={isActionLoading || detail.posts.length === 0 || selectedTargetIds.length === 0}
+            onClick={launchCampaign}
+            className={`inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-xs font-bold text-white transition-colors disabled:bg-slate-300 ${
+              launchArmed ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"
+            }`}
+          >
+            {isActionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {launchArmed ? t("workspace.launch.confirm") : t("workspace.launch.launch")}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="bg-white border border-slate-200 rounded-2xl p-12 flex flex-col items-center justify-center text-center shadow-3xs">
@@ -783,15 +915,15 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
       )}
 
       {section === "campaigns" && (
-        <div className="grid xl:grid-cols-[320px_minmax(0,1fr)] gap-5 items-start">
-          <aside className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden xl:sticky xl:top-4">
+        <div className="grid gap-4 items-start xl:grid-cols-[300px_minmax(0,1fr)_360px]">
+          <aside className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-3xs xl:sticky xl:top-20 xl:max-h-[calc(100dvh-6rem)]">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <div><h3 className="text-sm font-bold text-slate-900">{t("workspace.campaigns.title")}</h3><p className="text-[10px] text-slate-500 mt-0.5">{t("common.total", { count: numberFormatter.format(campaigns.length) })}</p></div>
               <button onClick={() => setSection("create")} className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center"><Plus className="w-4 h-4" /></button>
             </div>
-            <div className="max-h-[680px] overflow-auto divide-y divide-slate-100">
+            <div className="max-h-[680px] divide-y divide-slate-100 overflow-auto xl:max-h-[calc(100dvh-11rem)]">
               {campaigns.map(campaign => (
-                <button key={campaign.id} onClick={() => openCampaign(campaign.id)} className={`w-full p-4 text-start transition-colors ${selectedCampaignId === campaign.id ? "bg-sky-50" : "hover:bg-slate-50"}`}>
+                <button key={campaign.id} onClick={() => openCampaign(campaign.id)} className={`content-visibility-auto w-full p-4 text-start transition-colors ${selectedCampaignId === campaign.id ? "bg-sky-50" : "hover:bg-slate-50"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-bold text-slate-900 truncate" dir="auto">{campaign.name}</p>
                     <span className={`shrink-0 border rounded-full px-2 py-0.5 text-[8px] font-bold ${statusClasses[campaign.status]}`}>{t(`common.status.${campaign.status}`)}</span>
@@ -810,7 +942,8 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
               <p className="text-xs text-slate-500 mt-1">{t("workspace.campaigns.selectDescription")}</p>
             </div>
           ) : (
-            <div className="space-y-5 min-w-0">
+            <>
+            <div className="min-w-0 space-y-4">
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                   <div className="min-w-0">
@@ -866,7 +999,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                   const preview = getRenderedPreview(campaignPost);
                   const editing = editingPostId === campaignPost.id;
                   return (
-                    <div key={campaignPost.id} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
+                    <div key={campaignPost.id} className="content-visibility-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-3xs">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -919,41 +1052,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                 )}
               </div>
 
-              {launchableCampaign && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Target className="w-4.5 h-4.5" /></div>
-                    <div><h4 className="text-sm font-bold text-slate-900">{t("workspace.launch.title")}</h4><p className="text-[11px] text-slate-500 mt-0.5">{t("workspace.launch.description")}</p></div>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-2">
-                    {targets.map(target => {
-                      const ready = verifiedTargets.some(item => item.id === target.id);
-                      const selected = selectedTargetIds.includes(target.id);
-                      return (
-                        <button key={target.id} disabled={!ready || detail.campaign.status === "running"} onClick={() => toggleTarget(target.id)} className={`text-start rounded-xl border p-3.5 transition-all ${selected ? "border-sky-400 bg-sky-50 ring-2 ring-sky-100" : ready ? "border-slate-200 hover:border-slate-300 bg-white" : "border-slate-100 bg-slate-50 opacity-65 cursor-not-allowed"}`}>
-                          <div className="flex items-start gap-3">
-                            <span className={`mt-0.5 w-4.5 h-4.5 rounded border flex items-center justify-center ${selected ? "bg-sky-500 border-sky-500 text-white" : "border-slate-300 bg-white"}`}>{selected && <Check className="w-3 h-3" />}</span>
-                            <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><p className="text-xs font-bold text-slate-800 truncate" dir="auto">{target.name}</p><span className={`text-[8px] font-bold rounded-full px-1.5 py-0.5 ${ready ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>{ready ? t("workspace.launch.verified") : t(`common.deliveryStatus.${target.connectionStatus === "ok" ? "success" : target.connectionStatus === "error" ? "failed" : "pending"}`)}</span></div><p className="text-[10px] text-slate-400 mt-1 truncate" dir="ltr">{target.chatId} · {target.chatType ? t(`common.chatType.${target.chatType}`) : t("common.unknownType")}</p><p className="text-[9px] text-slate-400 mt-0.5 truncate">{t("common.bot")} <span dir="auto">{target.botAccount?.name || t("common.unknownBot")}</span></p></div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                    {targets.length === 0 && <div className="sm:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800">{t("workspace.launch.noTargets")}</div>}
-                  </div>
 
-                  {detail.campaign.status === "running" && detail.deliveries.length > 0 && (
-                    <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">{t("workspace.launch.running")}</div>
-                  )}
-
-                  <div className="mt-5 pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div><p className="text-xs font-bold text-slate-700">{t("workspace.launch.selected", { count: selectedTargetIds.length, formattedCount: numberFormatter.format(selectedTargetIds.length) })}</p><p className="text-[10px] text-slate-400 mt-0.5">{t("workspace.launch.posts", { count: detail.posts.length, formattedCount: numberFormatter.format(detail.posts.length) })} → {t("workspace.launch.deliveries", { count: numberFormatter.format(detail.posts.length * selectedTargetIds.length) })}</p></div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {launchArmed && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{t("workspace.launch.confirmHint")}</span>}
-                      <button disabled={isActionLoading || detail.posts.length === 0 || selectedTargetIds.length === 0} onClick={launchCampaign} className={`inline-flex items-center gap-2 rounded-xl px-5 py-3 text-xs font-bold text-white transition-colors disabled:bg-slate-300 ${launchArmed ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>{isActionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}{launchArmed ? t("workspace.launch.confirm") : t("workspace.launch.launch")}</button>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {detail.deliveries.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden">
@@ -988,6 +1087,10 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                 </div>
               )}
             </div>
+            <aside className="space-y-4 xl:sticky xl:top-20">
+              {renderCampaignSidePanel()}
+            </aside>
+            </>
           )}
         </div>
       )}
