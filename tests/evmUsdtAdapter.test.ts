@@ -24,6 +24,7 @@ function config(): CryptoPaymentNetworkConfig {
     tokenIdentifier: token,
     requiredConfirmations: 4,
     maxBlocksPerScan: 10,
+    requestTimeoutMs: 10000,
   };
 }
 
