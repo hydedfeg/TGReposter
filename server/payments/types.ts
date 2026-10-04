@@ -64,6 +64,7 @@ export interface CryptoPaymentScanResult {
 
 export interface CryptoPaymentNetworkAdapter {
   readonly network: CryptoPaymentNetwork;
+  getAssetDecimals(): Promise<number>;
   scanTransfers(
     request: CryptoPaymentScanRequest
   ): Promise<CryptoPaymentScanResult>;
