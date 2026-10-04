@@ -27,6 +27,7 @@ export interface CryptoPaymentNetworkConfig {
   asset: CryptoPaymentAsset;
   enabled: boolean;
   rpcUrl: string;
+  apiKey?: string;
   receivingAddress: string;
   tokenIdentifier: string;
   requiredConfirmations: number;
