@@ -4,6 +4,7 @@ import telegramPublisherService from "./server/services/telegramPublisherService
 import channelRoutes from "./server/routes/channels";
 import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
+import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { API_ERROR_CODES } from "./shared/apiErrorCodes";
@@ -430,6 +431,10 @@ let ai: GoogleGenAI | null = createGeminiClient(process.env.GEMINI_API_KEY);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Public marketing lead capture. The browser never receives database credentials;
+// Vercel proxies /api/* from the marketing domain to this Railway backend.
+app.use("/api/demo-requests", createDemoRequestRouter());
 
 // Authentication Middleware
 const authMiddleware = async (req: any, res: any, next: any) => {
