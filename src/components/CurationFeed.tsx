@@ -25,6 +25,7 @@ import { AI_OUTPUT_LANGUAGE_IDS, type AIOutputLanguageId } from "../../shared/ai
 import type { CuratedPost, DestinationTarget } from "../types";
 import { AI_CONNECTION_FALLBACK_ERROR, AI_CURATION_FALLBACK_ERROR } from "../utils/aiErrors";
 import { safeResponseJson } from "../utils/api";
+import { getInitials } from "../utils/text";
 
 interface CurationFeedProps {
   initialTab?: TabType;
@@ -72,10 +73,6 @@ function formatDate(value: string, locale: string) {
   }).format(new Date(value));
 }
 
-function initials(channel: string) {
-  return channel.replace(/^@/, "").slice(0, 2).toUpperCase();
-}
-
 function statusClasses(status: CuratedPost["status"]) {
   if (status === "approved") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (status === "posted") return "bg-sky-50 text-sky-700 border-sky-200";
@@ -91,14 +88,14 @@ function OriginalPostPanel({ post }: { post: CuratedPost }) {
     <section className="flex h-full min-h-0 flex-col bg-white" aria-label={t("accessibility.originalPost")}>
       <div className="border-b border-slate-100 px-5 py-4">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <h2 className="font-display text-lg font-bold text-slate-950">{t("original.title")}</h2>
             <div className="mt-2 flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
-                {initials(post.channelUsername)}
+                {getInitials(post.channelUsername, "TG")}
               </span>
-              <div>
-                <p className="text-sm font-bold text-sky-700">@{post.channelUsername}</p>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-sky-700" dir="ltr" title={post.channelUsername}>@{post.channelUsername}</p>
                 <p className="text-xs text-slate-500">{formatDate(post.date, locale)}</p>
               </div>
             </div>
@@ -116,9 +113,9 @@ function OriginalPostPanel({ post }: { post: CuratedPost }) {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
         <p className="whitespace-pre-wrap text-[15px] leading-7 text-slate-700" dir="auto">{post.originalText || t("original.mediaOnly")}</p>
         {post.videoUrl ? (
-          <video src={post.videoUrl} controls preload="metadata" className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
+          <video src={post.videoUrl} controls preload="metadata" onError={(event) => { event.currentTarget.hidden = true; }} className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
         ) : post.photoUrl ? (
-          <img src={post.photoUrl} alt={t("original.attachmentAlt")} referrerPolicy="no-referrer" className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
+          <img src={post.photoUrl} alt={t("original.attachmentAlt")} referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.hidden = true; }} className="mt-5 max-h-80 w-full rounded-2xl bg-slate-950 object-contain" />
         ) : null}
       </div>
     </section>
@@ -600,7 +597,7 @@ export default function CurationFeed({
         </section>
       ) : (
         <>
-          <section className="hidden h-[calc(100vh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs xl:grid">
+          <section className="hidden h-[calc(100dvh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs xl:grid">
             <aside className="flex min-h-0 flex-col border-e border-slate-200" aria-label={isHistory ? th("accessibility.historyList") : t("accessibility.postQueue")}>
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
                 <div>
@@ -614,14 +611,14 @@ export default function CurationFeed({
               </div>
               <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                 {filteredPosts.map((post) => (
-                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`flex w-full gap-3 px-4 py-4 text-start transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
+                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`content-visibility-auto flex w-full gap-3 px-4 py-4 text-start transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{getInitials(post.channelUsername, "TG")}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-sky-700">@{post.channelUsername}</span><span className="shrink-0 text-xs text-slate-400">{formatDate(isHistory && post.postedAt ? post.postedAt : post.date, locale)}</span></span>
                       <span className="mt-1 line-clamp-2 text-sm leading-5 text-slate-600" dir="auto">{post.originalText || t("queue.mediaPost")}</span>
                       <span className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${statusClasses(post.status)}`}>{t(`statuses.${post.status}`)}</span>
                     </span>
-                    {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-12 w-12 shrink-0 rounded-lg bg-slate-100 object-cover" /> : null}
+                    {post.photoUrl ? <img src={post.photoUrl} alt="" onError={(event) => { event.currentTarget.hidden = true; }} className="h-12 w-12 shrink-0 rounded-lg bg-slate-100 object-cover" /> : null}
                   </button>
                 ))}
               </div>
@@ -648,9 +645,9 @@ export default function CurationFeed({
           <section className="space-y-3 xl:hidden" aria-label={t("accessibility.mobilePostList")}>
             {filteredPosts.map((post) => (
               <button type="button" key={post.id} onClick={() => selectPost(post, true)} className={`content-visibility-auto flex w-full gap-3 rounded-2xl border bg-white p-4 text-start shadow-xs transition-colors ${post.errorMessage ? "border-rose-200" : "border-slate-200 hover:border-sky-300"}`}>
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(post.channelUsername)}</span>
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{getInitials(post.channelUsername, "TG")}</span>
                 <span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-2"><span className="truncate text-base font-bold text-slate-900">@{post.channelUsername}</span><span className="shrink-0 text-sm text-slate-400">{formatDate(isHistory && post.postedAt ? post.postedAt : post.date, locale)}</span></span><span className="mt-2 line-clamp-3 text-[15px] leading-6 text-slate-600" dir="auto">{post.originalText || t("queue.mediaPost")}</span><span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${statusClasses(post.status)}`}>{t(`statuses.${post.status}`)}</span></span>
-                {post.photoUrl ? <img src={post.photoUrl} alt="" className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="rtl-mirror mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
+                {post.photoUrl ? <img src={post.photoUrl} alt="" onError={(event) => { event.currentTarget.hidden = true; }} className="h-20 w-20 shrink-0 rounded-xl bg-slate-100 object-cover" /> : <ChevronRight className="rtl-mirror mt-2 h-5 w-5 shrink-0 text-slate-300" aria-hidden="true" />}
               </button>
             ))}
           </section>
@@ -679,7 +676,7 @@ export default function CurationFeed({
           <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-8">
             <div className="mx-auto max-w-2xl space-y-4">
               <section className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
-                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{initials(selectedPost.channelUsername)}</span><div className="min-w-0 flex-1"><p className="truncate text-base font-bold text-slate-900">@{selectedPost.channelUsername}</p><p className="text-sm text-slate-500">{formatDate(selectedPost.date, locale)}</p></div><a href={selectedPost.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-sky-600">{t("original.openOriginal")} <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{getInitials(selectedPost.channelUsername, "TG")}</span><div className="min-w-0 flex-1"><p className="truncate text-base font-bold text-slate-900">@{selectedPost.channelUsername}</p><p className="text-sm text-slate-500">{formatDate(selectedPost.date, locale)}</p></div><a href={selectedPost.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 rounded-xl px-2 text-sm font-bold text-sky-600">{t("original.openOriginal")} <ExternalLink className="h-4 w-4" aria-hidden="true" /></a>
               </section>
 
               {mobileReviewView === "original" ? <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white"><OriginalPostPanel post={selectedPost} /></div> : null}
