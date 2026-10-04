@@ -20,6 +20,7 @@ const config: CryptoPaymentNetworkConfig = {
   tokenIdentifier: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   requiredConfirmations: 4,
   maxBlocksPerScan: 100,
+  requestTimeoutMs: 10000,
 };
 
 function makeInvoice(): CryptoPaymentInvoiceRecord {
