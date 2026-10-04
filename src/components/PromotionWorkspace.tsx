@@ -957,7 +957,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
             <>
             <div className="min-w-0 space-y-4">
               <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-start 2xl:justify-between">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-xl font-bold text-slate-900 break-words" dir="auto">{detail.campaign.name}</h3>
@@ -976,7 +976,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                 </div>
 
                 {detail.summary.total > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5 pt-5 border-t border-slate-100">
+                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-slate-100 pt-5 2xl:grid-cols-4">
                     <div className="rounded-lg bg-slate-50 p-3"><p className="text-lg font-bold text-slate-900">{detail.summary.total}</p><p className="text-[9px] uppercase tracking-wide font-bold text-slate-400">{t("workspace.campaigns.deliveries")}</p></div>
                     <div className="rounded-lg bg-emerald-50 p-3"><p className="text-lg font-bold text-emerald-700">{detail.summary.succeeded}</p><p className="text-[9px] uppercase tracking-wide font-bold text-emerald-500">{t("workspace.campaigns.succeeded")}</p></div>
                     <div className="rounded-lg bg-rose-50 p-3"><p className="text-lg font-bold text-rose-700">{detail.summary.failed}</p><p className="text-[9px] uppercase tracking-wide font-bold text-rose-500">{t("workspace.campaigns.failed")}</p></div>
@@ -992,7 +992,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                     <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input value={postSearch} onChange={event => setPostSearch(event.target.value)} placeholder={t("workspace.posts.searchPlaceholder")} className="w-full border border-slate-200 rounded-xl ps-9 pe-3 py-2.5 text-xs outline-none focus:border-sky-400" />
                   </div>
-                  <div className="grid md:grid-cols-[1fr_160px_auto] gap-2">
+                  <div className="grid gap-2 2xl:grid-cols-[minmax(0,1fr)_160px_auto]">
                     <select value={selectedPostId} onChange={event => setSelectedPostId(event.target.value)} className="border border-slate-200 rounded-xl px-3 py-2.5 text-xs bg-white min-w-0">
                       <option value="">{t("workspace.posts.select", { count: numberFormatter.format(filteredPosts.length) })}</option>
                       {filteredPosts.map(post => <option key={post.id} value={post.id}>@{post.channelUsername} — {post.originalText.slice(0, 85) || post.id}</option>)}
@@ -1035,7 +1035,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                           {editMode !== "original" && (
                             <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.promotionText")}</span><textarea value={editPromotionText} dir="auto" onChange={event => setEditPromotionText(event.target.value)} rows={6} placeholder={editMode === "ai" ? t("workspace.posts.aiPlaceholder") : t("workspace.posts.textPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs leading-relaxed resize-y outline-none focus:border-sky-400" /></label>
                           )}
-                          <div className="grid sm:grid-cols-2 gap-3">
+                          <div className="grid gap-3 2xl:grid-cols-2">
                             <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.cta")}</span><input value={editCtaText} dir="auto" onChange={event => setEditCtaText(event.target.value)} placeholder={t("workspace.posts.ctaPlaceholder")} className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs outline-none focus:border-sky-400" /></label>
                             <label><span className="text-[10px] font-bold text-slate-600">{t("workspace.posts.sourceLink")}</span><input value={editSourceLink} dir="ltr" onChange={event => setEditSourceLink(event.target.value)} placeholder="https://t.me/..." className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2.5 text-xs outline-none focus:border-sky-400" /></label>
                           </div>
@@ -1045,7 +1045,7 @@ export default function PromotionWorkspace({ posts, onToast }: PromotionWorkspac
                           </div>
                         </div>
                       ) : (
-                        <div className="mt-4 grid lg:grid-cols-2 gap-4">
+                        <div className="mt-4 grid gap-4 2xl:grid-cols-2">
                           <div className="rounded-xl bg-slate-50 border border-slate-100 p-4">
                             <p className="text-[9px] uppercase tracking-widest font-bold text-slate-400 mb-2">{t("workspace.posts.originalTitle")}</p>
                             <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed line-clamp-[12]" dir="auto">{campaignPost.sourcePost?.originalText || t("workspace.posts.sourceUnavailable")}</p>
