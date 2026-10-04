@@ -10,6 +10,11 @@ const ERC20_TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const ERC20_DECIMALS_SELECTOR = "0x313ce567";
 
+const EXPECTED_EVM_CHAIN_IDS = {
+  bsc: 56n,
+  ethereum: 1n,
+} as const;
+
 type FetchLike = typeof fetch;
 
 interface JsonRpcResponse<T> {
@@ -103,6 +108,7 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
 
   private rpcRequestId = 0;
   private readonly decimalsCache = new Map<string, number>();
+  private chainVerified = false;
   private readonly config: CryptoPaymentNetworkConfig;
   private readonly fetchFn: FetchLike;
 
@@ -145,6 +151,8 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
         `EVM scan request does not match configured ${this.network} payment identity.`
       );
     }
+
+    await this.verifyChain();
 
     const latestBlock = parseHexBigInt(
       await this.rpc<string>("eth_blockNumber", []),
@@ -283,10 +291,43 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
     };
   }
 
+  private async verifyChain(): Promise<void> {
+    if (this.chainVerified) {
+      return;
+    }
+
+    const chainId = parseHexBigInt(
+      await this.rpc<string>("eth_chainId", []),
+      "chain id"
+    );
+    const expectedChainId =
+      EXPECTED_EVM_CHAIN_IDS[
+        this.network as keyof typeof EXPECTED_EVM_CHAIN_IDS
+      ];
+
+    if (chainId !== expectedChainId) {
+      throw new Error(
+        `Configured ${this.network} RPC reported chain ID ${chainId.toString()}, expected ${expectedChainId.toString()}.`
+      );
+    }
+
+    this.chainVerified = true;
+  }
+
   private async getTokenDecimals(tokenIdentifier: string): Promise<number> {
     const cached = this.decimalsCache.get(tokenIdentifier);
     if (cached !== undefined) {
       return cached;
+    }
+
+    const bytecode = await this.rpc<string>("eth_getCode", [
+      tokenIdentifier,
+      "latest",
+    ]);
+    if (!/^0x[0-9a-f]+$/i.test(bytecode) || /^0x0*$/i.test(bytecode)) {
+      throw new Error(
+        `Configured ${this.network} USDT token identifier is not a deployed contract.`
+      );
     }
 
     const encodedDecimals = await this.rpc<string>("eth_call", [
