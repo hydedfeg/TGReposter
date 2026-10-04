@@ -23,7 +23,7 @@ function cleanOwnerPrincipal(ownerPrincipal: string): string {
   return owner;
 }
 
-function cleanApiKey(rawValue: unknown): string {
+export function normalizeUserAIApiKey(rawValue: unknown): string {
   const value = typeof rawValue === "string" ? rawValue.trim() : "";
   if (!value) {
     throw new Error("API key is required.");
@@ -108,7 +108,7 @@ export async function saveUserAIApiKey(
   provider: UserAIProvider,
   rawApiKey: unknown
 ): Promise<void> {
-  const apiKey = cleanApiKey(rawApiKey);
+  const apiKey = normalizeUserAIApiKey(rawApiKey);
   const secretName = userAISecretName(ownerPrincipal, provider);
   const description =
     provider === "gemini"
@@ -169,6 +169,38 @@ export async function saveUserAIApiKey(
     }
 
     await client.query("commit");
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+
+export async function deleteUserAIApiKey(
+  ownerPrincipal: string,
+  provider: UserAIProvider
+): Promise<boolean> {
+  const secretName = userAISecretName(ownerPrincipal, provider);
+  const pool = getPostgresPool();
+  const client = await pool.connect();
+
+  try {
+    await client.query("begin");
+    await lockVaultSecretMutation(client, secretName);
+
+    const result = await client.query(
+      `
+        delete from vault.secrets
+        where name = $1
+        returning id
+      `,
+      [secretName]
+    );
+
+    await client.query("commit");
+    return (result.rowCount ?? 0) > 0;
   } catch (error) {
     await client.query("rollback");
     throw error;
