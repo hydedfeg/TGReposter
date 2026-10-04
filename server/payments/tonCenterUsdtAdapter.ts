@@ -284,6 +284,7 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
     const response = await this.fetchFn(url, {
       method: "GET",
       headers,
+      signal: AbortSignal.timeout(this.config.requestTimeoutMs),
     });
 
     if (!response.ok) {
