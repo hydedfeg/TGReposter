@@ -79,8 +79,8 @@ export default function MarketingHome() {
   }, [menuOpen]);
 
   return (
-    <div className="marketing-page min-h-screen overflow-x-hidden bg-[#f3f7f9] text-[#0b2232]">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#061725]/90 backdrop-blur-xl">
+    <div className="marketing-page min-h-[100svh] overflow-x-hidden bg-[#f3f7f9] text-[#0b2232]">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#061725]/90 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
         <div className="mx-auto flex h-[76px] max-w-[1240px] items-center justify-between px-5 sm:px-8">
           <a href="#top" aria-label={t("marketing:accessibility.home")}>
             <BrandMark inverse />
@@ -156,7 +156,7 @@ export default function MarketingHome() {
       </header>
 
       <main id="top">
-        <section className="relative isolate min-h-[850px] overflow-hidden bg-[#061725] pt-[76px] text-white lg:min-h-[780px]">
+        <section className="relative isolate min-h-[850px] overflow-hidden bg-[#061725] pt-[calc(76px+env(safe-area-inset-top))] text-white lg:min-h-[780px]">
           <div className="absolute inset-0">
             <img
               src="/brand/tgreposter-flow.webp"
