@@ -69,6 +69,9 @@ test("crypto network registry rejects duplicate chain adapters", () => {
   const registry = new CryptoPaymentNetworkRegistry();
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
     async scanTransfers() {
       return {
         observations: [],
