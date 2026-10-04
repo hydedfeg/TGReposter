@@ -35,20 +35,22 @@ function requiredValue(
   return value;
 }
 
-function parseRequiredConfirmations(
+function parsePositiveInteger(
   value: string | undefined,
-  network: CryptoPaymentNetwork
+  network: CryptoPaymentNetwork,
+  label: string,
+  fallback: number
 ): number {
-  const raw = value?.trim() || "1";
-  const confirmations = Number.parseInt(raw, 10);
+  const raw = value?.trim() || String(fallback);
+  const parsed = Number.parseInt(raw, 10);
 
-  if (!Number.isSafeInteger(confirmations) || confirmations < 1) {
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
     throw new Error(
-      `Crypto payment network "${network}" has invalid required confirmations.`
+      `Crypto payment network "${network}" has invalid ${label}.`
     );
   }
 
-  return confirmations;
+  return parsed;
 }
 
 export function loadCryptoPaymentNetworkConfigs(
@@ -85,9 +87,17 @@ export function loadCryptoPaymentNetworkConfigs(
           `${definition.prefix}_TOKEN_IDENTIFIER`,
           definition.id
         ),
-        requiredConfirmations: parseRequiredConfirmations(
+        requiredConfirmations: parsePositiveInteger(
           env[`${definition.prefix}_CONFIRMATIONS`],
-          definition.id
+          definition.id,
+          "required confirmations",
+          1
+        ),
+        maxBlocksPerScan: parsePositiveInteger(
+          env[`${definition.prefix}_MAX_BLOCKS_PER_SCAN`],
+          definition.id,
+          "max blocks per scan",
+          1000
         ),
       },
     ];
