@@ -11,6 +11,7 @@ import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
+import { getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, saveUserAIApiKey } from "./server/services/aiCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
@@ -410,11 +411,13 @@ function writeDbLocal(data: CuratorSettings) {
   }
 }
 
-// Initialize Gemini Client safely
-let ai: GoogleGenAI | null = null;
-if (process.env.GEMINI_API_KEY) {
-  ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
+// Initialize the legacy/local Gemini client safely. Production requests use
+// the authenticated user's own Vault-backed credential instead.
+function createGeminiClient(apiKey?: string): GoogleGenAI | null {
+  if (!apiKey) return null;
+
+  return new GoogleGenAI({
+    apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
@@ -422,6 +425,8 @@ if (process.env.GEMINI_API_KEY) {
     }
   });
 }
+
+let ai: GoogleGenAI | null = createGeminiClient(process.env.GEMINI_API_KEY);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -907,6 +912,27 @@ app.post("/api/users/delete", authMiddleware, requireSuperAdmin, async (req: any
   });
 });
 
+async function getAIAvailabilityForUser(user: any) {
+  if (process.env.DATABASE_URL && user) {
+    try {
+      return await getUserAICredentialStatus(ownerPrincipalForUser(user));
+    } catch (error) {
+      console.error("Failed loading user-scoped AI credential status:", error);
+      return {
+        geminiConfigured: false,
+        openrouterConfigured: false,
+      };
+    }
+  }
+
+  // Local-development compatibility only. Production never exposes or shares
+  // deployment-level provider keys between authenticated users.
+  return {
+    geminiConfigured: !!process.env.GEMINI_API_KEY,
+    openrouterConfigured: !!process.env.OPENROUTER_API_KEY,
+  };
+}
+
 // --- API Endpoints ---
 
 // Get current configuration & state
@@ -949,6 +975,8 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
     };
   }
 
+  const aiCredentialStatus = await getAIAvailabilityForUser(req.user);
+
   res.json({
     ...safeDb,
     destination,
@@ -957,8 +985,8 @@ app.get("/api/settings", authMiddleware, async (req: any, res: any) => {
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
-    geminiActive: !!process.env.GEMINI_API_KEY,
-    openrouterActive: !!process.env.OPENROUTER_API_KEY,
+    geminiActive: aiCredentialStatus.geminiConfigured,
+    openrouterActive: aiCredentialStatus.openrouterConfigured,
     ...(isSuper ? { users: safeUsers } : {})
   });
 });
@@ -1051,6 +1079,8 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
     };
   }
 
+  const aiCredentialStatus = await getAIAvailabilityForUser(req.user);
+
   res.json({
     ...safeDb,
     destination,
@@ -1059,10 +1089,45 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
       !!(users && users.length > 0) ||
       (await countActiveSupabaseAppUsers()) > 0,
     supabaseActive: isSupabaseConfigured,
-    geminiActive: !!process.env.GEMINI_API_KEY,
-    openrouterActive: !!process.env.OPENROUTER_API_KEY,
+    geminiActive: aiCredentialStatus.geminiConfigured,
+    openrouterActive: aiCredentialStatus.openrouterConfigured,
     ...(isSuper ? { users: safeUsers } : {})
   });
+});
+
+app.put("/api/ai/credentials/:provider", authMiddleware, async (req: any, res: any) => {
+  if (!process.env.DATABASE_URL || !req.user) {
+    return res.status(503).json({
+      error: "Personal AI credentials require the production database backend.",
+    });
+  }
+
+  const provider = req.params?.provider;
+  if (!isUserAIProvider(provider)) {
+    return res.status(400).json({
+      error: "Unsupported AI provider.",
+    });
+  }
+
+  try {
+    const ownerPrincipal = ownerPrincipalForUser(req.user);
+    await saveUserAIApiKey(ownerPrincipal, provider, req.body?.apiKey);
+
+    return res.json({
+      success: true,
+      provider,
+      configured: true,
+    });
+  } catch (error: any) {
+    const message = error?.message || "Unable to save your AI API key.";
+    const status = message.includes("API key") ? 400 : 500;
+
+    if (status >= 500) {
+      console.error("Failed saving user-scoped AI credential:", error);
+    }
+
+    return res.status(status).json({ error: message });
+  }
 });
 
 // --- Supabase Database Management Endpoints ---
@@ -1493,13 +1558,42 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
 
   const prompt = buildCurationPrompt(action, text, promptContext);
 
+  let geminiClient = ai;
+  let geminiApiKey = process.env.GEMINI_API_KEY;
+  let openRouterApiKey = process.env.OPENROUTER_API_KEY;
+
+  if (ownerPrincipal) {
+    if (!isUserAIProvider(aiProvider)) {
+      return res.status(400).json({ error: `Unsupported AI Provider: ${aiProvider}` });
+    }
+
+    try {
+      const personalApiKey = await getUserAIApiKey(ownerPrincipal, aiProvider);
+
+      if (aiProvider === "gemini") {
+        geminiApiKey = personalApiKey || undefined;
+        geminiClient = createGeminiClient(geminiApiKey);
+        openRouterApiKey = undefined;
+      } else {
+        openRouterApiKey = personalApiKey || undefined;
+        geminiApiKey = undefined;
+        geminiClient = null;
+      }
+    } catch (error) {
+      console.error("Failed loading user-scoped AI credential:", error);
+      return res.status(500).json({
+        error: "Your personal AI credential could not be loaded.",
+      });
+    }
+  }
+
   const result = await dispatchCuration({
     provider: aiProvider,
     model: aiModel,
     prompt,
-    geminiClient: ai,
-    geminiApiKey: process.env.GEMINI_API_KEY,
-    openRouterApiKey: process.env.OPENROUTER_API_KEY
+    geminiClient,
+    geminiApiKey,
+    openRouterApiKey
   });
 
   if (result.ok === false) {
