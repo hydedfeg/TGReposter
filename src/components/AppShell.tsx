@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { DestinationTarget } from "../types";
+import { getInitials } from "../utils/text";
 import LanguageSelector from "./LanguageSelector";
 
 export type WorkspaceView =
@@ -86,31 +87,6 @@ const titleKeys: Record<WorkspaceView, string> = {
   team: "titles.team",
   database: "titles.database",
 };
-
-function splitGraphemes(value: string) {
-  if (typeof Intl.Segmenter === "function") {
-    return Array.from(
-      new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(value),
-      (entry) => entry.segment,
-    );
-  }
-
-  return Array.from(value);
-}
-
-function initials(username: string | null) {
-  const normalized = username?.trim();
-  if (!normalized) return "TG";
-
-  const words = normalized.split(/\s+/).filter(Boolean);
-  const selected =
-    words.length > 1
-      ? [splitGraphemes(words[0])[0], splitGraphemes(words[words.length - 1])[0]]
-      : splitGraphemes(normalized).slice(0, 2);
-
-  const value = selected.filter(Boolean).join("");
-  return value ? value.toLocaleUpperCase() : "TG";
-}
 
 function SidebarButton({
   active,
@@ -282,10 +258,10 @@ export default function AppShell({
         <div className="mt-4 border-t border-white/10 pt-4">
           <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-500 text-sm font-bold">
-              {initials(currentUsername)}
+              {getInitials(currentUsername)}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-bold">{currentUsername || t("account.administrator")}</p>
+              <p className="truncate text-sm font-bold" dir="auto" title={currentUsername || undefined}>{currentUsername || t("account.administrator")}</p>
               <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? t("account.systemOwner") : t("account.personalWorkspace")}</p>
             </div>
             <button
@@ -414,7 +390,7 @@ export default function AppShell({
           </div>
           <div className="mt-3 rounded-xl bg-slate-950 px-4 py-3 text-white">
             <div>
-              <p className="text-sm font-bold">{currentUsername || t("account.administrator")}</p>
+              <p className="break-words text-sm font-bold" dir="auto">{currentUsername || t("account.administrator")}</p>
               <p className="text-xs text-slate-400">{currentUserRole === "super-admin" ? t("account.systemOwner") : t("account.contentAdmin")}</p>
             </div>
           </div>
