@@ -6,12 +6,15 @@ const ALLOWED_TRANSITIONS: Record<
 > = {
   pending: new Set([
     "detected",
+    "confirming",
+    "paid",
     "expired",
     "cancelled",
     "failed",
   ]),
   detected: new Set([
     "confirming",
+    "paid",
     "underpaid",
     "overpaid",
     "failed",
