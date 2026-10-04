@@ -12,7 +12,7 @@ import { dispatchCuration } from "./server/ai/curationDispatcher";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
-import { getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, saveUserAIApiKey } from "./server/services/aiCredentialService";
+import { deleteUserAIApiKey, getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, normalizeUserAIApiKey, saveUserAIApiKey } from "./server/services/aiCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
@@ -1132,6 +1132,89 @@ app.put("/api/ai/credentials/:provider", authMiddleware, async (req: any, res: a
     }
 
     return res.status(status).json({ error: message });
+  }
+});
+
+app.post("/api/ai/credentials/:provider/test", authMiddleware, async (req: any, res: any) => {
+  const provider = req.params?.provider;
+  if (!isUserAIProvider(provider)) {
+    return res.status(400).json({
+      error: "Unsupported AI provider.",
+    });
+  }
+
+  let apiKey: string;
+  try {
+    apiKey = normalizeUserAIApiKey(req.body?.apiKey);
+  } catch (error: any) {
+    return res.status(400).json({
+      error: error?.message || "API key format is invalid.",
+    });
+  }
+
+  const requestedModel =
+    typeof req.body?.model === "string" ? req.body.model.trim() : "";
+  if (!requestedModel || requestedModel.length > 256) {
+    return res.status(400).json({
+      error: "A valid AI model is required to test this API key.",
+    });
+  }
+
+  const testResult = await dispatchCuration({
+    provider,
+    model: requestedModel,
+    prompt: "Reply with exactly: OK",
+    geminiClient: provider === "gemini" ? createGeminiClient(apiKey) : null,
+    geminiApiKey: provider === "gemini" ? apiKey : undefined,
+    openRouterApiKey: provider === "openrouter" ? apiKey : undefined,
+    timeoutMs: 15_000,
+  });
+
+  if (testResult.ok === false) {
+    return res.status(testResult.status).json({
+      success: false,
+      provider,
+      model: requestedModel,
+      error: testResult.error,
+    });
+  }
+
+  return res.json({
+    success: true,
+    provider,
+    model: requestedModel,
+  });
+});
+
+app.delete("/api/ai/credentials/:provider", authMiddleware, async (req: any, res: any) => {
+  if (!process.env.DATABASE_URL || !req.user) {
+    return res.status(503).json({
+      error: "Personal AI credentials require the production database backend.",
+    });
+  }
+
+  const provider = req.params?.provider;
+  if (!isUserAIProvider(provider)) {
+    return res.status(400).json({
+      error: "Unsupported AI provider.",
+    });
+  }
+
+  try {
+    const ownerPrincipal = ownerPrincipalForUser(req.user);
+    const removed = await deleteUserAIApiKey(ownerPrincipal, provider);
+
+    return res.json({
+      success: true,
+      provider,
+      configured: false,
+      removed,
+    });
+  } catch (error) {
+    console.error("Failed removing user-scoped AI credential:", error);
+    return res.status(500).json({
+      error: "Unable to remove your AI API key.",
+    });
   }
 });
 
