@@ -130,3 +130,30 @@ test("payment ledger is backend-owned and idempotent", () => {
     /^\s*(private_key|seed_phrase|mnemonic|wallet_password)\s+/im
   );
 });
+
+test("TON indexed payment config requires one finalized observation", () => {
+  assert.throws(
+    () =>
+      loadCryptoPaymentNetworkConfigs({
+        CRYPTO_PAYMENTS_ENABLED: "true",
+        CRYPTO_USDT_TON_ENABLED: "true",
+        CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
+        CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
+        CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQMaster",
+        CRYPTO_USDT_TON_CONFIRMATIONS: "2",
+      }),
+    /requires CRYPTO_USDT_TON_CONFIRMATIONS=1/
+  );
+
+  const [config] = loadCryptoPaymentNetworkConfigs({
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_TON_ENABLED: "true",
+    CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
+    CRYPTO_USDT_TON_API_KEY: "server-only",
+    CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
+    CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQMaster",
+    CRYPTO_USDT_TON_CONFIRMATIONS: "1",
+  });
+
+  assert.equal(config.apiKey, "server-only");
+});
