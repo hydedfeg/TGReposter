@@ -404,25 +404,30 @@ export default function CurationFeed({
   );
 
   const renderAiTools = () => (
-    <section className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4" aria-label={t("accessibility.toolkit")}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-violet-800">
-          <WandSparkles className="h-5 w-5" aria-hidden="true" /> {t("ai.toolkit")}
-        </h3>
-        {aiLoadingAction ? <span className="flex items-center gap-1.5 text-xs font-semibold text-violet-600"><RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {t("ai.generating")}</span> : null}
+    <section className="rounded-2xl border border-violet-200 bg-white p-4 shadow-xs" aria-label={t("accessibility.toolkit")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-600">
+            <WandSparkles className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">{t("ai.toolkit")}</h3>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500">{t("ai.description")}</p>
+          </div>
+        </div>
+        {aiLoadingAction ? <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-violet-600"><RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {t("ai.generating")}</span> : null}
       </div>
-      <p className="mt-1 text-xs leading-5 text-violet-700">{t("ai.description")}</p>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("rephrase", activeTone)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("rephrase", activeTone)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50/40 px-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50">
           <Sparkles className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.rephrase")}
         </button>
-        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("summarize")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("summarize")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50/40 px-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50">
           <FileText className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.summarize")}
         </button>
-        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("translate")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("translate")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50/40 px-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50">
           <Languages className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.translate")}
         </button>
-        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("hashtags")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50">
+        <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("hashtags")} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50/40 px-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50">
           <Hash className="h-4 w-4" aria-hidden="true" /> {t("ai.actions.hashtags")}
         </button>
       </div>
@@ -447,10 +452,13 @@ export default function CurationFeed({
     if (!selectedPost) return null;
     return (
       <section className="space-y-4">
-        <div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-display text-lg font-bold text-slate-950">{t("editor.title")}</h2>
-            <span className={`text-xs font-bold ${draftText.length > 4096 ? "text-rose-600" : "text-slate-500"}`}>{numberFormatter.format(draftText.length)} / {numberFormatter.format(4096)}</span>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.12em] text-sky-600">{t("editor.title")}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">{t(`statuses.${selectedPost.status}`)}</p>
+            </div>
+            <span className={`rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold ${draftText.length > 4096 ? "text-rose-600" : "text-slate-500"}`}>{numberFormatter.format(draftText.length)} / {numberFormatter.format(4096)}</span>
           </div>
           <textarea
             aria-label={t("accessibility.curatedVersion")}
@@ -471,10 +479,15 @@ export default function CurationFeed({
         {renderAiTools()}
         {aiSuggestion ? <AiSuggestionCard suggestion={aiSuggestion} onApply={applySuggestion} onDismiss={() => setAiSuggestion(null)} /> : null}
         {showPreview ? (
-          <div>
-            <h3 className="mb-2 text-sm font-bold text-slate-800">{t("preview.title")}</h3>
-            <TelegramPreview post={selectedPost} text={draftText} />
-          </div>
+          <details className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+              <span className="text-sm font-bold text-slate-800">{t("preview.title")}</span>
+              <ChevronDown className="h-5 w-5 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
+            </summary>
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <TelegramPreview post={selectedPost} text={draftText} />
+            </div>
+          </details>
         ) : null}
         {feedback ? (
           <div className={`flex items-start gap-2 rounded-xl border p-3 text-sm ${feedback.type === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`} role={feedback.type === "error" ? "alert" : "status"}>
@@ -549,7 +562,7 @@ export default function CurationFeed({
     if (!selectedPost) return null;
     const publishing = publishingId === selectedPost.id;
     return (
-      <div className={`flex gap-2 ${mobile ? "grid grid-cols-3" : "flex-wrap justify-end"}`}>
+      <div className={mobile ? "grid grid-cols-3 gap-2" : "grid grid-cols-1 gap-2 sm:grid-cols-3"}>
         <button type="button" onClick={saveDraft} disabled={!isDirty} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-200 bg-white px-4 text-sm font-bold text-sky-700 hover:bg-sky-50 disabled:border-slate-200 disabled:text-slate-400">
           <FileText className="h-4 w-4" aria-hidden="true" /> <span className={mobile ? "hidden min-[370px]:inline" : ""}>{t("editor.saveDraft")}</span>
         </button>
@@ -611,8 +624,8 @@ export default function CurationFeed({
           ) : null}
         </section>
       ) : isDesktopWorkspace ? (
-          <section className="grid h-[calc(100dvh-10.5rem)] min-h-[660px] grid-cols-[300px_minmax(0,0.92fr)_minmax(420px,1.08fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
-            <aside className="flex min-h-0 flex-col border-e border-slate-200" aria-label={isHistory ? th("accessibility.historyList") : t("accessibility.postQueue")}>
+          <section className="grid h-[calc(100dvh-10.5rem)] min-h-[660px] grid-cols-[320px_minmax(0,0.88fr)_minmax(460px,1.12fr)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+            <aside className="flex min-h-0 flex-col border-e border-slate-200 bg-slate-50/40" aria-label={isHistory ? th("accessibility.historyList") : t("accessibility.postQueue")}>
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
                 <div>
                   <h2 className="font-display text-lg font-bold text-slate-950">{isHistory ? th("queue.title") : t("queue.title")}</h2>
@@ -625,7 +638,7 @@ export default function CurationFeed({
               </div>
               <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
                 {filteredPosts.map((post) => (
-                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`content-visibility-auto flex w-full gap-3 px-4 py-4 text-start transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "hover:bg-slate-50"}`}>
+                  <button type="button" key={post.id} onClick={() => selectPost(post)} aria-current={selectedPost?.id === post.id ? "true" : undefined} className={`content-visibility-auto flex w-full gap-3 px-4 py-4 text-start transition-colors ${selectedPost?.id === post.id ? "bg-sky-50 ring-1 ring-inset ring-sky-200" : "bg-white/70 hover:bg-white"}`}>
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">{getInitials(post.channelUsername, "TG")}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2"><span className="truncate text-sm font-bold text-sky-700">@{post.channelUsername}</span><span className="shrink-0 text-xs text-slate-400">{formatDate(isHistory && post.postedAt ? post.postedAt : post.date, locale)}</span></span>
@@ -641,13 +654,19 @@ export default function CurationFeed({
             {selectedPost ? <OriginalPostPanel post={selectedPost} /> : null}
 
             {selectedPost ? (
-              <section className="flex min-h-0 flex-col border-s border-slate-200 bg-slate-50/40" aria-label={isHistory ? th("accessibility.publishedEditor") : t("accessibility.curatedEditor")}>
+              <section className="flex min-h-0 flex-col border-s border-slate-200 bg-slate-100/60" aria-label={isHistory ? th("accessibility.publishedEditor") : t("accessibility.curatedEditor")}>
                 <div className="min-h-0 flex-1 overflow-y-auto p-5">{isHistory ? renderHistoryDetails() : renderEditor()}</div>
                 {!isHistory ? (
-                  <div className="border-t border-slate-200 bg-white p-4">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0"><p className="text-sm font-bold text-slate-900">{t("destinations.publishingTo", { count: enabledTargets.length, formattedCount: numberFormatter.format(enabledTargets.length) })}</p><p className="truncate text-xs text-slate-500">{enabledTargets.length ? enabledTargets.map((target) => target.name).join(", ") : t("destinations.configureToPublish")}</p></div>
-                      <button type="button" onClick={archivePost} className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600"><Archive className="h-4 w-4" aria-hidden="true" /> {selectedPost.status === "archived" ? t("actions.restore") : t("actions.archive")}</button>
+                  <div className="border-t border-slate-200 bg-white p-4 shadow-[0_-8px_24px_rgba(15,23,42,0.04)]">
+                    <div className="mb-3 flex min-w-0 items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
+                        <Send className="h-4 w-4 -rotate-12" aria-hidden="true" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-slate-900">{t("destinations.publishingTo", { count: enabledTargets.length, formattedCount: numberFormatter.format(enabledTargets.length) })}</p>
+                        <p className="truncate text-xs text-slate-500" title={enabledTargets.length ? enabledTargets.map((target) => target.name).join(", ") : undefined}>{enabledTargets.length ? enabledTargets.map((target) => target.name).join(", ") : t("destinations.configureToPublish")}</p>
+                      </div>
+                      <button type="button" onClick={archivePost} className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl px-3 text-sm font-bold text-slate-500 hover:bg-white hover:text-rose-600"><Archive className="h-4 w-4" aria-hidden="true" /> {selectedPost.status === "archived" ? t("actions.restore") : t("actions.archive")}</button>
                     </div>
                     {renderActions()}
                   </div>
