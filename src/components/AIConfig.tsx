@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Sparkles, Cpu, CheckCircle2, AlertTriangle, Play, HelpCircle, ArrowRight, KeyRound } from "lucide-react";
+import { Sparkles, Cpu, CheckCircle2, AlertTriangle, Play, HelpCircle, ArrowRight, KeyRound, RefreshCw, Trash2, ShieldCheck } from "lucide-react";
 import type { AIConfig as IAIConfig } from "../types";
 import { safeResponseJson } from "../utils/api";
 
@@ -9,7 +9,7 @@ type AIProvider = "gemini" | "openrouter";
 interface AIConfigProps {
   aiConfig?: IAIConfig;
   onUpdateAI: (updated: IAIConfig) => void;
-  onCredentialConfigured?: (provider: AIProvider) => void;
+  onCredentialStatusChange?: (provider: AIProvider, configured: boolean) => void;
   geminiActive: boolean;
   openrouterActive: boolean;
   readOnly?: boolean;
@@ -23,7 +23,7 @@ interface TestErrorState {
 export default function AIConfig({
   aiConfig = { provider: "gemini", model: "gemini-3.5-flash" },
   onUpdateAI,
-  onCredentialConfigured,
+  onCredentialStatusChange,
   geminiActive,
   openrouterActive,
   readOnly = false
@@ -34,6 +34,11 @@ export default function AIConfig({
   const [isSavingCredential, setIsSavingCredential] = useState(false);
   const [credentialError, setCredentialError] = useState("");
   const [credentialSaved, setCredentialSaved] = useState(false);
+  const [isEditingCredential, setIsEditingCredential] = useState(false);
+  const [isTestingCredential, setIsTestingCredential] = useState(false);
+  const [isRemovingCredential, setIsRemovingCredential] = useState(false);
+  const [credentialTestMessage, setCredentialTestMessage] = useState("");
+  const [credentialTestSucceeded, setCredentialTestSucceeded] = useState(false);
   const [testText, setTestText] = useState(() => t("playground.sample"));
   const [testTextEdited, setTestTextEdited] = useState(false);
   const [testResult, setTestResult] = useState("");
@@ -50,6 +55,9 @@ export default function AIConfig({
     setApiKey("");
     setCredentialError("");
     setCredentialSaved(false);
+    setIsEditingCredential(false);
+    setCredentialTestMessage("");
+    setCredentialTestSucceeded(false);
   }, [aiConfig.provider]);
 
   const providers = [
@@ -132,12 +140,92 @@ export default function AIConfig({
 
       setApiKey("");
       setCredentialSaved(true);
-      onCredentialConfigured?.(aiConfig.provider);
+      setIsEditingCredential(false);
+      setCredentialTestMessage("");
+      setCredentialTestSucceeded(false);
+      onCredentialStatusChange?.(aiConfig.provider, true);
     } catch (err) {
       console.error(err);
       setCredentialError(t("credentials.saveError"));
     } finally {
       setIsSavingCredential(false);
+    }
+  };
+
+  const handleTestCredential = async () => {
+    if (!apiKey.trim() || readOnly) return;
+
+    setIsTestingCredential(true);
+    setCredentialError("");
+    setCredentialSaved(false);
+    setCredentialTestMessage("");
+    setCredentialTestSucceeded(false);
+
+    try {
+      const savedToken = localStorage.getItem("curator_token");
+      const res = await fetch(`/api/ai/credentials/${aiConfig.provider}/test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(savedToken ? { Authorization: `Bearer ${savedToken}` } : {})
+        },
+        body: JSON.stringify({
+          apiKey: apiKey.trim(),
+          model: aiConfig.model
+        })
+      });
+
+      const data = await safeResponseJson(res);
+      if (!res.ok || !data.success) {
+        setCredentialTestMessage(data.error || t("credentials.testError"));
+        return;
+      }
+
+      setCredentialTestSucceeded(true);
+      setCredentialTestMessage(t("credentials.testSuccess"));
+    } catch (err) {
+      console.error(err);
+      setCredentialTestMessage(t("credentials.testError"));
+    } finally {
+      setIsTestingCredential(false);
+    }
+  };
+
+  const handleRemoveCredential = async () => {
+    if (readOnly || !selectedProvider.active) return;
+    if (!window.confirm(t("credentials.removeConfirm", { provider: selectedProvider.name }))) {
+      return;
+    }
+
+    setIsRemovingCredential(true);
+    setCredentialError("");
+    setCredentialSaved(false);
+    setCredentialTestMessage("");
+    setCredentialTestSucceeded(false);
+
+    try {
+      const savedToken = localStorage.getItem("curator_token");
+      const res = await fetch(`/api/ai/credentials/${aiConfig.provider}`, {
+        method: "DELETE",
+        headers: {
+          ...(savedToken ? { Authorization: `Bearer ${savedToken}` } : {})
+        }
+      });
+
+      const data = await safeResponseJson(res);
+      if (!res.ok || data.configured !== false) {
+        setCredentialError(data.error || t("credentials.removeError"));
+        return;
+      }
+
+      setApiKey("");
+      setIsEditingCredential(false);
+      onCredentialStatusChange?.(aiConfig.provider, false);
+    } catch (err) {
+      console.error(err);
+      setCredentialError(t("credentials.removeError"));
+    } finally {
+      setIsRemovingCredential(false);
     }
   };
 
@@ -256,35 +344,116 @@ export default function AIConfig({
               </div>
             </div>
 
-            <form onSubmit={handleSaveCredential} className="mt-4">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                {t("credentials.label", { provider: selectedProvider.name })}
-              </label>
-              <div className="flex flex-col sm:flex-row gap-2">
+            {selectedProvider.active && !isEditingCredential ? (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span className="font-mono text-xs font-bold text-slate-800" dir="ltr">
+                        •••• •••• ••••
+                      </span>
+                      <span className="text-xs font-bold text-emerald-700">
+                        {t("credentials.configured")}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                      {t("credentials.maskedNote")}
+                    </p>
+                  </div>
+
+                  {!readOnly ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingCredential(true);
+                          setCredentialError("");
+                          setCredentialSaved(false);
+                          setCredentialTestMessage("");
+                          setCredentialTestSucceeded(false);
+                        }}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] font-bold text-slate-700 transition-colors hover:bg-slate-50"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        {t("credentials.replace")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRemoveCredential}
+                        disabled={isRemovingCredential}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {isRemovingCredential ? t("credentials.removing") : t("credentials.remove")}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={handleSaveCredential} className="mt-4">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  {t("credentials.label", { provider: selectedProvider.name })}
+                </label>
                 <input
                   type="password"
                   dir="ltr"
                   autoComplete="off"
                   spellCheck={false}
                   value={apiKey}
-                  disabled={readOnly || isSavingCredential}
+                  disabled={readOnly || isSavingCredential || isTestingCredential}
                   onChange={(e) => {
                     setApiKey(e.target.value);
                     setCredentialError("");
                     setCredentialSaved(false);
+                    setCredentialTestMessage("");
+                    setCredentialTestSucceeded(false);
                   }}
                   placeholder={t("credentials.placeholder", { provider: selectedProvider.name })}
-                  className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 disabled:bg-slate-100"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-mono outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 disabled:bg-slate-100"
                 />
-                <button
-                  type="submit"
-                  disabled={readOnly || isSavingCredential || apiKey.trim().length < 16}
-                  className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  {isSavingCredential ? t("credentials.saving") : t("credentials.save")}
-                </button>
-              </div>
-            </form>
+
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestCredential}
+                    disabled={readOnly || isSavingCredential || isTestingCredential || apiKey.trim().length < 16}
+                    className="rounded-lg border border-indigo-200 bg-white px-4 py-2.5 text-xs font-bold text-indigo-700 transition-colors hover:bg-indigo-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                  >
+                    {isTestingCredential ? t("credentials.testing") : t("credentials.test")}
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={readOnly || isSavingCredential || isTestingCredential || apiKey.trim().length < 16}
+                    className="rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    {isSavingCredential
+                      ? t("credentials.saving")
+                      : selectedProvider.active
+                        ? t("credentials.replace")
+                        : t("credentials.save")}
+                  </button>
+
+                  {selectedProvider.active && !readOnly ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApiKey("");
+                        setIsEditingCredential(false);
+                        setCredentialError("");
+                        setCredentialTestMessage("");
+                        setCredentialTestSucceeded(false);
+                      }}
+                      className="rounded-lg px-3 py-2.5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100"
+                    >
+                      {t("credentials.cancel")}
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            )}
 
             <div className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
               <HelpCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" />
@@ -294,6 +463,15 @@ export default function AIConfig({
             {credentialSaved ? (
               <p className="mt-3 text-xs font-medium text-emerald-700">
                 {t("credentials.saved", { provider: selectedProvider.name })}
+              </p>
+            ) : null}
+
+            {credentialTestMessage ? (
+              <p
+                className={`mt-3 text-xs font-medium ${credentialTestSucceeded ? "text-emerald-700" : "text-rose-700"}`}
+                dir="auto"
+              >
+                {credentialTestMessage}
               </p>
             ) : null}
 
