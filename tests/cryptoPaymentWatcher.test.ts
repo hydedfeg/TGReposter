@@ -68,6 +68,9 @@ test("payment watcher promotes the same transfer from confirming to paid", async
 
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
     async scanTransfers() {
       scanNumber += 1;
       return {
@@ -139,6 +142,9 @@ test("payment watcher refuses ambiguous same-amount open invoices", async () => 
 
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
     async scanTransfers() {
       return {
         observations: [observation(4)],
@@ -188,6 +194,9 @@ test("payment watcher does not reuse a transfer assigned to a terminal invoice",
 
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
     async scanTransfers() {
       return {
         observations: [observation(10)],
@@ -243,6 +252,9 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
 
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
     async scanTransfers() {
       return {
         observations: [staleObservation],
