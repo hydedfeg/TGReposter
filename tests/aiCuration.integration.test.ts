@@ -187,7 +187,7 @@ test("AI curation route regression suite", { timeout: 45_000 }, async t => {
     assert.deepEqual(readCalls(tempDir), []);
   });
 
-  await t.test("missing Gemini configuration preserves the existing API error", async () => {
+  await t.test("missing Gemini configuration points the user to their personal AI settings", async () => {
     writeAiConfig(tempDir, { provider: "gemini", model: "gemini-test-model" });
     clearCalls(tempDir);
 
@@ -200,7 +200,7 @@ test("AI curation route regression suite", { timeout: 45_000 }, async t => {
 
       assert.equal(response.status, 400);
       assert.deepEqual(body, {
-        error: "Gemini API Key is missing. Please add GEMINI_API_KEY in the Secrets panel."
+        error: "Your Gemini API key is not configured. Add it in My AI Configuration."
       });
       assert.deepEqual(readCalls(tempDir), []);
     } finally {
