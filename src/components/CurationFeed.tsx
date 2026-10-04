@@ -456,7 +456,7 @@ export default function CurationFeed({
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-sky-600">{t("editor.title")}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-500">{selectedPost.status === "approved" ? t("statuses.approved") : t("statuses.pending")}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-500">{t(`statuses.${selectedPost.status}`)}</p>
             </div>
             <span className={`rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold ${draftText.length > 4096 ? "text-rose-600" : "text-slate-500"}`}>{numberFormatter.format(draftText.length)} / {numberFormatter.format(4096)}</span>
           </div>
