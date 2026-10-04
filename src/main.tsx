@@ -25,6 +25,13 @@ function Root() {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
+  useEffect(() => {
+    const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeColor) {
+      themeColor.content = isDashboardHost ? '#f8fafc' : '#061725';
+    }
+  }, [isDashboardHost]);
+
   if (!isDashboardHost) return <MarketingHome />;
   return hash === '#promotion' ? <PromotionPage /> : <App />;
 }
