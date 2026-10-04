@@ -13,11 +13,11 @@ const baseRequest: CurationDispatchRequest = {
   geminiClient: null
 };
 
-test("dispatcher preserves missing provider-key errors", async () => {
+test("dispatcher directs users to configure their personal provider keys", async () => {
   assert.deepEqual(await dispatchCuration(baseRequest), {
     ok: false,
     status: 400,
-    error: "Gemini API Key is missing. Please add GEMINI_API_KEY in the Secrets panel."
+    error: "Your Gemini API key is not configured. Add it in My AI Configuration."
   });
 
   assert.deepEqual(
@@ -25,7 +25,7 @@ test("dispatcher preserves missing provider-key errors", async () => {
     {
       ok: false,
       status: 400,
-      error: "OpenRouter API Key is missing. Please add OPENROUTER_API_KEY in the Secrets panel."
+      error: "Your OpenRouter API key is not configured. Add it in My AI Configuration."
     }
   );
 });
