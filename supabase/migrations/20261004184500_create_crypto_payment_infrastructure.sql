@@ -145,10 +145,6 @@ create table if not exists public.crypto_payment_events (
 create index if not exists crypto_payment_events_invoice_idx
   on public.crypto_payment_events (owner_principal, invoice_id, occurred_at);
 
-create index if not exists crypto_payment_events_transaction_idx
-  on public.crypto_payment_events (transaction_id)
-  where transaction_id is not null;
-
 alter table public.crypto_payment_invoices enable row level security;
 alter table public.crypto_payment_transactions enable row level security;
 alter table public.crypto_payment_events enable row level security;
