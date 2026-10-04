@@ -5,6 +5,7 @@ import channelRoutes from "./server/routes/channels";
 import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
+import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { API_ERROR_CODES } from "./shared/apiErrorCodes";
@@ -514,6 +515,13 @@ app.use("/api/channels", authMiddleware, channelRoutes);
 app.use("/api/promotion", createPromotionRouter({
   authMiddleware,
   readLegacySettings: readDb,
+}));
+
+// Crypto payment operations are super-admin-only infrastructure endpoints.
+// They remain inert until CRYPTO_PAYMENTS_ENABLED and at least one network are enabled.
+app.use("/api/crypto-payments", createCryptoPaymentRouter({
+  authMiddleware,
+  requireSuperAdmin,
 }));
 
 // --- Authentication Endpoints ---
