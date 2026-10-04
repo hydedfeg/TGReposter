@@ -3,12 +3,16 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import MarketingHome from './MarketingHome.tsx';
 import PromotionPage from './PromotionPage.tsx';
+import PromotionWorkspacePrototype from './prototypes/PromotionWorkspacePrototype.tsx';
 import './i18n';
 import './index.css';
 
 function Root() {
   const [hash, setHash] = useState(window.location.hash);
   const hostname = window.location.hostname.toLowerCase();
+  const promotionPrototypeRequested = window.location.pathname === '/prototype/promotion';
+  const promotionPrototypeAllowed = promotionPrototypeRequested
+    && (['localhost', '127.0.0.1', 'terminal.local'].includes(hostname) || hostname.endsWith('.vercel.app'));
   const dashboardPathRequested = window.location.pathname.startsWith('/dashboard');
   const isLocalDashboard = ['localhost', '127.0.0.1', 'terminal.local'].includes(hostname)
     && dashboardPathRequested;
@@ -28,10 +32,11 @@ function Root() {
   useEffect(() => {
     const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (themeColor) {
-      themeColor.content = isDashboardHost ? '#f8fafc' : '#061725';
+      themeColor.content = promotionPrototypeAllowed || isDashboardHost ? '#f8fafc' : '#061725';
     }
-  }, [isDashboardHost]);
+  }, [isDashboardHost, promotionPrototypeAllowed]);
 
+  if (promotionPrototypeAllowed) return <PromotionWorkspacePrototype />;
   if (!isDashboardHost) return <MarketingHome />;
   return hash === '#promotion' ? <PromotionPage /> : <App />;
 }
