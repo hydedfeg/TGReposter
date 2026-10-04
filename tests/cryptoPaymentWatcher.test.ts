@@ -228,3 +228,56 @@ test("payment watcher does not reuse a transfer assigned to a terminal invoice",
   assert.equal(result.replayed, 1);
   assert.equal(upsertCalls, 0);
 });
+
+test("payment watcher ignores transfers outside the invoice lifetime", async () => {
+  const invoice = makeInvoice();
+  invoice.created_at = "2026-10-04T10:00:00.000Z";
+  invoice.expires_at = "2026-10-04T11:00:00.000Z";
+  let upsertCalls = 0;
+
+  const staleObservation = {
+    ...observation(10),
+    observedAt: "2026-10-04T09:59:59.000Z",
+  };
+
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async scanTransfers() {
+      return {
+        observations: [staleObservation],
+        nextCursor: "121",
+      };
+    },
+  };
+
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() {
+      return null;
+    },
+    async saveNetworkCursor() {},
+    async listOpenInvoicesForNetwork() {
+      return [invoice];
+    },
+    async getTransactionAssignment() {
+      return null;
+    },
+    async getInvoice() {
+      return null;
+    },
+    async upsertObservedTransfer() {
+      upsertCalls += 1;
+      return "unexpected";
+    },
+    async appendEvent() {
+      return true;
+    },
+    async updateInvoiceStatus() {
+      throw new Error("out-of-window invoice must not be updated");
+    },
+  };
+
+  const result = await new CryptoPaymentWatcher(config, adapter, repository).runOnce();
+  assert.equal(result.unmatched, 1);
+  assert.equal(result.matched, 0);
+  assert.equal(upsertCalls, 0);
+});
