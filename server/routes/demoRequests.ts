@@ -62,7 +62,7 @@ export function createDemoRequestRouter() {
     }
 
     const validation = validateDemoRequest(req.body);
-    if (!validation.ok) {
+    if (validation.ok === false) {
       return res.status(400).json({
         code: validation.code,
         error: "Invalid demo request.",
