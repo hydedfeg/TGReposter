@@ -1,0 +1,59 @@
+export const CRYPTO_PAYMENT_NETWORKS = ["bsc", "ethereum", "ton"] as const;
+export type CryptoPaymentNetwork = (typeof CRYPTO_PAYMENT_NETWORKS)[number];
+
+export type CryptoPaymentNetworkFamily = "evm" | "ton";
+export type CryptoPaymentAsset = "USDT";
+
+export type CryptoPaymentInvoiceStatus =
+  | "pending"
+  | "detected"
+  | "confirming"
+  | "paid"
+  | "expired"
+  | "underpaid"
+  | "overpaid"
+  | "failed"
+  | "cancelled";
+
+export type CryptoPaymentTransactionStatus =
+  | "detected"
+  | "confirming"
+  | "confirmed"
+  | "rejected";
+
+export interface CryptoPaymentNetworkConfig {
+  id: CryptoPaymentNetwork;
+  family: CryptoPaymentNetworkFamily;
+  asset: CryptoPaymentAsset;
+  enabled: boolean;
+  rpcUrl: string;
+  receivingAddress: string;
+  tokenIdentifier: string;
+  requiredConfirmations: number;
+}
+
+export interface CryptoPaymentTransferObservation {
+  network: CryptoPaymentNetwork;
+  txHash: string;
+  eventIndex: string;
+  tokenIdentifier: string;
+  fromAddress?: string;
+  toAddress: string;
+  amount: string;
+  blockReference?: string;
+  confirmations: number;
+  observedAt: string;
+}
+
+export interface CryptoPaymentScanRequest {
+  receivingAddress: string;
+  tokenIdentifier: string;
+  since?: string;
+}
+
+export interface CryptoPaymentNetworkAdapter {
+  readonly network: CryptoPaymentNetwork;
+  scanTransfers(
+    request: CryptoPaymentScanRequest
+  ): Promise<CryptoPaymentTransferObservation[]>;
+}
