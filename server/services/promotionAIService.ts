@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId, type AIOutputLanguageId } from "../../shared/aiLanguages";
 import { dispatchCuration } from "../ai/curationDispatcher";
+import { getUserAIApiKey, isUserAIProvider } from "./aiCredentialService";
 import {
   buildPromotionAIPrompt,
   isPromotionAIAction,
@@ -184,8 +185,32 @@ export class PromotionAIService {
     const settings = await this.readSettings(ownerPrincipal);
     const provider = settings.aiConfig?.provider || "gemini";
     const model = settings.aiConfig?.model || "gemini-3.5-flash";
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+
+    if (!isUserAIProvider(provider)) {
+      throw new PromotionAIError(
+        400,
+        "AI_PROVIDER_ERROR",
+        `Unsupported AI Provider: ${provider}`,
+        { provider, model }
+      );
+    }
+
+    // Production AI traffic always resolves the API key from the authenticated
+    // owner's Vault secret. Environment keys remain local-development fallback
+    // only, matching the main curation endpoint.
+    let geminiApiKey = process.env.GEMINI_API_KEY;
+    let openRouterApiKey = process.env.OPENROUTER_API_KEY;
+
+    if (process.env.DATABASE_URL) {
+      const personalApiKey = await getUserAIApiKey(ownerPrincipal, provider);
+      if (provider === "gemini") {
+        geminiApiKey = personalApiKey || undefined;
+        openRouterApiKey = undefined;
+      } else {
+        openRouterApiKey = personalApiKey || undefined;
+        geminiApiKey = undefined;
+      }
+    }
 
     const dispatchResult = await this.dispatcher({
       provider,
