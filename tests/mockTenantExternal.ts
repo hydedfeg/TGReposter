@@ -38,7 +38,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   if (url === "https://openrouter.ai/api/v1/chat/completions") {
     const body = JSON.parse(String(init?.body));
-    fs.appendFileSync("tenant-outbound.jsonl", JSON.stringify({ kind: "ai", body }) + "\n");
+    const authorization = new Headers(init?.headers).get("Authorization");
+    fs.appendFileSync(
+      "tenant-outbound.jsonl",
+      JSON.stringify({ kind: "ai", body, authorization }) + "\n"
+    );
     return json({ choices: [{ message: { content: "Test promotional copy" } }] });
   }
   throw new Error(`Unexpected external request blocked by tenant test: ${url}`);
