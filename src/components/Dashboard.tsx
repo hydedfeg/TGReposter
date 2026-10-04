@@ -13,6 +13,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { normalizeAppLocale } from "../i18n";
 import type { CuratedPost, CuratorSettings } from "../types";
+import { getInitials } from "../utils/text";
 import type { WorkspaceView } from "./AppShell";
 
 interface DashboardProps {
@@ -157,7 +158,7 @@ export default function Dashboard({ isSyncing, onNavigate, onSync, settings }: D
                   className="flex min-h-20 w-full items-center gap-3 px-5 py-3 text-start hover:bg-slate-50"
                 >
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">
-                    {post.channelUsername.slice(0, 2).toUpperCase()}
+                    {getInitials(post.channelUsername, "TG")}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-bold text-slate-900">@{post.channelUsername}</span>
