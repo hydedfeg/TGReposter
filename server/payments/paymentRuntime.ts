@@ -1,5 +1,4 @@
-import { EvmUsdtAdapter } from "./evmUsdtAdapter";
-import { TonCenterUsdtAdapter } from "./tonCenterUsdtAdapter";
+import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
 import { loadCryptoPaymentNetworkConfigs } from "./paymentConfig";
 import { CryptoPaymentWatcher } from "./paymentWatcher";
 import type {
@@ -49,10 +48,7 @@ export async function scanConfiguredCryptoPayments(
 
   for (const config of configs) {
     try {
-      const adapter =
-        config.family === "evm"
-          ? new EvmUsdtAdapter(config)
-          : new TonCenterUsdtAdapter(config);
+      const adapter = createCryptoPaymentNetworkAdapter(config);
       const watcher = new CryptoPaymentWatcher(config, adapter);
       const result = await watcher.runOnce();
       networks.push({
