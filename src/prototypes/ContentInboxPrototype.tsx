@@ -449,7 +449,7 @@ function FocusedReview({
         <div className="rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-100 px-5 py-5 sm:px-7">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <SourceIdentity post={selected} inverse />
+              <SourceIdentity post={selected} />
               <div className="flex flex-wrap items-center gap-2">
                 <StatusPill status={selected.status} />
                 <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500">
@@ -575,7 +575,7 @@ function TriageStream({
         <aside className="h-fit rounded-[24px] border border-slate-200 bg-slate-950 p-5 text-white shadow-xl lg:sticky lg:top-32">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-300">Quick inspector</p>
           <div className="mt-4">
-            <SourceIdentity post={selected} />
+            <SourceIdentity post={selected} inverse />
           </div>
           <p className="mt-5 line-clamp-5 text-sm leading-6 text-slate-300" dir="auto">{selected.edited}</p>
           <div className="mt-5 space-y-2">
