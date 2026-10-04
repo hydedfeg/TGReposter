@@ -15,7 +15,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const migration = fs.readFileSync(
   path.join(
     repoRoot,
-    "supabase/migrations/20261004184500_create_crypto_payment_infrastructure.sql"
+    "supabase/migrations/20261004183039_create_crypto_payment_infrastructure.sql"
   ),
   "utf8"
 );
@@ -59,6 +59,7 @@ test("enabled USDT networks require complete server-side configuration", () => {
       receivingAddress: "0xmerchant",
       tokenIdentifier: "0xtoken",
       requiredConfirmations: 4,
+      maxBlocksPerScan: 1000,
     },
   ]);
 });
@@ -68,7 +69,10 @@ test("crypto network registry rejects duplicate chain adapters", () => {
   const adapter: CryptoPaymentNetworkAdapter = {
     network: "bsc",
     async scanTransfers() {
-      return [];
+      return {
+        observations: [],
+        nextCursor: "0",
+      };
     },
   };
 
