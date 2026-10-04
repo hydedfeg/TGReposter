@@ -1,8 +1,8 @@
 import { Router, type RequestHandler } from "express";
 import {
   getCryptoPaymentRuntimeStatus,
-  scanConfiguredCryptoPayments,
 } from "../payments/paymentRuntime";
+import { runCryptoPaymentScanWithAdvisoryLock } from "../payments/paymentScheduler";
 
 interface CryptoPaymentRouterDependencies {
   authMiddleware: RequestHandler;
@@ -40,8 +40,20 @@ export function createCryptoPaymentRouter({
 
   router.post("/scan", async (_req, res) => {
     try {
-      const result = await scanConfiguredCryptoPayments();
-      return res.json(result);
+      const execution = await runCryptoPaymentScanWithAdvisoryLock();
+      if (!execution.acquired) {
+        return res.status(409).json({
+          code: "CRYPTO_PAYMENT_SCAN_IN_PROGRESS",
+          error: "A crypto payment scan is already in progress.",
+        });
+      }
+
+      return res.json(
+        execution.result ?? {
+          enabled: false,
+          networks: [],
+        }
+      );
     } catch (error: any) {
       console.error("Crypto payment scan failed:", {
         name: error?.name,
