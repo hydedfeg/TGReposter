@@ -2,8 +2,10 @@ import {
   ArrowRight,
   Bot,
   Check,
+  CheckCircle2,
   Filter,
   Inbox,
+  LoaderCircle,
   LockKeyhole,
   Menu,
   Radio,
@@ -11,12 +13,16 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import LanguageSelector from "./components/LanguageSelector";
 import { getLocaleDirection, normalizeAppLocale } from "./i18n";
+import { safeResponseJson } from "./utils/api";
 
 const dashboardUrl = "https://api.tgreposter.com";
+
+const demoUseCases = ["curation", "campaigns", "both", "other"] as const;
+type DemoFormStatus = "idle" | "submitting" | "success" | "error";
 
 const workflow = [
   { number: "01", key: "collect", icon: Radio },
@@ -60,6 +66,7 @@ function BrandMark({ inverse = false }: { inverse?: boolean }) {
 export default function MarketingHome() {
   const { t, i18n } = useTranslation(["marketing", "common"]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [demoFormStatus, setDemoFormStatus] = useState<DemoFormStatus>("idle");
   const locale = normalizeAppLocale(i18n.language);
   const isRtl = getLocaleDirection(locale) === "rtl";
 
@@ -77,6 +84,38 @@ export default function MarketingHome() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
+
+  const handleDemoSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const formData = new FormData(formElement);
+    setDemoFormStatus("submitting");
+
+    try {
+      const response = await fetch("/api/demo-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: formData.get("fullName"),
+          email: formData.get("email"),
+          company: formData.get("company"),
+          telegramUsername: formData.get("telegramUsername"),
+          useCase: formData.get("useCase"),
+          message: formData.get("message"),
+          website: formData.get("website"),
+          locale,
+        }),
+      });
+
+      await safeResponseJson(response);
+      if (!response.ok) throw new Error("demo-request-failed");
+
+      formElement.reset();
+      setDemoFormStatus("success");
+    } catch {
+      setDemoFormStatus("error");
+    }
+  };
 
   return (
     <div className="marketing-page min-h-[100svh] overflow-x-hidden bg-[#f3f7f9] text-[#0b2232]">
@@ -102,12 +141,18 @@ export default function MarketingHome() {
           </nav>
 
           <div className="hidden items-center gap-3 md:flex">
-            <LanguageSelector compact variant="dark" className="min-w-[128px]" />
             <a
               href={dashboardUrl}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-[#071827] transition hover:bg-cyan-50"
+              className="px-2 text-sm font-semibold text-slate-300 transition hover:text-white"
             >
               {t("marketing:nav.dashboard")}
+            </a>
+            <LanguageSelector compact variant="dark" className="min-w-[128px]" />
+            <a
+              href="#request-demo"
+              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 text-sm font-bold text-[#071827] transition hover:bg-cyan-50"
+            >
+              {t("marketing:nav.demo")}
               <ArrowRight className="rtl-mirror h-4 w-4" aria-hidden="true" />
             </a>
           </div>
@@ -146,9 +191,16 @@ export default function MarketingHome() {
               ))}
               <a
                 href={dashboardUrl}
+                className="rounded-xl px-3 py-3 text-base font-semibold text-slate-200"
+              >
+                {t("marketing:nav.dashboard")}
+              </a>
+              <a
+                href="#request-demo"
+                onClick={() => setMenuOpen(false)}
                 className="mt-2 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-[#08a9ed] px-5 font-bold text-white"
               >
-                {t("marketing:nav.dashboard")} <ArrowRight className="rtl-mirror h-4 w-4" />
+                {t("marketing:nav.demo")} <ArrowRight className="rtl-mirror h-4 w-4" />
               </a>
             </nav>
           </div>
@@ -187,7 +239,7 @@ export default function MarketingHome() {
               </p>
               <div className="mt-9 flex flex-col gap-3 sm:flex-row">
                 <a
-                  href={dashboardUrl}
+                  href="#request-demo"
                   className="inline-flex min-h-14 items-center justify-center gap-2.5 rounded-full bg-[#08a9ed] px-7 text-base font-bold text-white shadow-[0_18px_50px_rgba(8,169,237,0.26)] transition hover:-translate-y-0.5 hover:bg-[#16b8f5]"
                 >
                   {t("marketing:hero.primary")}
@@ -405,23 +457,136 @@ export default function MarketingHome() {
           </div>
         </section>
 
-        <section className="bg-[#061725] px-5 py-24 text-white sm:px-8 lg:py-32">
-          <div className="mx-auto max-w-[940px] text-center">
-            <p className="text-sm font-bold uppercase tracking-[0.22em] text-cyan-300">
-              {t("marketing:cta.eyebrow")}
-            </p>
-            <h2 className="mt-5 font-display text-4xl font-bold leading-[1.02] tracking-[-0.05em] sm:text-6xl">
-              {t("marketing:cta.title")}
-            </h2>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-slate-300">
-              {t("marketing:cta.body")}
-            </p>
-            <a
-              href={dashboardUrl}
-              className="mt-9 inline-flex min-h-14 items-center justify-center gap-2.5 rounded-full bg-[#08a9ed] px-8 text-base font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#16b8f5]"
-            >
-              {t("marketing:cta.button")} <ArrowRight className="rtl-mirror h-5 w-5" />
-            </a>
+        <section id="request-demo" className="scroll-mt-20 bg-[#061725] px-5 py-24 text-white sm:px-8 lg:py-32">
+          <div className="mx-auto grid max-w-[1240px] gap-12 lg:grid-cols-[0.86fr_1.14fr] lg:items-start lg:gap-16">
+            <div className="lg:sticky lg:top-28">
+              <p className="text-sm font-bold uppercase tracking-[0.22em] text-cyan-300">
+                {t("marketing:cta.eyebrow")}
+              </p>
+              <h2 className="mt-5 max-w-xl font-display text-4xl font-bold leading-[1.02] tracking-[-0.05em] sm:text-6xl">
+                {t("marketing:cta.title")}
+              </h2>
+              <p className="mt-6 max-w-xl text-lg leading-8 text-slate-300">
+                {t("marketing:cta.body")}
+              </p>
+              <div className="mt-9 grid gap-4">
+                {(["tailored", "private", "human"] as const).map((key) => (
+                  <div key={key} className="flex items-start gap-3 text-sm font-semibold leading-6 text-slate-300">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#b7f52c]/15 text-[#d7ff74]">
+                      <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                    </span>
+                    {t(`marketing:cta.points.${key}`)}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[32px] bg-white p-6 text-[#071827] shadow-[0_28px_90px_rgba(0,0,0,0.24)] sm:p-9">
+              {demoFormStatus === "success" ? (
+                <div className="flex min-h-[520px] flex-col items-center justify-center text-center" aria-live="polite">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#dff8a0] text-[#315800]">
+                    <CheckCircle2 className="h-8 w-8" />
+                  </span>
+                  <h3 className="mt-6 font-display text-3xl font-bold tracking-[-0.035em]">
+                    {t("marketing:demoForm.successTitle")}
+                  </h3>
+                  <p className="mt-4 max-w-md text-base leading-7 text-slate-600">
+                    {t("marketing:demoForm.successBody")}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-7 text-sm font-bold text-[#078fc9] hover:text-[#071827]"
+                    onClick={() => setDemoFormStatus("idle")}
+                  >
+                    {t("marketing:demoForm.submitAnother")}
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleDemoSubmit} className="grid gap-5">
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-[0.18em] text-[#078fc9]">
+                      {t("marketing:demoForm.eyebrow")}
+                    </p>
+                    <h3 className="mt-2 font-display text-3xl font-bold tracking-[-0.035em]">
+                      {t("marketing:demoForm.title")}
+                    </h3>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-bold text-slate-700">
+                      {t("marketing:demoForm.fullName")}
+                      <input name="fullName" required minLength={2} maxLength={100} autoComplete="name"
+                        placeholder={t("marketing:demoForm.fullNamePlaceholder")}
+                        className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-medium text-[#071827] outline-none transition placeholder:text-slate-400 focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-bold text-slate-700">
+                      {t("marketing:demoForm.email")}
+                      <input name="email" type="email" required maxLength={254} autoComplete="email" dir="ltr"
+                        placeholder={t("marketing:demoForm.emailPlaceholder")}
+                        className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-medium text-[#071827] outline-none transition placeholder:text-slate-400 focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-bold text-slate-700">
+                      {t("marketing:demoForm.company")}
+                      <input name="company" maxLength={120} autoComplete="organization"
+                        placeholder={t("marketing:demoForm.companyPlaceholder")}
+                        className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-medium text-[#071827] outline-none transition placeholder:text-slate-400 focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100" />
+                    </label>
+                    <label className="grid gap-2 text-sm font-bold text-slate-700">
+                      {t("marketing:demoForm.telegram")}
+                      <input name="telegramUsername" maxLength={64} autoComplete="off" dir="ltr"
+                        placeholder={t("marketing:demoForm.telegramPlaceholder")}
+                        className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-medium text-[#071827] outline-none transition placeholder:text-slate-400 focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100" />
+                    </label>
+                  </div>
+
+                  <label className="grid gap-2 text-sm font-bold text-slate-700">
+                    {t("marketing:demoForm.useCase")}
+                    <select name="useCase" defaultValue="both"
+                      className="min-h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-base font-medium text-[#071827] outline-none transition focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100">
+                      {demoUseCases.map((useCase) => (
+                        <option key={useCase} value={useCase}>{t(`marketing:demoForm.useCases.${useCase}`)}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-2 text-sm font-bold text-slate-700">
+                    {t("marketing:demoForm.message")}
+                    <textarea name="message" rows={4} maxLength={1200} dir="auto"
+                      placeholder={t("marketing:demoForm.messagePlaceholder")}
+                      className="resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-medium leading-7 text-[#071827] outline-none transition placeholder:text-slate-400 focus:border-[#08a9ed] focus:bg-white focus:ring-4 focus:ring-cyan-100" />
+                  </label>
+
+                  <div className="absolute h-px w-px overflow-hidden opacity-0" aria-hidden="true">
+                    <label>Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
+                  </div>
+
+                  {demoFormStatus === "error" ? (
+                    <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700" role="alert">
+                      {t("marketing:demoForm.error")}
+                    </p>
+                  ) : null}
+
+                  <button type="submit" disabled={demoFormStatus === "submitting"}
+                    className="inline-flex min-h-14 items-center justify-center gap-2.5 rounded-full bg-[#08a9ed] px-7 text-base font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#16b8f5] disabled:cursor-not-allowed disabled:opacity-60">
+                    {demoFormStatus === "submitting" ? (
+                      <>
+                        <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        {t("marketing:demoForm.submitting")}
+                      </>
+                    ) : (
+                      <>
+                        {t("marketing:demoForm.submit")}
+                        <ArrowRight className="rtl-mirror h-5 w-5" aria-hidden="true" />
+                      </>
+                    )}
+                  </button>
+
+                  <p className="text-xs leading-5 text-slate-500">
+                    {t("marketing:demoForm.privacy")}
+                  </p>
+                </form>
+              )}
+            </div>
           </div>
         </section>
       </main>
@@ -433,6 +598,7 @@ export default function MarketingHome() {
             <a href="#workflow" className="hover:text-white">{t("marketing:footer.workflow")}</a>
             <a href="#capabilities" className="hover:text-white">{t("marketing:footer.capabilities")}</a>
             <a href="#security" className="hover:text-white">{t("marketing:footer.security")}</a>
+            <a href="#request-demo" className="hover:text-white">{t("marketing:footer.demo")}</a>
             <a href={dashboardUrl} className="hover:text-white">{t("marketing:footer.dashboard")}</a>
           </div>
           <p dir="ltr" className="text-sm">© 2026 TGReposter</p>
