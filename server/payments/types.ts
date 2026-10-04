@@ -30,6 +30,7 @@ export interface CryptoPaymentNetworkConfig {
   receivingAddress: string;
   tokenIdentifier: string;
   requiredConfirmations: number;
+  maxBlocksPerScan: number;
 }
 
 export interface CryptoPaymentTransferObservation {
@@ -48,12 +49,20 @@ export interface CryptoPaymentTransferObservation {
 export interface CryptoPaymentScanRequest {
   receivingAddress: string;
   tokenIdentifier: string;
-  since?: string;
+  cursor?: string;
+  maxBlocks?: number;
+}
+
+export interface CryptoPaymentScanResult {
+  observations: CryptoPaymentTransferObservation[];
+  nextCursor: string;
+  scannedFrom?: string;
+  scannedTo?: string;
 }
 
 export interface CryptoPaymentNetworkAdapter {
   readonly network: CryptoPaymentNetwork;
   scanTransfers(
     request: CryptoPaymentScanRequest
-  ): Promise<CryptoPaymentTransferObservation[]>;
+  ): Promise<CryptoPaymentScanResult>;
 }
