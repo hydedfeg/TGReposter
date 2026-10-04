@@ -177,5 +177,7 @@ test("payment scheduler uses a PostgreSQL advisory lock", () => {
   assert.match(source, /pg_try_advisory_lock/);
   assert.match(source, /pg_advisory_unlock/);
   assert.match(source, /client\.release\(\)/);
-  assert.match(source, /startCryptoPaymentScheduler\(\)/);
+
+  const server = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
+  assert.match(server, /startCryptoPaymentScheduler\(\);/);
 });
