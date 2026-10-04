@@ -4,13 +4,17 @@ import {
   type CryptoPaymentInvoiceRecord,
 } from "../repositories/cryptoPaymentRepository";
 import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
+import type {
+  CryptoPaymentNetworkAdapter,
+  CryptoPaymentNetworkConfig,
+  CryptoPaymentNetwork,
+} from "./types";
 import { loadCryptoPaymentNetworkConfigs } from "./paymentConfig";
 import {
   DEFAULT_PAYMENT_DISCRIMINATOR_DIGITS,
   applyPaymentDiscriminator,
   maxPaymentDiscriminatorSlot,
 } from "./paymentAmount";
-import type { CryptoPaymentNetwork } from "./types";
 
 const DEFAULT_AMOUNT_REUSE_DELAY_MS = 24 * 60 * 60 * 1000;
 const MIN_AMOUNT_REUSE_DELAY_MS = 60 * 60 * 1000;
@@ -18,11 +22,19 @@ const MAX_AMOUNT_REUSE_DELAY_MS = 30 * 24 * 60 * 60 * 1000;
 
 type Environment = Record<string, string | undefined>;
 
+type InvoiceRepository = Pick<
+  CryptoPaymentRepository,
+  "tryCreateReservedInvoice" | "getInvoice" | "updateInvoiceStatus"
+>;
+
 interface CryptoPaymentInvoiceServiceDependencies {
-  repository?: CryptoPaymentRepository;
+  repository?: InvoiceRepository;
   env?: Environment;
   now?: () => number;
   randomStartSlot?: (maxSlot: number) => number;
+  createAdapter?: (
+    config: CryptoPaymentNetworkConfig
+  ) => Pick<CryptoPaymentNetworkAdapter, "getAssetDecimals">;
 }
 
 export interface CreateCryptoPaymentRequestInput {
@@ -61,10 +73,13 @@ function parseAmountReuseDelayMs(value?: string): number {
 }
 
 export class CryptoPaymentInvoiceService {
-  private readonly repository: CryptoPaymentRepository;
+  private readonly repository: InvoiceRepository;
   private readonly env: Environment;
   private readonly now: () => number;
   private readonly randomStartSlot: (maxSlot: number) => number;
+  private readonly createAdapter: (
+    config: CryptoPaymentNetworkConfig
+  ) => Pick<CryptoPaymentNetworkAdapter, "getAssetDecimals">;
 
   constructor(
     dependencies: CryptoPaymentInvoiceServiceDependencies = {}
@@ -76,6 +91,8 @@ export class CryptoPaymentInvoiceService {
     this.randomStartSlot =
       dependencies.randomStartSlot ??
       ((maxSlot) => crypto.randomInt(1, maxSlot + 1));
+    this.createAdapter =
+      dependencies.createAdapter ?? createCryptoPaymentNetworkAdapter;
   }
 
   async createInvoice(
@@ -107,7 +124,7 @@ export class CryptoPaymentInvoiceService {
       expiresAtMs + reuseDelayMs
     ).toISOString();
 
-    const adapter = createCryptoPaymentNetworkAdapter(config);
+    const adapter = this.createAdapter(config);
     const tokenDecimals = await adapter.getAssetDecimals();
     const startSlot = this.randomStartSlot(maxSlot);
 
