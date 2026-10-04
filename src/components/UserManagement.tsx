@@ -154,10 +154,10 @@ export default function UserManagement({
             </p>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
+          <div className="flex min-w-0 max-w-full items-center gap-3 rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950">
             <ShieldCheck className="h-5 w-5 shrink-0 text-indigo-600" aria-hidden="true" />
-            <div>
-              <p className="font-bold" dir="auto">{currentUsername || t("header.superAdminFallback")}</p>
+            <div className="min-w-0">
+              <p className="truncate font-bold" dir="auto" title={currentUsername || undefined}>{currentUsername || t("header.superAdminFallback")}</p>
               <p className="text-xs text-indigo-700">{t("header.currentAdministrator")}</p>
             </div>
           </div>
@@ -356,9 +356,9 @@ export default function UserManagement({
                   key={user.id || `${user.authProvider || "legacy"}:${identity}`}
                   className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 sm:flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-bold text-slate-950">
+                      <p className="min-w-0 max-w-full truncate text-sm font-bold text-slate-950" title={user.username}>
                         <span dir="auto">{user.username}</span>
                       </p>
                       {self ? (
@@ -392,7 +392,7 @@ export default function UserManagement({
                     </div>
 
                     {user.email ? (
-                      <p className="mt-1 truncate text-xs font-medium text-slate-500" dir="ltr">
+                      <p className="mt-1 truncate text-xs font-medium text-slate-500" dir="ltr" title={user.email}>
                         {user.email}
                       </p>
                     ) : null}
