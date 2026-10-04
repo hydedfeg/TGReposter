@@ -64,12 +64,12 @@ test("provider IDs, model IDs, and playground payload stay stable", () => {
   assert.match(source, /context: "creative and viral"/);
 });
 
-test("technical AI identifiers stay LTR while content stays direction-aware", () => {
+test("technical AI inputs and identifiers stay LTR while content stays direction-aware", () => {
   const source = readFileSync(resolve(root, "src/components/AIConfig.tsx"), "utf8");
 
-  assert.match(source, /dir="ltr">\{p\.envVar\}<\/span>/);
+  assert.match(source, /type="password"[\s\S]*?dir="ltr"[\s\S]*?value=\{apiKey\}/);
   assert.match(source, /dir="ltr">\{m\}<\/span>/);
-  assert.match(source, /value=\{customModel\}[\s\S]*?dir="ltr"/);
+  assert.match(source, /dir="ltr"[\s\S]*?value=\{customModel\}/);
   assert.match(source, /dir="ltr">\{aiConfig\.model\}<\/span>/);
   assert.match(source, /value=\{testText\}[\s\S]*?dir="auto"/);
   assert.match(source, /dir="auto">\{testResult\}<\/p>/);
