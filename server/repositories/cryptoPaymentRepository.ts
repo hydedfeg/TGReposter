@@ -76,6 +76,157 @@ export class CryptoPaymentRepository {
     return rows[0];
   }
 
+  async tryCreateReservedInvoice(
+    ownerPrincipal: string,
+    input: CreateCryptoPaymentInvoiceInput & {
+      reservedUntil: string;
+    }
+  ): Promise<CryptoPaymentInvoiceRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const client = await getPostgresPool().connect();
+
+    try {
+      await client.query("begin");
+
+      await client.query(
+        `
+          delete from public.crypto_payment_amount_reservations
+          where network = $1
+            and receiving_address = $2
+            and token_identifier = $3
+            and expected_amount = $4::numeric
+            and reserved_until <= now()
+        `,
+        [
+          input.network,
+          input.receivingAddress,
+          input.tokenIdentifier,
+          input.expectedAmount,
+        ]
+      );
+
+      const invoiceResult = await client.query(
+        `
+          insert into public.crypto_payment_invoices
+            (
+              owner_principal,
+              asset_code,
+              network,
+              expected_amount,
+              receiving_address,
+              token_identifier,
+              status,
+              expires_at,
+              updated_at
+            )
+          values (
+            $1,
+            'USDT',
+            $2,
+            $3::numeric,
+            $4,
+            $5,
+            'pending',
+            $6::timestamptz,
+            now()
+          )
+          returning *
+        `,
+        [
+          owner,
+          input.network,
+          input.expectedAmount,
+          input.receivingAddress,
+          input.tokenIdentifier,
+          input.expiresAt,
+        ]
+      );
+
+      const invoice = invoiceResult.rows[0] as CryptoPaymentInvoiceRecord;
+
+      const reservationResult = await client.query(
+        `
+          insert into public.crypto_payment_amount_reservations
+            (
+              network,
+              receiving_address,
+              token_identifier,
+              expected_amount,
+              owner_principal,
+              invoice_id,
+              reserved_until,
+              updated_at
+            )
+          values (
+            $1,
+            $2,
+            $3,
+            $4::numeric,
+            $5,
+            $6::uuid,
+            $7::timestamptz,
+            now()
+          )
+          on conflict (
+            network,
+            receiving_address,
+            token_identifier,
+            expected_amount
+          ) do nothing
+          returning invoice_id
+        `,
+        [
+          input.network,
+          input.receivingAddress,
+          input.tokenIdentifier,
+          input.expectedAmount,
+          owner,
+          invoice.id,
+          input.reservedUntil,
+        ]
+      );
+
+      if (!reservationResult.rows[0]?.invoice_id) {
+        await client.query("rollback");
+        return null;
+      }
+
+      await client.query(
+        `
+          insert into public.crypto_payment_events
+            (
+              owner_principal,
+              invoice_id,
+              source,
+              source_event_id,
+              event_type,
+              occurred_at,
+              processed_at
+            )
+          values (
+            $1,
+            $2::uuid,
+            'system',
+            $3,
+            'invoice_created',
+            now(),
+            now()
+          )
+          on conflict (source, source_event_id) do nothing
+        `,
+        [owner, invoice.id, `invoice:${invoice.id}:created`]
+      );
+
+      await client.query("commit");
+      return invoice;
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getInvoice(
     ownerPrincipal: string,
     invoiceId: string
