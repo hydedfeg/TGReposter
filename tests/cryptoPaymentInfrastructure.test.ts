@@ -36,6 +36,7 @@ test("enabled USDT networks require complete server-side configuration", () => {
       loadCryptoPaymentNetworkConfigs({
         CRYPTO_PAYMENTS_ENABLED: "true",
         CRYPTO_USDT_BSC_ENABLED: "true",
+        CRYPTO_USDT_BSC_CONFIRMATIONS: "4",
       }),
     /CRYPTO_USDT_BSC_RPC_URL is missing/
   );
