@@ -59,8 +59,44 @@ function parsePositiveInteger(value: unknown, label: string): number {
   return parsed;
 }
 
-function parseCursor(value: string): number {
-  return parsePositiveInteger(value, "payment scan cursor");
+interface TonScanCursor {
+  startUtime: number;
+  offset: number;
+}
+
+function parseCursor(value: string): TonScanCursor {
+  const trimmed = value.trim();
+  const structured = trimmed.match(/^time:([0-9]+):([0-9]+)$/);
+
+  if (structured) {
+    return {
+      startUtime: parsePositiveInteger(
+        structured[1],
+        "payment scan cursor start time"
+      ),
+      offset: parsePositiveInteger(
+        structured[2],
+        "payment scan cursor offset"
+      ),
+    };
+  }
+
+  // Backwards compatibility for the original timestamp-only checkpoint format.
+  if (/^[0-9]+$/.test(trimmed)) {
+    return {
+      startUtime: parsePositiveInteger(
+        trimmed,
+        "payment scan cursor"
+      ),
+      offset: 0,
+    };
+  }
+
+  throw new Error("Invalid TON payment scan cursor.");
+}
+
+function serializeCursor(cursor: TonScanCursor): string {
+  return `time:${cursor.startUtime}:${cursor.offset}`;
 }
 
 function formatBaseUnits(raw: string, decimals: number): string {
@@ -140,9 +176,16 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
     }
 
     const nowSeconds = Math.floor(this.now() / 1000);
-    const startUtime = request.cursor
+    const cursor = request.cursor
       ? parseCursor(request.cursor)
-      : Math.max(0, nowSeconds - TON_BOOTSTRAP_LOOKBACK_SECONDS);
+      : {
+          startUtime: Math.max(
+            0,
+            nowSeconds - TON_BOOTSTRAP_LOOKBACK_SECONDS
+          ),
+          offset: 0,
+        };
+    const startUtime = cursor.startUtime;
 
     const requestedLimit = request.maxBlocks ?? this.config.maxBlocksPerScan;
     if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) {
@@ -163,6 +206,7 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
         direction: "in",
         start_utime: String(startUtime),
         limit: String(limit),
+        offset: String(cursor.offset),
         sort: "asc",
       }
     );
@@ -229,19 +273,25 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
       });
     }
 
-    const recoveryAnchor =
-      observations.length > 0
-        ? newestObservedAt
-        : Math.max(startUtime, nowSeconds);
-    const nextCursor = Math.max(
-      startUtime,
-      recoveryAnchor - TON_CURSOR_OVERLAP_SECONDS
-    );
+    const pageIsFull = transfers.length >= limit;
+    const nextCursor: TonScanCursor = pageIsFull
+      ? {
+          startUtime,
+          offset: cursor.offset + limit,
+        }
+      : {
+          startUtime: Math.max(
+            startUtime,
+            Math.max(newestObservedAt, nowSeconds) -
+              TON_CURSOR_OVERLAP_SECONDS
+          ),
+          offset: 0,
+        };
 
     return {
       observations,
-      nextCursor: String(nextCursor),
-      scannedFrom: String(startUtime),
+      nextCursor: serializeCursor(nextCursor),
+      scannedFrom: serializeCursor(cursor),
       scannedTo: String(nowSeconds),
     };
   }
