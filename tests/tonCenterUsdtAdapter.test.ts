@@ -139,7 +139,7 @@ test("TON watcher rejects mismatched payment identity before API access", async 
   await assert.rejects(
     () =>
       adapter.scanTransfers({
-        receivingAddress: "EQDifferentWallet",
+        receivingAddress: "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
         tokenIdentifier: master,
       }),
     /does not match configured payment identity/
