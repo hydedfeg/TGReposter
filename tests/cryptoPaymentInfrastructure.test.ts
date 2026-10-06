@@ -174,3 +174,19 @@ test("transfer matching uses the blockchain timestamp instead of wall-clock invo
   assert.match(repository, /lower\(receiving_address\) = lower\(\$4\)/);
   assert.match(repository, /limit 2/i);
 });
+
+test("EVM payment networks require an explicit confirmation threshold", () => {
+  assert.throws(
+    () =>
+      loadCryptoPaymentNetworkConfigs({
+        CRYPTO_PAYMENTS_ENABLED: "true",
+        CRYPTO_USDT_BSC_ENABLED: "true",
+        CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+        CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+          "0x2222222222222222222222222222222222222222",
+        CRYPTO_USDT_BSC_TOKEN_IDENTIFIER:
+          "0x55d398326f99059ff775485246999027b3197955",
+      }),
+    /requires explicit required confirmations/
+  );
+});
