@@ -1,6 +1,9 @@
 import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
 import { CANONICAL_USDT_ASSETS } from "./usdtAssetRegistry";
-import { loadCryptoPaymentNetworkConfigs } from "./paymentConfig";
+import {
+  loadCryptoPaymentNetworkConfigs,
+  loadCryptoPaymentPreflightConfigs,
+} from "./paymentConfig";
 import { CryptoPaymentWatcher } from "./paymentWatcher";
 import type {
   CryptoPaymentNetworkAdapter,
@@ -60,7 +63,7 @@ export async function preflightConfiguredCryptoPayments(
   env: Record<string, string | undefined> = process.env,
   createAdapter: PaymentAdapterFactory = createCryptoPaymentNetworkAdapter
 ): Promise<CryptoPaymentPreflightResult> {
-  const configs = loadCryptoPaymentNetworkConfigs(env);
+  const configs = loadCryptoPaymentPreflightConfigs(env);
   if (configs.length === 0) {
     return {
       enabled: false,
