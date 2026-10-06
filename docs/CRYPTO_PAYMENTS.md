@@ -56,6 +56,7 @@ The payment database layer contains:
 - `crypto_payment_transactions`
 - `crypto_payment_events`
 - `crypto_payment_network_state`
+- `crypto_payment_amount_reservations`
 
 Invoice, transaction, and event rows are owner-scoped. Chain scanner state is
 global to the configured merchant payment identity.
@@ -115,6 +116,13 @@ mistaken for a newer invoice.
 
 The pricing layer will eventually supply the nominal amount and invoice expiry.
 It will not allocate suffixes or perform blockchain matching itself.
+
+Invoice creation is idempotent per owner. The caller supplies an
+`Idempotency-Key` (8-128 characters). The first successful request stores both
+the nominal `requested_amount` and exact payable `expected_amount`; retries
+with the same key return that original invoice instead of reserving another
+amount. The owner + request-key uniqueness is enforced in PostgreSQL, so
+concurrent retries are safe as well.
 
 ## Transfer matching
 
@@ -191,6 +199,11 @@ Railway instances are running, only one may execute a chain scan at a time.
 The lock is released in a `finally` block. Closing the PostgreSQL session also
 releases the session-level lock if an explicit unlock fails.
 
+After chain scans finish, the same locked cycle performs invoice lifecycle
+maintenance. Pending invoices are not marked expired until their amount
+reservation quarantine has elapsed, giving delayed RPC/indexer observations a
+grace period. Terminal reservations are then released for future reuse.
+
 ## Network request safety
 
 Every blockchain HTTP request has a bounded timeout. The default is 10 seconds.
@@ -225,6 +238,10 @@ POST /api/crypto-payments/invoices/:id/cancel
 
 Invoice operations are also super-admin-only at this stage. They exist for
 infrastructure testing and are not yet a customer checkout API.
+
+`POST /api/crypto-payments/invoices` requires an `Idempotency-Key` header.
+This contract is intended to be reused unchanged by the later customer checkout
+surface.
 
 The status response exposes capabilities only. It never returns RPC URLs,
 provider API keys, merchant receiving addresses, or token identifiers.
