@@ -24,7 +24,9 @@ function invoice(expectedAmount: string): CryptoPaymentInvoiceRecord {
     owner_principal: "supabase:user-1",
     asset_code: "USDT",
     network: "bsc",
+    requested_amount: "20",
     expected_amount: expectedAmount,
+    request_key: "request-12345678",
     receiving_address: env.CRYPTO_USDT_BSC_RECEIVING_ADDRESS,
     token_identifier: env.CRYPTO_USDT_BSC_TOKEN_IDENTIFIER,
     status: "pending",
@@ -50,6 +52,9 @@ test("invoice allocator retries a colliding amount atomically", async () => {
       candidates.push(input.expectedAmount);
       return attempts === 1 ? null : invoice(input.expectedAmount);
     },
+    async getInvoiceByRequestKey() {
+      return null;
+    },
     async getInvoice() {
       return null;
     },
@@ -74,6 +79,7 @@ test("invoice allocator retries a colliding amount atomically", async () => {
     network: "bsc",
     baseAmount: "20.00",
     expiresAt: "2026-10-07T12:00:00.000Z",
+    requestKey: "request-12345678",
   });
 
   assert.equal(result.expected_amount, "20.003828");
@@ -109,6 +115,7 @@ test("invoice allocator rejects disabled networks and expired invoices", async (
         network: "bsc",
         baseAmount: "20",
         expiresAt: "2026-10-07T12:00:00.000Z",
+        requestKey: "request-disabled-123",
       }),
     /not enabled/
   );
@@ -141,7 +148,90 @@ test("invoice allocator rejects disabled networks and expired invoices", async (
         network: "bsc",
         baseAmount: "20",
         expiresAt: "2026-10-06T11:59:59.000Z",
+        requestKey: "request-expired-123",
       }),
     /expiry must be in the future/
   );
+});
+
+test("invoice allocator returns an existing invoice for an idempotent retry", async () => {
+  const existing = invoice("20.003827");
+  let adapterCalls = 0;
+  let createCalls = 0;
+
+  const service = new CryptoPaymentInvoiceService({
+    repository: {
+      async getInvoiceByRequestKey() {
+        return existing;
+      },
+      async tryCreateReservedInvoice() {
+        createCalls += 1;
+        return null;
+      },
+      async getInvoice() {
+        return existing;
+      },
+      async updateInvoiceStatus() {
+        return existing;
+      },
+    } as any,
+    env,
+    now: () => Date.parse("2026-10-06T12:00:00.000Z"),
+    randomStartSlot: () => 1,
+    createAdapter: () => {
+      adapterCalls += 1;
+      return {
+        async getAssetDecimals() {
+          return 6;
+        },
+      };
+    },
+  });
+
+  const result = await service.createInvoice("supabase:user-1", {
+    network: "bsc",
+    baseAmount: "20",
+    expiresAt: "2026-10-07T12:00:00.000Z",
+    requestKey: "request-12345678",
+  });
+
+  assert.equal(result.id, existing.id);
+  assert.equal(adapterCalls, 0);
+  assert.equal(createCalls, 0);
+});
+
+test("invoice allocator rejects malformed idempotency keys before any payment work", async () => {
+  let repositoryCalls = 0;
+  const service = new CryptoPaymentInvoiceService({
+    repository: {
+      async getInvoiceByRequestKey() {
+        repositoryCalls += 1;
+        return null;
+      },
+      async tryCreateReservedInvoice() {
+        repositoryCalls += 1;
+        return null;
+      },
+      async getInvoice() {
+        return null;
+      },
+      async updateInvoiceStatus() {
+        return null;
+      },
+    } as any,
+    env,
+  });
+
+  await assert.rejects(
+    () =>
+      service.createInvoice("supabase:user-1", {
+        network: "bsc",
+        baseAmount: "20",
+        expiresAt: "2026-10-07T12:00:00.000Z",
+        requestKey: "short",
+      }),
+    /idempotency key must be between 8 and 128 characters/
+  );
+
+  assert.equal(repositoryCalls, 0);
 });
