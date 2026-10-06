@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   getCryptoPaymentRuntimeStatus,
+  preflightConfiguredCryptoPayments,
   scanConfiguredCryptoPayments,
 } from "../server/payments/paymentRuntime";
 
@@ -70,6 +71,7 @@ test("crypto payment operations are mounted behind auth and super-admin checks",
   assert.match(route, /router\.use\(authMiddleware\);/);
   assert.match(route, /router\.use\(requireSuperAdmin\);/);
   assert.match(route, /router\.get\("\/status"/);
+  assert.match(route, /router\.post\("\/preflight"/);
   assert.match(route, /router\.post\("\/scan"/);
 });
 
@@ -85,4 +87,79 @@ test("infrastructure invoice endpoints stay super-admin-only until sales plans e
   assert.match(route, /router\.post\("\/invoices\/:id\/cancel"/);
   assert.match(route, /ownerPrincipalForUser\(req\.user\)/);
   assert.match(route, /req\.get\("Idempotency-Key"\)/);
+});
+
+test("crypto payment preflight validates asset metadata without exposing infrastructure", async () => {
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_BSC_ENABLED: "true",
+    CRYPTO_USDT_BSC_RPC_URL: "https://secret-rpc.example.test/api-key",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_TOKEN_IDENTIFIER:
+      "0x55d398326f99059ff775485246999027b3197955",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "4",
+    CRYPTO_USDT_BSC_MAX_BLOCKS_PER_SCAN: "500",
+  };
+
+  let adapterCalls = 0;
+  const result = await preflightConfiguredCryptoPayments(
+    env,
+    () => ({
+      async getAssetDecimals() {
+        adapterCalls += 1;
+        return 18;
+      },
+    })
+  );
+
+  assert.equal(adapterCalls, 1);
+  assert.deepEqual(result, {
+    enabled: true,
+    networks: [
+      {
+        network: "bsc",
+        ok: true,
+        asset: "USDT",
+        assetProvenance: "bnb-chain-usdt-representation",
+        assetDecimals: 18,
+      },
+    ],
+  });
+
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /secret-rpc/);
+  assert.doesNotMatch(
+    serialized,
+    /2222222222222222222222222222222222222222/
+  );
+  assert.doesNotMatch(
+    serialized,
+    /55d398326f99059ff775485246999027b3197955/
+  );
+});
+
+test("crypto payment preflight isolates network validation failures", async () => {
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_BSC_ENABLED: "true",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "4",
+  };
+
+  const result = await preflightConfiguredCryptoPayments(
+    env,
+    () => ({
+      async getAssetDecimals() {
+        throw new Error("chain validation failed");
+      },
+    })
+  );
+
+  assert.equal(result.enabled, true);
+  assert.equal(result.networks.length, 1);
+  assert.equal(result.networks[0].ok, false);
+  assert.equal(result.networks[0].error, "chain validation failed");
 });
