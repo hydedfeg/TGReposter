@@ -40,9 +40,19 @@ function parsePositiveInteger(
   value: string | undefined,
   network: CryptoPaymentNetwork,
   label: string,
-  fallback: number
+  fallback?: number
 ): number {
-  const raw = value?.trim() || String(fallback);
+  const configured = value?.trim();
+  const raw =
+    configured ||
+    (fallback !== undefined ? String(fallback) : "");
+
+  if (!raw) {
+    throw new Error(
+      `Crypto payment network "${network}" requires explicit ${label}.`
+    );
+  }
+
   const parsed = Number.parseInt(raw, 10);
 
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
@@ -71,7 +81,7 @@ export function loadCryptoPaymentNetworkConfigs(
       env[`${definition.prefix}_CONFIRMATIONS`],
       definition.id,
       "required confirmations",
-      1
+      definition.family === "ton" ? 1 : undefined
     );
 
     if (definition.family === "ton" && requiredConfirmations !== 1) {
