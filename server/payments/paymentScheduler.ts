@@ -4,6 +4,10 @@ import {
   scanConfiguredCryptoPayments,
   type CryptoPaymentRuntimeResult,
 } from "./paymentRuntime";
+import {
+  maintainCryptoPaymentInvoices,
+  type CryptoPaymentMaintenanceResult,
+} from "./paymentMaintenance";
 
 const PAYMENT_SCAN_LOCK_NAME = "tgreposter:crypto-payment-scan";
 export const DEFAULT_CRYPTO_PAYMENT_SCAN_INTERVAL_MS = 60_000;
@@ -20,6 +24,7 @@ interface CryptoPaymentSchedulerDependencies {
   runLockedScan?: () => Promise<{
     acquired: boolean;
     result?: CryptoPaymentRuntimeResult;
+    maintenance?: CryptoPaymentMaintenanceResult;
   }>;
   setIntervalFn?: (
     callback: () => void,
@@ -55,6 +60,7 @@ export async function runCryptoPaymentScanWithAdvisoryLock(
 ): Promise<{
   acquired: boolean;
   result?: CryptoPaymentRuntimeResult;
+  maintenance?: CryptoPaymentMaintenanceResult;
 }> {
   if (!env.DATABASE_URL?.trim()) {
     throw new Error(
@@ -80,9 +86,13 @@ export async function runCryptoPaymentScanWithAdvisoryLock(
       return { acquired: false };
     }
 
+    const result = await scanConfiguredCryptoPayments(env);
+    const maintenance = await maintainCryptoPaymentInvoices();
+
     return {
       acquired: true,
-      result: await scanConfiguredCryptoPayments(env),
+      result,
+      maintenance,
     };
   } finally {
     if (acquired) {
@@ -179,6 +189,18 @@ export function startCryptoPaymentScheduler(
       if (failures.length > 0) {
         logger.warn("Crypto payment scan completed with network failures:", {
           networks: failures.map((failure) => failure.network),
+        });
+      }
+
+      if (
+        execution.maintenance &&
+        (execution.maintenance.expiredInvoices > 0 ||
+          execution.maintenance.releasedReservations > 0)
+      ) {
+        logger.info("Crypto payment lifecycle maintenance completed.", {
+          expiredInvoices: execution.maintenance.expiredInvoices,
+          releasedReservations:
+            execution.maintenance.releasedReservations,
         });
       }
     } catch (error: any) {
