@@ -5,7 +5,7 @@ import type { CryptoPaymentNetworkConfig } from "../server/payments/types";
 
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-const token = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const token = "0x55d398326f99059ff775485246999027b3197955";
 const merchant = "0x2222222222222222222222222222222222222222";
 const sender = "0x1111111111111111111111111111111111111111";
 
