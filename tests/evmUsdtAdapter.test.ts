@@ -262,3 +262,20 @@ test("EVM watcher rejects a token identifier with no deployed contract", async (
     /not a deployed contract/
   );
 });
+
+test("EVM preflight rejects malformed merchant receiving addresses", async () => {
+  const adapter = new EvmUsdtAdapter(
+    {
+      ...config(),
+      receivingAddress: "0x1234",
+    },
+    async () => {
+      throw new Error("RPC must not be called");
+    }
+  );
+
+  await assert.rejects(
+    () => adapter.getAssetDecimals(),
+    /Invalid EVM configured receiving address/
+  );
+});
