@@ -5,6 +5,7 @@ import type {
   CryptoPaymentScanResult,
   CryptoPaymentTransferObservation,
 } from "./types";
+import { assertCanonicalUsdtTokenIdentifier } from "./usdtAssetRegistry";
 
 type FetchLike = typeof fetch;
 
@@ -107,6 +108,8 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
     if (config.id !== "ton" || config.family !== "ton") {
       throw new Error("TonCenterUsdtAdapter requires a TON configuration.");
     }
+
+    assertCanonicalUsdtTokenIdentifier("ton", config.tokenIdentifier);
   }
 
   async getAssetDecimals(): Promise<number> {
