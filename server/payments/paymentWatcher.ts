@@ -21,8 +21,8 @@ export interface CryptoPaymentWatcherRepository {
     receivingAddress: string;
     cursor: string;
   }): Promise<void>;
-  listOpenInvoicesForNetwork(
-    network: CryptoPaymentNetworkConfig["id"]
+  findInvoicesMatchingObservation(
+    observation: CryptoPaymentTransferObservation
   ): Promise<CryptoPaymentInvoiceRecord[]>;
   getTransactionAssignment(input: {
     network: CryptoPaymentNetworkConfig["id"];
@@ -69,28 +69,6 @@ export interface CryptoPaymentWatcherRunResult {
   replayed: number;
 }
 
-function normalizePaymentIdentity(
-  network: CryptoPaymentNetworkConfig["id"],
-  value: string
-): string {
-  const trimmed = value.trim();
-  return network === "bsc" || network === "ethereum"
-    ? trimmed.toLowerCase()
-    : trimmed;
-}
-
-function canonicalDecimal(value: string): string {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^([0-9]+)(?:\.([0-9]+))?$/);
-  if (!match) {
-    throw new Error("Invalid crypto payment decimal amount.");
-  }
-
-  const integerPart = match[1].replace(/^0+(?=\d)/, "");
-  const fractionalPart = (match[2] ?? "").replace(/0+$/, "");
-  return fractionalPart ? `${integerPart}.${fractionalPart}` : integerPart;
-}
-
 function isOpenInvoice(invoice: CryptoPaymentInvoiceRecord): boolean {
   return (
     invoice.status === "pending" ||
@@ -124,10 +102,6 @@ export class CryptoPaymentWatcher {
       cursor: cursor ?? undefined,
       maxBlocks: this.config.maxBlocksPerScan,
     });
-
-    const openInvoices = await this.repository.listOpenInvoicesForNetwork(
-      this.config.id
-    );
 
     const result: CryptoPaymentWatcherRunResult = {
       network: this.config.id,
@@ -166,36 +140,10 @@ export class CryptoPaymentWatcher {
         continue;
       }
 
-      const matches = openInvoices.filter((invoice) => {
-        if (!isOpenInvoice(invoice)) {
-          return false;
-        }
-
-        return (
-          normalizePaymentIdentity(
-            this.config.id,
-            invoice.receiving_address
-          ) ===
-            normalizePaymentIdentity(
-              this.config.id,
-              observation.toAddress
-            ) &&
-          normalizePaymentIdentity(
-            this.config.id,
-            invoice.token_identifier
-          ) ===
-            normalizePaymentIdentity(
-              this.config.id,
-              observation.tokenIdentifier
-            ) &&
-          canonicalDecimal(invoice.expected_amount) ===
-            canonicalDecimal(observation.amount) &&
-          new Date(observation.observedAt).getTime() >=
-            new Date(invoice.created_at).getTime() &&
-          new Date(observation.observedAt).getTime() <=
-            new Date(invoice.expires_at).getTime()
+      const matches =
+        await this.repository.findInvoicesMatchingObservation(
+          observation
         );
-      });
 
       if (matches.length === 0) {
         result.unmatched += 1;
