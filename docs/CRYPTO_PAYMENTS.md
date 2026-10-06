@@ -85,6 +85,30 @@ Terminal states do not transition back to an active state.
 
 Invoice state changes are serialized with a database row lock.
 
+## Invoice amount reservation
+
+The payment layer can create plan-neutral invoices from a nominal USDT amount.
+
+For shared merchant addresses, it reserves a small unique suffix in the final
+six USDT decimal places. With the default four-digit discriminator, a nominal
+amount such as `20.00` may become `20.003827`.
+
+Allocation uses integer token base units only; JavaScript floating-point money
+math is never used.
+
+Reservations are enforced by a database uniqueness constraint across:
+
+```text
+network + receiving address + token identifier + expected amount
+```
+
+A reservation stays quarantined beyond invoice expiry for a configurable reuse
+delay (24 hours by default), which reduces the risk that a late transfer is
+mistaken for a newer invoice.
+
+The pricing layer will eventually supply the nominal amount and invoice expiry.
+It will not allocate suffixes or perform blockchain matching itself.
+
 ## Transfer matching
 
 The current matcher requires:
@@ -179,7 +203,13 @@ Available operations:
 ```text
 GET  /api/crypto-payments/status
 POST /api/crypto-payments/scan
+POST /api/crypto-payments/invoices
+GET  /api/crypto-payments/invoices/:id
+POST /api/crypto-payments/invoices/:id/cancel
 ```
+
+Invoice operations are also super-admin-only at this stage. They exist for
+infrastructure testing and are not yet a customer checkout API.
 
 The status response exposes capabilities only. It never returns RPC URLs,
 provider API keys, merchant receiving addresses, or token identifiers.
@@ -192,6 +222,8 @@ Global:
 CRYPTO_PAYMENTS_ENABLED
 CRYPTO_PAYMENT_SCAN_INTERVAL_MS
 CRYPTO_PAYMENT_REQUEST_TIMEOUT_MS
+CRYPTO_PAYMENT_AMOUNT_DISCRIMINATOR_DIGITS
+CRYPTO_PAYMENT_AMOUNT_REUSE_DELAY_MS
 ```
 
 Per network:
