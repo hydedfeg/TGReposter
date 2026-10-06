@@ -71,3 +71,16 @@ test("crypto payment operations are mounted behind auth and super-admin checks",
   assert.match(route, /router\.get\("\/status"/);
   assert.match(route, /router\.post\("\/scan"/);
 });
+
+test("infrastructure invoice endpoints stay super-admin-only until sales plans exist", () => {
+  const route = fs.readFileSync(
+    path.join(repoRoot, "server/routes/cryptoPayments.ts"),
+    "utf8"
+  );
+
+  assert.match(route, /router\.use\(requireSuperAdmin\);/);
+  assert.match(route, /router\.post\("\/invoices"/);
+  assert.match(route, /router\.get\("\/invoices\/:id"/);
+  assert.match(route, /router\.post\("\/invoices\/:id\/cancel"/);
+  assert.match(route, /ownerPrincipalForUser\(req\.user\)/);
+});
