@@ -84,4 +84,5 @@ test("infrastructure invoice endpoints stay super-admin-only until sales plans e
   assert.match(route, /router\.get\("\/invoices\/:id"/);
   assert.match(route, /router\.post\("\/invoices\/:id\/cancel"/);
   assert.match(route, /ownerPrincipalForUser\(req\.user\)/);
+  assert.match(route, /req\.get\("Idempotency-Key"\)/);
 });
