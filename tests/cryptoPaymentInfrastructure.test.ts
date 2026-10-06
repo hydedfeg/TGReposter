@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadCryptoPaymentNetworkConfigs } from "../server/payments/paymentConfig";
+import {
+  loadCryptoPaymentNetworkConfigs,
+  loadCryptoPaymentPreflightConfigs,
+} from "../server/payments/paymentConfig";
 import { CryptoPaymentNetworkRegistry } from "../server/payments/networkRegistry";
 import {
   assertCryptoInvoiceTransition,
@@ -189,5 +192,34 @@ test("EVM payment networks require an explicit confirmation threshold", () => {
           "0x55d398326f99059ff775485246999027b3197955",
       }),
     /requires explicit required confirmations/
+  );
+});
+
+test("preflight can validate a configured network while payment switches stay off", () => {
+  const configs = loadCryptoPaymentPreflightConfigs({
+    CRYPTO_PAYMENTS_ENABLED: "false",
+    CRYPTO_USDT_BSC_ENABLED: "false",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+    CRYPTO_USDT_BSC_MAX_BLOCKS_PER_SCAN: "500",
+  });
+
+  assert.equal(configs.length, 1);
+  assert.equal(configs[0].id, "bsc");
+  assert.equal(configs[0].enabled, false);
+  assert.equal(configs[0].requiredConfirmations, 120);
+
+  assert.deepEqual(
+    loadCryptoPaymentNetworkConfigs({
+      CRYPTO_PAYMENTS_ENABLED: "false",
+      CRYPTO_USDT_BSC_ENABLED: "false",
+      CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+      CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+        "0x2222222222222222222222222222222222222222",
+      CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+    }),
+    []
   );
 });
