@@ -178,6 +178,11 @@ The Railway backend starts the payment scheduler only when:
 The default scan interval is 60 seconds. The minimum allowed interval is 15
 seconds.
 
+BSC and Ethereum confirmation depth must be configured explicitly when those
+networks are enabled. The infrastructure intentionally has no one-confirmation
+fallback for EVM payments. TON's indexed transfer adapter requires a finalized
+observation and therefore uses a confirmation value of 1.
+
 Every automatic or manual scan uses the same PostgreSQL advisory lock. If two
 Railway instances are running, only one may execute a chain scan at a time.
 
