@@ -230,6 +230,7 @@ Available operations:
 
 ```text
 GET  /api/crypto-payments/status
+POST /api/crypto-payments/preflight
 POST /api/crypto-payments/scan
 POST /api/crypto-payments/invoices
 GET  /api/crypto-payments/invoices/:id
@@ -245,6 +246,12 @@ surface.
 
 The status response exposes capabilities only. It never returns RPC URLs,
 provider API keys, merchant receiving addresses, or token identifiers.
+
+The preflight endpoint is read-only. It verifies each enabled network's chain
+identity and allow-listed USDT asset metadata/precision without scanning
+transfers, creating invoices, or writing payment ledger rows. Its response is
+also redacted from RPC URLs, API credentials, wallet addresses, and token
+identifiers.
 
 ## Environment variables
 
