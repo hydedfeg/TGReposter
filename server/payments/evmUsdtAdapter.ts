@@ -5,6 +5,7 @@ import type {
   CryptoPaymentScanResult,
   CryptoPaymentTransferObservation,
 } from "./types";
+import { assertCanonicalUsdtTokenIdentifier } from "./usdtAssetRegistry";
 
 const ERC20_TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -120,6 +121,7 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
       throw new Error("EvmUsdtAdapter requires a BSC or Ethereum EVM configuration.");
     }
 
+    assertCanonicalUsdtTokenIdentifier(config.id, config.tokenIdentifier);
     this.config = config;
     this.network = config.id;
     this.fetchFn = fetchFn;
