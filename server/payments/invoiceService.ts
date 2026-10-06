@@ -24,7 +24,7 @@ type Environment = Record<string, string | undefined>;
 
 type InvoiceRepository = Pick<
   CryptoPaymentRepository,
-  "tryCreateReservedInvoice" | "getInvoice" | "updateInvoiceStatus"
+  "tryCreateReservedInvoice" | "getInvoiceByRequestKey" | "getInvoice" | "updateInvoiceStatus"
 >;
 
 interface CryptoPaymentInvoiceServiceDependencies {
@@ -41,6 +41,7 @@ export interface CreateCryptoPaymentRequestInput {
   network: CryptoPaymentNetwork;
   baseAmount: string;
   expiresAt: string;
+  requestKey: string;
 }
 
 function parseDiscriminatorDigits(value?: string): number {
@@ -99,6 +100,22 @@ export class CryptoPaymentInvoiceService {
     ownerPrincipal: string,
     input: CreateCryptoPaymentRequestInput
   ): Promise<CryptoPaymentInvoiceRecord> {
+    const requestKey = input.requestKey.trim();
+    if (requestKey.length < 8 || requestKey.length > 128) {
+      throw new Error(
+        "Crypto payment idempotency key must be between 8 and 128 characters."
+      );
+    }
+
+    const existingInvoice =
+      await this.repository.getInvoiceByRequestKey(
+        ownerPrincipal,
+        requestKey
+      );
+    if (existingInvoice) {
+      return existingInvoice;
+    }
+
     const configs = loadCryptoPaymentNetworkConfigs(this.env);
     const config = configs.find((candidate) => candidate.id === input.network);
 
@@ -149,7 +166,9 @@ export class CryptoPaymentInvoiceService {
         ownerPrincipal,
         {
           network: config.id,
+          requestedAmount: input.baseAmount,
           expectedAmount,
+          requestKey,
           receivingAddress: config.receivingAddress,
           tokenIdentifier: config.tokenIdentifier,
           expiresAt: new Date(expiresAtMs).toISOString(),
