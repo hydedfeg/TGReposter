@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   getCryptoPaymentRuntimeStatus,
   preflightConfiguredCryptoPayments,
+  runCryptoPaymentStartupPreflight,
   scanConfiguredCryptoPayments,
 } from "../server/payments/paymentRuntime";
 
@@ -191,4 +192,79 @@ test("preflight runs while scheduler switches remain disabled", async () => {
     enabled: false,
     networks: [],
   });
+});
+
+test("startup preflight is inert unless explicitly enabled", async () => {
+  let adapterCalls = 0;
+  const result = await runCryptoPaymentStartupPreflight(
+    {},
+    {
+      info() {},
+      warn() {},
+      error() {},
+    },
+    () => ({
+      async getAssetDecimals() {
+        adapterCalls += 1;
+        return 18;
+      },
+    })
+  );
+
+  assert.equal(result, null);
+  assert.equal(adapterCalls, 0);
+});
+
+test("startup preflight validates disabled BSC without exposing payment identity", async () => {
+  const logs: unknown[] = [];
+  const env = {
+    CRYPTO_PAYMENT_PREFLIGHT_ON_STARTUP: "true",
+    CRYPTO_PAYMENTS_ENABLED: "false",
+    CRYPTO_USDT_BSC_ENABLED: "false",
+    CRYPTO_USDT_BSC_RPC_URL: "https://secret-rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+  };
+
+  const result = await runCryptoPaymentStartupPreflight(
+    env,
+    {
+      info(_message, details) {
+        logs.push(details);
+      },
+      warn(_message, details) {
+        logs.push(details);
+      },
+      error(_message, details) {
+        logs.push(details);
+      },
+    },
+    () => ({
+      async getAssetDecimals() {
+        return 18;
+      },
+    })
+  );
+
+  assert.equal(result?.networks[0].ok, true);
+  const serializedLogs = JSON.stringify(logs);
+  assert.doesNotMatch(serializedLogs, /secret-rpc/);
+  assert.doesNotMatch(
+    serializedLogs,
+    /2222222222222222222222222222222222222222/
+  );
+  assert.doesNotMatch(
+    serializedLogs,
+    /55d398326f99059ff775485246999027b3197955/
+  );
+});
+
+test("server startup wires the optional read-only preflight before the scheduler", () => {
+  const server = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
+  const preflightIndex = server.indexOf("runCryptoPaymentStartupPreflight()");
+  const schedulerIndex = server.indexOf("startCryptoPaymentScheduler()");
+
+  assert.ok(preflightIndex >= 0);
+  assert.ok(schedulerIndex > preflightIndex);
 });
