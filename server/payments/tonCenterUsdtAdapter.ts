@@ -126,6 +126,18 @@ function cleanRequiredValue(value: string, label: string): string {
   return cleaned;
 }
 
+function validateTonAddressFormat(value: string, label: string): string {
+  const cleaned = cleanRequiredValue(value, label);
+  const rawAddress = /^-?[0-9]+:[0-9a-f]{64}$/i.test(cleaned);
+  const friendlyAddress = /^[A-Za-z0-9_-]{48}$/.test(cleaned);
+
+  if (!rawAddress && !friendlyAddress) {
+    throw new Error(`Invalid TON ${label} format.`);
+  }
+
+  return cleaned;
+}
+
 function baseApiUrl(value: string): string {
   const trimmed = value.trim().replace(/\/+$/, "");
   return trimmed.replace(/\/api\/v3$/i, "");
@@ -149,6 +161,10 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
   }
 
   async getAssetDecimals(): Promise<number> {
+    validateTonAddressFormat(
+      this.config.receivingAddress,
+      "configured receiving address"
+    );
     return this.getJettonDecimals(
       cleanRequiredValue(this.config.tokenIdentifier, "Jetton master")
     );
@@ -157,7 +173,7 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
   async scanTransfers(
     request: CryptoPaymentScanRequest
   ): Promise<CryptoPaymentScanResult> {
-    const receivingAddress = cleanRequiredValue(
+    const receivingAddress = validateTonAddressFormat(
       request.receivingAddress,
       "receiving address"
     );
