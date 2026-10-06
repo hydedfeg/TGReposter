@@ -89,6 +89,9 @@ test("invoice allocator retries a colliding amount atomically", async () => {
 test("invoice allocator rejects disabled networks and expired invoices", async () => {
   const service = new CryptoPaymentInvoiceService({
     repository: {
+      async getInvoiceByRequestKey() {
+        return null;
+      },
       async tryCreateReservedInvoice() {
         throw new Error("must not create");
       },
@@ -122,6 +125,9 @@ test("invoice allocator rejects disabled networks and expired invoices", async (
 
   const enabledService = new CryptoPaymentInvoiceService({
     repository: {
+      async getInvoiceByRequestKey() {
+        return null;
+      },
       async tryCreateReservedInvoice() {
         throw new Error("must not create");
       },
