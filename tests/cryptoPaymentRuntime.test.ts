@@ -163,3 +163,32 @@ test("crypto payment preflight isolates network validation failures", async () =
   assert.equal(result.networks[0].ok, false);
   assert.equal(result.networks[0].error, "chain validation failed");
 });
+
+test("preflight runs while scheduler switches remain disabled", async () => {
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "false",
+    CRYPTO_USDT_BSC_ENABLED: "false",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+  };
+
+  const result = await preflightConfiguredCryptoPayments(
+    env,
+    () => ({
+      async getAssetDecimals() {
+        return 18;
+      },
+    })
+  );
+
+  assert.equal(result.enabled, true);
+  assert.equal(result.networks[0].network, "bsc");
+  assert.equal(result.networks[0].ok, true);
+
+  assert.deepEqual(getCryptoPaymentRuntimeStatus(env), {
+    enabled: false,
+    networks: [],
+  });
+});
