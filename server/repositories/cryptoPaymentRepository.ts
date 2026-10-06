@@ -501,6 +501,92 @@ export class CryptoPaymentRepository {
     return String(rows[0].id);
   }
 
+  async expireStaleInvoicesAndReleaseReservations(): Promise<{
+    expiredInvoices: number;
+    releasedReservations: number;
+  }> {
+    const client = await getPostgresPool().connect();
+
+    try {
+      await client.query("begin");
+
+      const expiredResult = await client.query(
+        `
+          with expired as (
+            update public.crypto_payment_invoices as invoice
+            set status = 'expired',
+                updated_at = now()
+            from public.crypto_payment_amount_reservations as reservation
+            where reservation.owner_principal = invoice.owner_principal
+              and reservation.invoice_id = invoice.id
+              and reservation.reserved_until <= now()
+              and invoice.status = 'pending'
+            returning invoice.owner_principal, invoice.id
+          )
+          insert into public.crypto_payment_events
+            (
+              owner_principal,
+              invoice_id,
+              source,
+              source_event_id,
+              event_type,
+              occurred_at,
+              processed_at
+            )
+          select
+            owner_principal,
+            id,
+            'system',
+            'invoice:' || id::text || ':expired',
+            'invoice_expired',
+            now(),
+            now()
+          from expired
+          on conflict (source, source_event_id) do nothing
+          returning invoice_id
+        `
+      );
+
+      const releasedResult = await client.query(
+        `
+          delete from public.crypto_payment_amount_reservations
+          where reserved_until <= now()
+            and exists (
+              select 1
+              from public.crypto_payment_invoices as invoice
+              where invoice.owner_principal =
+                      crypto_payment_amount_reservations.owner_principal
+                and invoice.id =
+                      crypto_payment_amount_reservations.invoice_id
+                and invoice.status = any(
+                  array[
+                    'paid',
+                    'expired',
+                    'underpaid',
+                    'overpaid',
+                    'failed',
+                    'cancelled'
+                  ]::text[]
+                )
+            )
+          returning invoice_id
+        `
+      );
+
+      await client.query("commit");
+
+      return {
+        expiredInvoices: expiredResult.rowCount ?? 0,
+        releasedReservations: releasedResult.rowCount ?? 0,
+      };
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getNetworkCursor(input: {
     network: CryptoPaymentNetwork;
     tokenIdentifier: string;
