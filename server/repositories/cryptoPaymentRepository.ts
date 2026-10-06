@@ -264,6 +264,46 @@ export class CryptoPaymentRepository {
     return rows;
   }
 
+  async findInvoicesMatchingObservation(
+    observation: CryptoPaymentTransferObservation
+  ): Promise<CryptoPaymentInvoiceRecord[]> {
+    const { rows } = await getPostgresPool().query(
+      `
+        select *
+        from public.crypto_payment_invoices
+        where network = $1
+          and status = any(array['pending', 'detected', 'confirming']::text[])
+          and expected_amount = $2::numeric
+          and created_at <= $3::timestamptz
+          and expires_at >= $3::timestamptz
+          and (
+            (
+              network = any(array['bsc', 'ethereum']::text[])
+              and lower(receiving_address) = lower($4)
+              and lower(token_identifier) = lower($5)
+            )
+            or
+            (
+              network = 'ton'
+              and receiving_address = $4
+              and token_identifier = $5
+            )
+          )
+        order by created_at asc
+        limit 2
+      `,
+      [
+        observation.network,
+        observation.amount,
+        observation.observedAt,
+        observation.toAddress,
+        observation.tokenIdentifier,
+      ]
+    );
+
+    return rows;
+  }
+
   async updateInvoiceStatus(
     ownerPrincipal: string,
     invoiceId: string,
