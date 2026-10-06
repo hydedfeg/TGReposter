@@ -1,4 +1,5 @@
 import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
+import { CANONICAL_USDT_ASSETS } from "./usdtAssetRegistry";
 import { loadCryptoPaymentNetworkConfigs } from "./paymentConfig";
 import { CryptoPaymentWatcher } from "./paymentWatcher";
 import type {
@@ -27,6 +28,7 @@ export function getCryptoPaymentRuntimeStatus(
       id: config.id,
       family: config.family,
       asset: config.asset,
+      assetProvenance: CANONICAL_USDT_ASSETS[config.id].provenance,
       requiredConfirmations: config.requiredConfirmations,
       maxBlocksPerScan: config.maxBlocksPerScan,
     })),
