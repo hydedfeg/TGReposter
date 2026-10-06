@@ -14,12 +14,19 @@ are intentionally outside this module.
 
 The infrastructure currently supports:
 
-- USDT on BNB Smart Chain (BSC)
-- USDT on Ethereum
-- USDT on TON
+- USD₮ on Ethereum using Tether's canonical ERC-20 contract
+- USD₮ on TON using Tether's canonical Jetton master
+- the widely used BNB Smart Chain USDT representation at the allow-listed BSC contract
 
 BSC and Ethereum share the same ERC-20 JSON-RPC adapter. TON uses a TON
 Center-compatible API v3 Jetton indexer.
+
+The asset identifiers are pinned in code. Configuration may repeat the
+identifier for clarity, but a different contract/master is rejected. This
+prevents a lookalike token using the USDT symbol from being credited.
+
+BSC provenance is intentionally reported separately from Tether-issued
+Ethereum/TON USD₮ in the super-admin runtime status.
 
 ## Security boundary
 
@@ -133,6 +140,7 @@ Before scanning, it verifies:
 
 - BSC reports chain ID 56;
 - Ethereum reports chain ID 1;
+- the configured token identifier matches the network's allow-listed USDT asset;
 - the configured token identifier contains deployed contract bytecode;
 - token decimals are readable from `decimals()`.
 
@@ -150,8 +158,8 @@ The TON watcher uses TON Center-compatible API v3 endpoints:
 - `/api/v3/jetton/masters`
 - `/api/v3/jetton/transfers`
 
-It filters incoming Jetton transfers by merchant owner address and exact Jetton
-master. Aborted transactions are rejected.
+It filters incoming Jetton transfers by merchant owner address and the
+allow-listed Tether USD₮ Jetton master. Aborted transactions are rejected.
 
 Jetton decimals are read from master metadata rather than inferred from the
 display symbol.
