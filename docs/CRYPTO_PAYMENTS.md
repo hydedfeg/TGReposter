@@ -164,8 +164,10 @@ allow-listed Tether USD₮ Jetton master. Aborted transactions are rejected.
 Jetton decimals are read from master metadata rather than inferred from the
 display symbol.
 
-The TON scanner stores a timestamp cursor with a short overlap window so
-backend restarts and ordinary indexer lag do not create a blind boundary.
+The TON scanner stores a timestamp-window cursor with a page offset. Full
+TON Center result pages continue from the saved offset on the next scheduler
+tick, while completed windows advance with a short timestamp overlap so backend
+restarts and ordinary indexer lag do not create a blind boundary.
 
 ## Scanner scheduling
 
