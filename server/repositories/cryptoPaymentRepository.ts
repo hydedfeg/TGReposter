@@ -17,7 +17,9 @@ function cleanOwnerPrincipal(value: string): string {
 
 export interface CreateCryptoPaymentInvoiceInput {
   network: CryptoPaymentNetwork;
+  requestedAmount: string;
   expectedAmount: string;
+  requestKey?: string;
   receivingAddress: string;
   tokenIdentifier: string;
   expiresAt: string;
@@ -28,7 +30,9 @@ export interface CryptoPaymentInvoiceRecord {
   owner_principal: string;
   asset_code: "USDT";
   network: CryptoPaymentNetwork;
+  requested_amount: string;
   expected_amount: string;
+  request_key: string | null;
   receiving_address: string;
   token_identifier: string;
   status: CryptoPaymentInvoiceStatus;
@@ -53,20 +57,36 @@ export class CryptoPaymentRepository {
             owner_principal,
             asset_code,
             network,
+            requested_amount,
             expected_amount,
+            request_key,
             receiving_address,
             token_identifier,
             status,
             expires_at,
             updated_at
           )
-        values ($1, 'USDT', $2, $3::numeric, $4, $5, 'pending', $6::timestamptz, now())
+        values (
+          $1,
+          'USDT',
+          $2,
+          $3::numeric,
+          $4::numeric,
+          $5,
+          $6,
+          $7,
+          'pending',
+          $8::timestamptz,
+          now()
+        )
         returning *
       `,
       [
         owner,
         input.network,
+        input.requestedAmount,
         input.expectedAmount,
+        input.requestKey?.trim() || null,
         input.receivingAddress,
         input.tokenIdentifier,
         input.expiresAt,
@@ -112,7 +132,9 @@ export class CryptoPaymentRepository {
               owner_principal,
               asset_code,
               network,
+              requested_amount,
               expected_amount,
+              request_key,
               receiving_address,
               token_identifier,
               status,
@@ -124,10 +146,12 @@ export class CryptoPaymentRepository {
             'USDT',
             $2,
             $3::numeric,
-            $4,
+            $4::numeric,
             $5,
+            $6,
+            $7,
             'pending',
-            $6::timestamptz,
+            $8::timestamptz,
             now()
           )
           returning *
@@ -135,7 +159,9 @@ export class CryptoPaymentRepository {
         [
           owner,
           input.network,
+          input.requestedAmount,
           input.expectedAmount,
+          input.requestKey?.trim() || null,
           input.receivingAddress,
           input.tokenIdentifier,
           input.expiresAt,
@@ -219,12 +245,50 @@ export class CryptoPaymentRepository {
 
       await client.query("commit");
       return invoice;
-    } catch (error) {
+    } catch (error: any) {
       await client.query("rollback");
+
+      if (
+        input.requestKey &&
+        error?.code === "23505" &&
+        error?.constraint ===
+          "crypto_payment_invoices_owner_request_key_idx"
+      ) {
+        return this.getInvoiceByRequestKey(
+          owner,
+          input.requestKey
+        );
+      }
+
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  async getInvoiceByRequestKey(
+    ownerPrincipal: string,
+    requestKey: string
+  ): Promise<CryptoPaymentInvoiceRecord | null> {
+    const owner = cleanOwnerPrincipal(ownerPrincipal);
+    const cleanedRequestKey = requestKey.trim();
+
+    if (!cleanedRequestKey) {
+      throw new Error("Crypto payment request key is required.");
+    }
+
+    const { rows } = await getPostgresPool().query(
+      `
+        select *
+        from public.crypto_payment_invoices
+        where owner_principal = $1
+          and request_key = $2
+        limit 1
+      `,
+      [owner, cleanedRequestKey]
+    );
+
+    return rows[0] ?? null;
   }
 
   async getInvoice(
