@@ -4,7 +4,7 @@ import { TonCenterUsdtAdapter } from "../server/payments/tonCenterUsdtAdapter";
 import type { CryptoPaymentNetworkConfig } from "../server/payments/types";
 
 const merchant = "EQMerchantWalletAddress";
-const master = "EQUsdtJettonMaster";
+const master = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs";
 
 function config(): CryptoPaymentNetworkConfig {
   return {
