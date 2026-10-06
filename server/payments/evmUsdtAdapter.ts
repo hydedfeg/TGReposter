@@ -128,6 +128,10 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
   }
 
   async getAssetDecimals(): Promise<number> {
+    normalizeEvmAddress(
+      this.config.receivingAddress,
+      "configured receiving"
+    );
     await this.verifyChain();
     const tokenIdentifier = normalizeEvmAddress(
       this.config.tokenIdentifier,
