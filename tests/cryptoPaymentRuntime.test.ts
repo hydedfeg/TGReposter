@@ -43,6 +43,7 @@ test("crypto payment status exposes capabilities but not infrastructure secrets"
         id: "bsc",
         family: "evm",
         asset: "USDT",
+        assetProvenance: "bnb-chain-usdt-representation",
         requiredConfirmations: 4,
         maxBlocksPerScan: 500,
       },
