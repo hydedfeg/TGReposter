@@ -143,7 +143,7 @@ test("TON indexed payment config requires one finalized observation", () => {
         CRYPTO_USDT_TON_ENABLED: "true",
         CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
         CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
-        CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQMaster",
+        CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
         CRYPTO_USDT_TON_CONFIRMATIONS: "2",
       }),
     /requires CRYPTO_USDT_TON_CONFIRMATIONS=1/
@@ -155,7 +155,7 @@ test("TON indexed payment config requires one finalized observation", () => {
     CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
     CRYPTO_USDT_TON_API_KEY: "server-only",
     CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
-    CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQMaster",
+    CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
     CRYPTO_USDT_TON_CONFIRMATIONS: "1",
   });
 
