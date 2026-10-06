@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { CRYPTO_PAYMENT_NETWORKS } from "../payments/types";
 import {
   getCryptoPaymentRuntimeStatus,
+  preflightConfiguredCryptoPayments,
 } from "../payments/paymentRuntime";
 import { runCryptoPaymentScanWithAdvisoryLock } from "../payments/paymentScheduler";
 import { CryptoPaymentInvoiceService } from "../payments/invoiceService";
@@ -82,6 +83,21 @@ export function createCryptoPaymentRouter({
           typeof error?.message === "string"
             ? error.message
             : "Crypto payment configuration is invalid.",
+      });
+    }
+  });
+
+  router.post("/preflight", async (_req, res) => {
+    try {
+      const result = await preflightConfiguredCryptoPayments();
+      return res.json(result);
+    } catch (error: any) {
+      return res.status(503).json({
+        code: "CRYPTO_PAYMENT_PREFLIGHT_FAILED",
+        error:
+          typeof error?.message === "string"
+            ? error.message
+            : "Crypto payment preflight failed.",
       });
     }
   });
