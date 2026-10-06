@@ -161,3 +161,16 @@ test("TON indexed payment config requires one finalized observation", () => {
 
   assert.equal(config.apiKey, "server-only");
 });
+
+test("transfer matching uses the blockchain timestamp instead of wall-clock invoice expiry", () => {
+  const repository = fs.readFileSync(
+    path.join(repoRoot, "server/repositories/cryptoPaymentRepository.ts"),
+    "utf8"
+  );
+
+  assert.match(repository, /created_at <= \$3::timestamptz/);
+  assert.match(repository, /expires_at >= \$3::timestamptz/);
+  assert.match(repository, /expected_amount = \$2::numeric/);
+  assert.match(repository, /lower\(receiving_address\) = lower\(\$4\)/);
+  assert.match(repository, /limit 2/i);
+});
