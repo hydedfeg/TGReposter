@@ -55,7 +55,7 @@ test("payment amount math rejects unsafe precision", () => {
   assert.throws(
     () =>
       applyPaymentDiscriminator({
-        baseAmount: "999999999999999999",
+        baseAmount: "999999999999999999.999999",
         tokenDecimals: 6,
         slot: 9999,
       }),
