@@ -269,7 +269,7 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
     },
     async saveNetworkCursor() {},
     async findInvoicesMatchingObservation() {
-      return [invoice];
+      return [];
     },
     async getTransactionAssignment() {
       return null;
