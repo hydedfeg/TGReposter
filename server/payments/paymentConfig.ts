@@ -2,6 +2,7 @@ import {
   type CryptoPaymentNetwork,
   type CryptoPaymentNetworkConfig,
 } from "./types";
+import { resolveCanonicalUsdtTokenIdentifier } from "./usdtAssetRegistry";
 
 type Environment = Record<string, string | undefined>;
 
@@ -98,10 +99,9 @@ export function loadCryptoPaymentNetworkConfigs(
           `${definition.prefix}_RECEIVING_ADDRESS`,
           definition.id
         ),
-        tokenIdentifier: requiredValue(
-          env,
-          `${definition.prefix}_TOKEN_IDENTIFIER`,
-          definition.id
+        tokenIdentifier: resolveCanonicalUsdtTokenIdentifier(
+          definition.id,
+          env[`${definition.prefix}_TOKEN_IDENTIFIER`]
         ),
         requiredConfirmations,
         maxBlocksPerScan: parsePositiveInteger(
