@@ -18,7 +18,7 @@ function config(): CryptoPaymentNetworkConfig {
     tokenIdentifier: master,
     requiredConfirmations: 1,
     maxBlocksPerScan: 100,
-  requestTimeoutMs: 10000,
+    requestTimeoutMs: 10000,
   };
 }
 
@@ -91,9 +91,9 @@ test("TON watcher reads Jetton decimals and filters incoming non-aborted transfe
     tokenIdentifier: master,
   });
 
-  assert.equal(scan.scannedFrom, "1699996400");
+  assert.equal(scan.scannedFrom, "time:1699996400:0");
   assert.equal(scan.scannedTo, "1700000000");
-  assert.equal(scan.nextCursor, "1699999870");
+  assert.equal(scan.nextCursor, "time:1699999970:0");
   assert.equal(scan.observations.length, 1);
 
   const transfer = scan.observations[0];
@@ -115,6 +115,7 @@ test("TON watcher reads Jetton decimals and filters incoming non-aborted transfe
   assert.equal(transferRequest.searchParams.get("direction"), "in");
   assert.equal(transferRequest.searchParams.get("sort"), "asc");
   assert.equal(transferRequest.searchParams.get("limit"), "100");
+  assert.equal(transferRequest.searchParams.get("offset"), "0");
 
   const firstHeaders = new Headers(headersSeen[0]);
   assert.equal(firstHeaders.get("X-Api-Key"), "server-only-key");
@@ -142,5 +143,88 @@ test("TON watcher rejects mismatched payment identity before API access", async 
         tokenIdentifier: master,
       }),
     /does not match configured payment identity/
+  );
+});
+
+test("TON watcher persists pagination offset when an indexed page is full", async () => {
+  const transferUrls: URL[] = [];
+
+  const fetchMock: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+
+    if (url.pathname === "/api/v3/jetton/masters") {
+      return new Response(
+        JSON.stringify({
+          jetton_masters: [
+            {
+              address: master,
+              jetton_content: { decimals: "6" },
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    }
+
+    if (url.pathname === "/api/v3/jetton/transfers") {
+      transferUrls.push(url);
+      return new Response(
+        JSON.stringify({
+          jetton_transfers: [
+            {
+              amount: "1000000",
+              transaction_aborted: false,
+              transaction_hash: "hash-1",
+              transaction_lt: "100",
+              transaction_now: 1699999900,
+            },
+            {
+              amount: "2000000",
+              transaction_aborted: false,
+              transaction_hash: "hash-2",
+              transaction_lt: "101",
+              transaction_now: 1699999901,
+            },
+          ],
+        }),
+        { status: 200 }
+      );
+    }
+
+    throw new Error(`Unexpected TON API path ${url.pathname}`);
+  };
+
+  const adapter = new TonCenterUsdtAdapter(
+    config(),
+    fetchMock,
+    () => 1_700_000_000_000
+  );
+
+  const first = await adapter.scanTransfers({
+    receivingAddress: merchant,
+    tokenIdentifier: master,
+    maxBlocks: 2,
+  });
+
+  assert.equal(first.nextCursor, "time:1699996400:2");
+  assert.equal(
+    transferUrls[0].searchParams.get("offset"),
+    "0"
+  );
+
+  await adapter.scanTransfers({
+    receivingAddress: merchant,
+    tokenIdentifier: master,
+    cursor: first.nextCursor,
+    maxBlocks: 2,
+  });
+
+  assert.equal(
+    transferUrls[1].searchParams.get("start_utime"),
+    "1699996400"
+  );
+  assert.equal(
+    transferUrls[1].searchParams.get("offset"),
+    "2"
   );
 });
