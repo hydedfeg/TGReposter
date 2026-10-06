@@ -64,6 +64,61 @@ function parsePositiveInteger(
   return parsed;
 }
 
+function buildNetworkConfig(
+  env: Environment,
+  definition: NetworkEnvironmentDefinition
+): CryptoPaymentNetworkConfig {
+  const requiredConfirmations = parsePositiveInteger(
+    env[`${definition.prefix}_CONFIRMATIONS`],
+    definition.id,
+    "required confirmations",
+    definition.family === "ton" ? 1 : undefined
+  );
+
+  if (definition.family === "ton" && requiredConfirmations !== 1) {
+    throw new Error(
+      'Crypto payment network "ton" requires CRYPTO_USDT_TON_CONFIRMATIONS=1 when using indexed finalized transfers.'
+    );
+  }
+
+  return {
+    id: definition.id,
+    family: definition.family,
+    asset: "USDT" as const,
+    enabled: isEnabled(env[`${definition.prefix}_ENABLED`]),
+    rpcUrl: requiredValue(
+      env,
+      `${definition.prefix}_RPC_URL`,
+      definition.id
+    ),
+    ...(definition.family === "ton" && env.CRYPTO_USDT_TON_API_KEY?.trim()
+      ? { apiKey: env.CRYPTO_USDT_TON_API_KEY.trim() }
+      : {}),
+    receivingAddress: requiredValue(
+      env,
+      `${definition.prefix}_RECEIVING_ADDRESS`,
+      definition.id
+    ),
+    tokenIdentifier: resolveCanonicalUsdtTokenIdentifier(
+      definition.id,
+      env[`${definition.prefix}_TOKEN_IDENTIFIER`]
+    ),
+    requiredConfirmations,
+    maxBlocksPerScan: parsePositiveInteger(
+      env[`${definition.prefix}_MAX_BLOCKS_PER_SCAN`],
+      definition.id,
+      "max blocks per scan",
+      1000
+    ),
+    requestTimeoutMs: parsePositiveInteger(
+      env.CRYPTO_PAYMENT_REQUEST_TIMEOUT_MS,
+      definition.id,
+      "request timeout",
+      10_000
+    ),
+  };
+}
+
 export function loadCryptoPaymentNetworkConfigs(
   env: Environment = process.env
 ): CryptoPaymentNetworkConfig[] {
@@ -77,56 +132,28 @@ export function loadCryptoPaymentNetworkConfigs(
       return [];
     }
 
-    const requiredConfirmations = parsePositiveInteger(
-      env[`${definition.prefix}_CONFIRMATIONS`],
-      definition.id,
-      "required confirmations",
-      definition.family === "ton" ? 1 : undefined
+    return [buildNetworkConfig(env, definition)];
+  });
+}
+
+export function loadCryptoPaymentPreflightConfigs(
+  env: Environment = process.env
+): CryptoPaymentNetworkConfig[] {
+  return NETWORK_DEFINITIONS.flatMap((definition) => {
+    const hasRpc = Boolean(
+      env[`${definition.prefix}_RPC_URL`]?.trim()
+    );
+    const hasReceivingAddress = Boolean(
+      env[`${definition.prefix}_RECEIVING_ADDRESS`]?.trim()
+    );
+    const explicitlyEnabled = isEnabled(
+      env[`${definition.prefix}_ENABLED`]
     );
 
-    if (definition.family === "ton" && requiredConfirmations !== 1) {
-      throw new Error(
-        'Crypto payment network "ton" requires CRYPTO_USDT_TON_CONFIRMATIONS=1 when using indexed finalized transfers.'
-      );
+    if (!hasRpc && !hasReceivingAddress && !explicitlyEnabled) {
+      return [];
     }
 
-    return [
-      {
-        id: definition.id,
-        family: definition.family,
-        asset: "USDT" as const,
-        enabled: true,
-        rpcUrl: requiredValue(
-          env,
-          `${definition.prefix}_RPC_URL`,
-          definition.id
-        ),
-        ...(definition.family === "ton" && env.CRYPTO_USDT_TON_API_KEY?.trim()
-          ? { apiKey: env.CRYPTO_USDT_TON_API_KEY.trim() }
-          : {}),
-        receivingAddress: requiredValue(
-          env,
-          `${definition.prefix}_RECEIVING_ADDRESS`,
-          definition.id
-        ),
-        tokenIdentifier: resolveCanonicalUsdtTokenIdentifier(
-          definition.id,
-          env[`${definition.prefix}_TOKEN_IDENTIFIER`]
-        ),
-        requiredConfirmations,
-        maxBlocksPerScan: parsePositiveInteger(
-          env[`${definition.prefix}_MAX_BLOCKS_PER_SCAN`],
-          definition.id,
-          "max blocks per scan",
-          1000
-        ),
-        requestTimeoutMs: parsePositiveInteger(
-          env.CRYPTO_PAYMENT_REQUEST_TIMEOUT_MS,
-          definition.id,
-          "request timeout",
-          10_000
-        ),
-      },
-    ];
+    return [buildNetworkConfig(env, definition)];
   });
 }
