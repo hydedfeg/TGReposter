@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { TonCenterUsdtAdapter } from "../server/payments/tonCenterUsdtAdapter";
 import type { CryptoPaymentNetworkConfig } from "../server/payments/types";
 
-const merchant = "EQMerchantWalletAddress";
+const merchant = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
 const master = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs";
 
 function config(): CryptoPaymentNetworkConfig {
@@ -226,5 +226,24 @@ test("TON watcher persists pagination offset when an indexed page is full", asyn
   assert.equal(
     transferUrls[1].searchParams.get("offset"),
     "2"
+  );
+});
+
+test("TON preflight rejects malformed merchant receiving addresses", async () => {
+  const badConfig = {
+    ...config(),
+    receivingAddress: "not-a-ton-address",
+  };
+
+  const adapter = new TonCenterUsdtAdapter(
+    badConfig,
+    async () => {
+      throw new Error("TON API must not be called");
+    }
+  );
+
+  await assert.rejects(
+    () => adapter.getAssetDecimals(),
+    /Invalid TON configured receiving address format/
   );
 });
