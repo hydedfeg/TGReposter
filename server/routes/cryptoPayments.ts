@@ -18,6 +18,7 @@ function serializeInvoice(invoice: CryptoPaymentInvoiceRecord) {
     id: invoice.id,
     asset: invoice.asset_code,
     network: invoice.network,
+    requestedAmount: invoice.requested_amount,
     amount: invoice.expected_amount,
     receivingAddress: invoice.receiving_address,
     tokenIdentifier: invoice.token_identifier,
@@ -117,12 +118,15 @@ export function createCryptoPaymentRouter({
     const network = req.body?.network;
     const baseAmount = cleanNonEmptyString(req.body?.baseAmount);
     const expiresAt = cleanNonEmptyString(req.body?.expiresAt);
+    const requestKey = cleanNonEmptyString(
+      req.get("Idempotency-Key")
+    );
 
-    if (!isPaymentNetwork(network) || !baseAmount || !expiresAt) {
+    if (!isPaymentNetwork(network) || !baseAmount || !expiresAt || !requestKey) {
       return res.status(400).json({
         code: "CRYPTO_PAYMENT_INVOICE_INPUT_INVALID",
         error:
-          "network, baseAmount, and expiresAt are required for a payment invoice.",
+          "network, baseAmount, expiresAt, and an Idempotency-Key header are required for a payment invoice.",
       });
     }
 
@@ -139,6 +143,7 @@ export function createCryptoPaymentRouter({
         network,
         baseAmount,
         expiresAt,
+        requestKey,
       });
 
       return res.status(201).json({
