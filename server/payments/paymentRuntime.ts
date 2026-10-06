@@ -107,6 +107,68 @@ export async function preflightConfiguredCryptoPayments(
   };
 }
 
+interface CryptoPaymentPreflightLogger {
+  info(message: string, details?: unknown): void;
+  warn(message: string, details?: unknown): void;
+  error(message: string, details?: unknown): void;
+}
+
+export async function runCryptoPaymentStartupPreflight(
+  env: Record<string, string | undefined> = process.env,
+  logger: CryptoPaymentPreflightLogger = console,
+  createAdapter: PaymentAdapterFactory = createCryptoPaymentNetworkAdapter
+): Promise<CryptoPaymentPreflightResult | null> {
+  if (
+    env.CRYPTO_PAYMENT_PREFLIGHT_ON_STARTUP?.trim().toLowerCase() !==
+    "true"
+  ) {
+    return null;
+  }
+
+  try {
+    const result = await preflightConfiguredCryptoPayments(
+      env,
+      createAdapter
+    );
+
+    if (!result.enabled || result.networks.length === 0) {
+      logger.warn("Crypto payment startup preflight found no configured networks.");
+      return result;
+    }
+
+    const failed = result.networks.filter((network) => !network.ok);
+    const summary = result.networks.map((network) => ({
+      network: network.network,
+      ok: network.ok,
+      asset: network.asset,
+      assetProvenance: network.assetProvenance,
+      assetDecimals: network.assetDecimals,
+      error: network.error,
+    }));
+
+    if (failed.length > 0) {
+      logger.warn("Crypto payment startup preflight completed with failures.", {
+        networks: summary,
+      });
+    } else {
+      logger.info("Crypto payment startup preflight passed.", {
+        networks: summary,
+      });
+    }
+
+    return result;
+  } catch (error: any) {
+    logger.error("Crypto payment startup preflight failed.", {
+      name: error?.name,
+      message:
+        typeof error?.message === "string"
+          ? error.message
+          : "Unknown crypto payment preflight error.",
+    });
+    return null;
+  }
+}
+
 export async function scanConfiguredCryptoPayments(
   env: Record<string, string | undefined> = process.env
 ): Promise<CryptoPaymentRuntimeResult> {
