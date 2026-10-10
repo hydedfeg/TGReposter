@@ -117,6 +117,28 @@ const system = {
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
   payments: {
+    alerts: {
+      "title": "Payment alerts & reconciliation",
+      "count": "{{count}} alerts",
+      "critical": "{{count}} critical reconciliation issues",
+      "description": "Automatically checks scanner freshness and persisted payment ledger consistency while this page is open.",
+      "lastChecked": "Checked",
+      "none": "No active issues detected in the available records.",
+      "truncated": "More reconciliation issues exist; this view shows the first 30 ledger exceptions.",
+      "scope": "Read-only. Unmatched on-chain transfers are not yet retained for review. No alerts are sent when this dashboard is closed.",
+      "severity": {
+        "critical": "Critical",
+        "warning": "Review"
+      },
+      "codes": {
+        "scanner_delayed": "Scanner has not completed a recent scan",
+        "scanner_not_started": "Enabled scanner has not recorded a checkpoint",
+        "paid_without_confirmed_transfer": "Paid invoice has no confirmed transfer",
+        "confirmed_transfer_unpaid": "Confirmed transfer but invoice is not paid",
+        "confirmation_delayed": "Invoice has been confirming for more than one hour",
+        "invoice_exception": "Invoice requires manual review"
+      }
+    },
     scanHealth: {
       recent: "Recent checkpoint",
       stale: "Scanner delayed",

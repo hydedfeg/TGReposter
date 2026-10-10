@@ -50,7 +50,23 @@ interface NetworkScanHealth {
   lastScannedAt: string | null;
   ageSeconds: number | null;
 }
+interface ReconciliationAlert {
+  code: "scanner_delayed" | "scanner_not_started"
+    | "paid_without_confirmed_transfer" | "confirmed_transfer_unpaid"
+    | "confirmation_delayed" | "invoice_exception";
+  severity: "warning" | "critical";
+  network: PaymentNetwork;
+  invoiceId: string | null;
+  ownerPrincipal: string | null;
+  occurredAt: string | null;
+}
 interface Overview {
+  reconciliation: {
+    checkedAt: string;
+    alerts: ReconciliationAlert[];
+    truncated: boolean;
+    includesUnmatchedOnChainTransfers: false;
+  };
   networkHealth: { checkedAt: string; staleAfterSeconds: number; networks: NetworkScanHealth[] };
   summary: { total: number; paid: number; active: number; attention: number };
   networkStates: ScanState[];
@@ -132,6 +148,24 @@ export default function CryptoPayments({ token }: { token: string }) {
     return () => controller.abort();
   }, [reload, t]);
 
+  // Poll only while this privileged workspace is mounted and visible.
+  // The polling controller is cancelled on logout, account switching, or unmount.
+  useEffect(() => {
+    const controller = new AbortController();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void reload(controller.signal).catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : t("payments.requestFailed"));
+        }
+      });
+    }, 60_000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [reload, t]);
+
   const execute = async (action: Operation | "refresh") => {
     if (busy) return;
     setBusy(action);
@@ -161,6 +195,8 @@ export default function CryptoPayments({ token }: { token: string }) {
     }
   };
 
+  const reconciliationAlerts = overview?.reconciliation.alerts ?? [];
+  const criticalAlerts = reconciliationAlerts.filter(alert => alert.severity === "critical").length;
   const summary = overview?.summary;
   const metrics = [
     { key: "total", label: t("payments.totalInvoices"), value: summary?.total ?? 0, icon: CreditCard },
@@ -194,6 +230,50 @@ export default function CryptoPayments({ token }: { token: string }) {
       {notice && <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">{notice}</div>}
       {!overview && busy === "refresh" && <div role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("payments.loading")}</div>}
       {overview && <>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-label={t("payments.alerts.title")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className={`h-5 w-5 ${reconciliationAlerts.length ? "text-amber-600" : "text-emerald-600"}`} aria-hidden="true" />
+              <h3 className="font-display text-lg font-bold text-slate-900">{t("payments.alerts.title")}</h3>
+            </div>
+            <StatusPill
+              state={reconciliationAlerts.length ? "warn" : "good"}
+              label={t("payments.alerts.count", { count: reconciliationAlerts.length })}
+            />
+          </div>
+          <p className="mt-2 text-xs leading-5 text-slate-500">
+            {t("payments.alerts.description")} {t("payments.alerts.lastChecked")}: {date(overview.reconciliation.checkedAt)}
+          </p>
+          {criticalAlerts > 0 && <p className="mt-3 text-sm font-semibold text-rose-700" role="status">
+            {t("payments.alerts.critical", { count: criticalAlerts })}
+          </p>}
+          {reconciliationAlerts.length === 0 ? (
+            <p className="mt-4 text-sm font-medium text-emerald-700">{t("payments.alerts.none")}</p>
+          ) : (
+            <div className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
+              {reconciliationAlerts.map((alert, index) => (
+                <div key={`${alert.code}-${alert.invoiceId ?? alert.network}-${index}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="text-sm font-semibold text-slate-900">{t(`payments.alerts.codes.${alert.code}`)}</p>
+                    <p className="text-xs text-slate-500">
+                      {NETWORK_NAMES[alert.network]}
+                      {alert.invoiceId && <> · {t("payments.invoice")}: <span dir="ltr" className="font-mono" title={alert.invoiceId}>{compact(alert.invoiceId)}</span></>}
+                      {alert.ownerPrincipal && <> · {t("payments.owner")}: <span dir="ltr" className="font-mono" title={alert.ownerPrincipal}>{compact(alert.ownerPrincipal, 24)}</span></>}
+                    </p>
+                  </div>
+                  <StatusPill
+                    state={alert.severity === "critical" ? "warn" : "neutral"}
+                    label={t(`payments.alerts.severity.${alert.severity}`)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          {overview.reconciliation.truncated && (
+            <p role="status" className="mt-3 text-sm text-amber-700">{t("payments.alerts.truncated")}</p>
+          )}
+          <p className="mt-3 text-xs leading-5 text-slate-500">{t("payments.alerts.scope")}</p>
+        </section>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {metrics.map(metric => <div key={metric.key} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <metric.icon className="h-5 w-5 text-sky-600" />
