@@ -1,4 +1,5 @@
 import { normalizeCurationOutput } from "../curationOutput";
+import { extractOpenRouterUsage, type OpenRouterCostUsage } from "../../billing/aiUnits";
 
 export const OPENROUTER_CHAT_COMPLETIONS_URL =
   "https://openrouter.ai/api/v1/chat/completions";
@@ -14,10 +15,12 @@ interface OpenRouterRequest {
   prompt: string;
   fetchImpl?: OpenRouterFetch;
   signal?: AbortSignal;
+  maxTokens?: number;
+  includeUsage?: boolean;
 }
 
 export type OpenRouterResult =
-  | { ok: true; result: string }
+  | { ok: true; result: string; usage?: OpenRouterCostUsage | null; generationId?: string; modelId?: string }
   | { ok: false; status: number; error: string };
 
 export async function requestOpenRouterCuration({
@@ -25,7 +28,9 @@ export async function requestOpenRouterCuration({
   model,
   prompt,
   fetchImpl = globalThis.fetch,
-  signal
+  signal,
+  maxTokens,
+  includeUsage = false
 }: OpenRouterRequest): Promise<OpenRouterResult> {
   const response = await fetchImpl(OPENROUTER_CHAT_COMPLETIONS_URL, {
     method: "POST",
@@ -38,6 +43,7 @@ export async function requestOpenRouterCuration({
     },
     body: JSON.stringify({
       model,
+      ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
       messages: [
         {
           role: "user",
@@ -63,5 +69,22 @@ export async function requestOpenRouterCuration({
 
   const data = (await response.json()) as any;
   const result = normalizeCurationOutput(data.choices?.[0]?.message?.content);
-  return { ok: true, result };
+  if (!includeUsage) return { ok: true, result };
+
+  // OpenRouter includes billed usage.cost on non-streaming completions.
+  // Missing cost is NOT zero: commercial callers must retain the reservation
+  // for later reconciliation (using generationId when provided).
+  let usage: OpenRouterCostUsage | null = null;
+  try {
+    usage = extractOpenRouterUsage(data);
+  } catch {
+    // Leave the reservation pending; never grant a free request by assumption.
+  }
+  return {
+    ok: true,
+    result,
+    usage,
+    generationId: typeof data.id === "string" ? data.id : undefined,
+    modelId: typeof data.model === "string" ? data.model : undefined
+  };
 }
