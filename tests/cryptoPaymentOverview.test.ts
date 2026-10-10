@@ -17,7 +17,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
     return { rows: [] };
   }, {});
 
-  assert.equal(queries.length, 5);
+  assert.equal(queries.length, 6);
   assert.equal(output.summary.paid, 1);
   assert.deepEqual(output.networkStates, []);
   assert.equal(output.networkHealth.networks.length, 3);
@@ -25,13 +25,17 @@ test("super-admin overview is bounded, read-only, and does not select payment se
   assert.deepEqual(output.invoices, []);
   assert.deepEqual(output.transactions, []);
   assert.deepEqual(output.events, []);
+  assert.deepEqual(output.reconciliation.alerts, []);
+  assert.equal(output.reconciliation.truncated, false);
+  assert.equal(output.reconciliation.includesUnmatchedOnChainTransfers, false);
 
   for (const sql of queries) {
-    assert.match(sql, /^\s*select\s/i);
+    assert.match(sql, /^\s*(?:select|with)\s/i);
     assert.doesNotMatch(sql, /select\s+\*/i);
     assert.doesNotMatch(sql, /private_key|seed_phrase|rpc_url|api_key|credential/i);
   }
 
+  assert.ok(queries.some(sql => /limit 31/i.test(sql)));
   assert.ok(queries.some(sql => /limit 50/i.test(sql)));
   assert.ok(queries.filter(sql => /limit 30/i.test(sql)).length === 2);
   assert.ok(queries.some(sql => /owner_principal/i.test(sql)));
@@ -120,4 +124,64 @@ test("disabled scanner ignores old records; invalid scan timestamps are not heal
   };
   const enabled = assessCryptoPaymentNetworkHealth([row], env, new Date("2026-10-10T15:00:00Z"));
   assert.equal(enabled.networks[2].state, "never_scanned");
+});
+
+test("reconciliation returns bounded, owner-attributed exceptions and scanner warnings", async () => {
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_PAYMENT_SCAN_INTERVAL_MS: "60000",
+    CRYPTO_USDT_BSC_ENABLED: "true",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS: "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+  };
+  const now = new Date("2026-10-10T15:00:00Z");
+  const alertRow = {
+    code: "paid_without_confirmed_transfer",
+    invoice_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    owner_principal: "supabase:owner-one",
+    network: "bsc",
+    occurred_at: "2026-10-10T14:00:00Z",
+  };
+  const result = await loadCryptoPaymentOverview(async (sql) => {
+    if (sql.includes("count(*)::int as total")) {
+      return { rows: [{ total: 1, paid: 1, active: 0, attention: 0 }] };
+    }
+    if (sql.includes("from public.crypto_payment_network_state")) {
+      return { rows: [{
+        network: "bsc",
+        receiving_address: "0x2222222222222222222222222222222222222222",
+        token_identifier: "0x55d398326f99059ff775485246999027b3197955",
+        last_scanned_at: "2026-10-10T14:54:00Z",
+      }] };
+    }
+    if (sql.includes("with issues as")) return { rows: [alertRow] };
+    return { rows: [] };
+  }, env, now);
+
+  assert.equal(result.reconciliation.alerts.length, 2);
+  assert.equal(result.reconciliation.alerts[0].code, "scanner_delayed");
+  assert.equal(result.reconciliation.alerts[1].code, "paid_without_confirmed_transfer");
+  assert.equal(result.reconciliation.alerts[1].severity, "critical");
+  assert.equal(result.reconciliation.alerts[1].ownerPrincipal, "supabase:owner-one");
+  const response = JSON.stringify(result);
+  assert.doesNotMatch(response, /rpc.example/);
+  assert.doesNotMatch(response, /2222222222222222222222222222222222222222/);
+});
+
+test("reconciliation reports truncated results rather than silently claiming completeness", async () => {
+  const result = await loadCryptoPaymentOverview(async (sql) => {
+    if (sql.includes("with issues as")) return {
+      rows: Array.from({ length: 31 }, (_, n) => ({
+        code: "invoice_exception",
+        invoice_id: String(n),
+        network: "ethereum",
+        owner_principal: "supabase:owner-two",
+        occurred_at: "2026-10-10T14:00:00Z",
+      })),
+    };
+    return { rows: [] };
+  }, {});
+  assert.equal(result.reconciliation.alerts.length, 30);
+  assert.equal(result.reconciliation.truncated, true);
 });
