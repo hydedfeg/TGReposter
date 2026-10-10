@@ -70,6 +70,8 @@ create table public.billing_subscription_terms (
     foreign key(owner_principal,order_id)
     references public.billing_subscription_orders(owner_principal,id) on delete restrict
 );
+create unique index billing_subscription_terms_one_active_idx
+  on public.billing_subscription_terms(owner_principal) where status='active';
 create unique index billing_subscription_terms_one_scheduled_idx
   on public.billing_subscription_terms(owner_principal) where status='scheduled';
 create index billing_subscription_terms_owner_dates_idx
