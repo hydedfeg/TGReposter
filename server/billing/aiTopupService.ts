@@ -183,9 +183,25 @@ export async function fulfillVerifiedTopup(
     const { rows: matches } = await client.query(
       `select ($1::numeric = $2::numeric) as amount_matches,
          exists (
-           select 1 from public.crypto_payment_transactions t
+           select 1
+           from public.crypto_payment_transactions t
+           join public.crypto_payment_invoices invoice
+             on invoice.owner_principal=t.owner_principal and invoice.id=t.invoice_id
            where t.owner_principal=$3 and t.invoice_id=$4::uuid
+             and invoice.status='paid' and invoice.confirmed_at is not null
              and t.status='confirmed' and t.confirmed_at is not null
+             and t.confirmations > 0
+             and t.network=invoice.network
+             and t.amount=invoice.expected_amount
+             and (
+               (t.network in ('bsc','ethereum')
+                 and lower(t.to_address)=lower(invoice.receiving_address)
+                 and lower(t.token_identifier)=lower(invoice.token_identifier))
+               or
+               (t.network='ton'
+                 and t.to_address=invoice.receiving_address
+                 and t.token_identifier=invoice.token_identifier)
+             )
          ) as confirmed_transaction`,
       [order.quoted_usdt_amount,order.invoice_amount,owner,order.invoice_id]
     );
