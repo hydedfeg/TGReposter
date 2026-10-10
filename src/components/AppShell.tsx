@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   Database,
+  CreditCard,
   Filter,
   History,
   Home,
@@ -35,7 +36,8 @@ export type WorkspaceView =
   | "destination"
   | "ai"
   | "team"
-  | "database";
+  | "database"
+  | "payments";
 
 type UserRole = "super-admin" | "admin" | null;
 
@@ -73,6 +75,7 @@ const personalItems: NavItem[] = [
 const systemItems: NavItem[] = [
   { view: "team", labelKey: "items.teamAccess", icon: Users },
   { view: "database", labelKey: "items.systemSettings", icon: Database },
+  { view: "payments", labelKey: "items.payments", icon: CreditCard },
 ];
 
 const titleKeys: Record<WorkspaceView, string> = {
@@ -86,6 +89,7 @@ const titleKeys: Record<WorkspaceView, string> = {
   ai: "titles.ai",
   team: "titles.team",
   database: "titles.database",
+  payments: "titles.payments",
 };
 
 function SidebarButton({
@@ -160,7 +164,7 @@ export default function AppShell({
   const [moreOpen, setMoreOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("tgreposter-sidebar-open") !== "false");
   const activeTargets = targets?.filter((target) => target.enabled).length || 0;
-  const isMoreView = ["history", "channels", "filters", "destination", "ai", "team", "database"].includes(activeView);
+  const isMoreView = ["history", "channels", "filters", "destination", "ai", "team", "database", "payments"].includes(activeView);
 
   useEffect(() => {
     setMoreOpen(false);
