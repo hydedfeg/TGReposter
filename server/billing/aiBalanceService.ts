@@ -6,6 +6,7 @@ import {
   displayAiUnits,
   normalizeCostUsd,
   parseAiUnits,
+  parseSignedAiUnits,
 } from "./aiUnits";
 
 /**
@@ -135,8 +136,8 @@ export async function reserveAiUnits(input: ReserveAiInput): Promise<AiReservati
       [owner, period.start, period.end]
     );
     const includedAvailable = period.start
-      ? parseAiUnits(String(balances[0]?.included ?? "0")) : 0n;
-    const purchasedAvailable = parseAiUnits(String(balances[0]?.purchased ?? "0"));
+      ? parseSignedAiUnits(String(balances[0]?.included ?? "0")) : 0n;
+    const purchasedAvailable = parseSignedAiUnits(String(balances[0]?.purchased ?? "0"));
     const positiveIncluded = includedAvailable > 0n ? includedAvailable : 0n;
     const positivePurchased = purchasedAvailable > 0n ? purchasedAvailable : 0n;
 
@@ -258,7 +259,7 @@ export async function settleAiUnits(input: AiSettlementInput): Promise<AiSettlem
     let start: string | null = null;
     let end: string | null = null;
     for (const hold of holds) {
-      const held = -parseAiUnits(hold.units_delta);
+      const held = -parseSignedAiUnits(hold.units_delta);
       if (held <= 0n) throw new AiUnitsError(500, "AI_LEDGER_INCONSISTENT", "Invalid reservation.");
       reserved += held;
       if (hold.balance_type === "included") {
