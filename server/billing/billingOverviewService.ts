@@ -104,7 +104,7 @@ export const BILLING_AI_QUERY = `
 `;
 
 export const BILLING_ORDERS_QUERY = `
-  select * from (
+  select id,type,description,status,payment_status,listed_eur_cents,created_at from (
     select o.id::text as id, 'subscription'::text as type,
       p.display_name || ' (' || o.billing_interval || ')' as description,
       o.status, i.status as payment_status, o.listed_eur_cents, o.created_at
