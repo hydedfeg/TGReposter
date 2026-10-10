@@ -5,6 +5,7 @@ import {
 } from "./subscriptionCheckoutService";
 import { fulfillVerifiedTopup } from "./aiTopupService";
 import { ensureMonthlyAIAllowance } from "./monthlyAIAllowance";
+import { noteBillingOperationFailure, clearBillingOperationFailure } from "./billingOperationsRetry";
 
 /**
  * The billing operator is an INTERNAL Railway process, never an HTTP endpoint.
@@ -57,6 +58,8 @@ export interface BillingBatchDependencies {
   fulfillTopup?: typeof fulfillVerifiedTopup;
   activateRenewal?: typeof activateDueSubscriptionTerm;
   grantAllowance?: typeof ensureMonthlyAIAllowance;
+  noteFailure?: typeof noteBillingOperationFailure;
+  clearFailure?: typeof clearBillingOperationFailure;
 }
 
 const STAGES: BillingStage[] = [
@@ -86,6 +89,11 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
     join public.billing_plans p on p.id=o.plan_id
     where o.status='pending' and i.status='paid'
       and i.confirmed_at is not null and p.is_published
+      and not exists (
+        select 1 from public.billing_operation_attempts a
+        where a.stage='subscriptions' and a.owner_principal=o.owner_principal
+          and a.item_id=o.id and a.next_retry_at>now()
+      )
     order by o.created_at asc, o.id asc limit $1
   `,
   topups: `
@@ -96,6 +104,11 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
     join public.billing_ai_topup_packs p on p.id=o.pack_id
     where o.status='pending' and i.status='paid'
       and i.confirmed_at is not null and p.is_published
+      and not exists (
+        select 1 from public.billing_operation_attempts a
+        where a.stage='topups' and a.owner_principal=o.owner_principal
+          and a.item_id=o.id and a.next_retry_at>now()
+      )
     order by o.created_at asc, o.id asc limit $1
   `,
   renewals: `
@@ -105,6 +118,11 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
     where t.status='scheduled'
       and t.term_start <= now() and t.term_end > now()
       and p.is_published
+      and not exists (
+        select 1 from public.billing_operation_attempts a
+        where a.stage='renewals' and a.owner_principal=t.owner_principal
+          and a.item_id=t.id and a.next_retry_at>now()
+      )
     order by t.term_start asc, t.id asc limit $1
   `,
   allowances: `
@@ -119,6 +137,11 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
         where l.owner_principal=s.owner_principal
           and l.balance_type='included' and l.event_kind='grant'
           and l.period_start <= now() and l.period_end > now()
+      )
+      and not exists (
+        select 1 from public.billing_operation_attempts a
+        where a.stage='allowances' and a.owner_principal=s.owner_principal
+          and a.item_id=s.id and a.next_retry_at>now()
       )
     order by s.current_period_end asc, s.id asc limit $1
   `
@@ -168,6 +191,8 @@ export async function runBillingOperationsBatch(
   const fulfillTopup = dependencies.fulfillTopup ?? fulfillVerifiedTopup;
   const activate = dependencies.activateRenewal ?? activateDueSubscriptionTerm;
   const grant = dependencies.grantAllowance ?? ensureMonthlyAIAllowance;
+  const noteFailure = dependencies.noteFailure ?? noteBillingOperationFailure;
+  const clearFailure = dependencies.clearFailure ?? clearBillingOperationFailure;
   report.enabled = true;
 
   for (const stage of STAGES) {
@@ -185,11 +210,15 @@ export async function runBillingOperationsBatch(
           await fulfillTopup(candidate.owner_principal, candidate.id);
         } else if (stage === "renewals") {
           const activated = await activate(candidate.owner_principal);
-          if (!activated) continue; // already advanced by another worker
+          if (!activated) {
+            await clearFailure(stage,candidate);
+            continue; // already advanced by another worker
+          }
         } else {
           await grant(candidate.owner_principal);
         }
         stages[stage].completed += 1;
+        await clearFailure(stage,candidate);
       } catch (error) {
         stages[stage].failed += 1;
         const code = (error && typeof error === "object" && "code" in error
@@ -198,6 +227,12 @@ export async function runBillingOperationsBatch(
         // Deliberately omit tenant IDs, addresses and invoice amounts
         // from metrics and logs.
         report.failureCodes.push({ stage, code: code.slice(0, 64) });
+        try {
+          await noteFailure(stage,candidate,code);
+        } catch {
+          // A transient retry-write problem must be visible, not swallowed.
+          report.failureCodes.push({stage,code:"RETRY_RECORD_FAILED"});
+        }
       }
     }
   }
