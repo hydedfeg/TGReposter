@@ -156,7 +156,7 @@ export interface SubscriptionFulfillment {
   interval: string;
   termStart: string;
   termEnd: string;
-  status: "active" | "scheduled";
+  status: "active" | "scheduled" | "completed";
   created: boolean;
 }
 
@@ -214,7 +214,7 @@ export async function fulfillVerifiedSubscription(
       await client.query("COMMIT");
       return {orderId:order.id,planId:order.plan_id,interval:order.billing_interval,
         termStart:iso(existingTerm[0].term_start),termEnd:iso(existingTerm[0].term_end),
-        status:existingTerm[0].status==="scheduled"?"scheduled":"active",created:false};
+        status:existingTerm[0].status,created:false};
     }
     if (order.status!=="pending") {
       throw new SubscriptionCheckoutError("ORDER_NOT_PENDING","Order is not eligible for fulfillment.");
