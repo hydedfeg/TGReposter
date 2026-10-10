@@ -15,6 +15,7 @@ const navigation = {
     aiConfiguration: "إعدادات الذكاء الاصطناعي الخاصة بي",
     teamAccess: "الفريق والصلاحيات",
     systemSettings: "إعدادات النظام",
+    payments: "المدفوعات",
   },
   titles: {
     dashboard: "لوحة التحكم",
@@ -27,6 +28,7 @@ const navigation = {
     ai: "إعدادات الذكاء الاصطناعي",
     team: "الفريق والصلاحيات",
     database: "إعدادات النظام",
+    payments: "عمليات الدفع",
   },
   mobile: {
     home: "الرئيسية",
