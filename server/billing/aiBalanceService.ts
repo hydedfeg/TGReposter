@@ -141,7 +141,10 @@ export async function reserveAiUnits(input: ReserveAiInput): Promise<AiReservati
     const positiveIncluded = includedAvailable > 0n ? includedAvailable : 0n;
     const positivePurchased = purchasedAvailable > 0n ? purchasedAvailable : 0n;
 
-    if (positiveIncluded + positivePurchased < requested) {
+    // Net debt must offset otherwise-positive grants. Without this check,
+    // purchased-balance overages could be bypassed by new included credits.
+    if (includedAvailable + purchasedAvailable < requested
+      || positiveIncluded + positivePurchased < requested) {
       throw new AiUnitsError(402, "AI_BALANCE_EXHAUSTED", "Not enough AI Units for this model request.");
     }
     const included = minBigint(positiveIncluded, requested);
