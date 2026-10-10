@@ -20,6 +20,8 @@ test("super-admin overview is bounded, read-only, and does not select payment se
   assert.equal(queries.length, 5);
   assert.equal(output.summary.paid, 1);
   assert.deepEqual(output.networkStates, []);
+  assert.equal(output.networkHealth.networks.length, 3);
+  assert.ok(output.networkHealth.networks.every(network => network.state === "disabled"));
   assert.deepEqual(output.invoices, []);
   assert.deepEqual(output.transactions, []);
   assert.deepEqual(output.events, []);
@@ -52,4 +54,70 @@ test("payments workspace is only mounted for super-admins and has a navigation i
   assert.match(app, /activeWorkspaceTab === "payments" && currentUserRole === "super-admin"/);
   assert.match(shell, /view: "payments", labelKey: "items\.payments"/);
   assert.match(shell, /currentUserRole === "super-admin"/);
+});
+
+test("network health recognizes recent, stale and missing checkpoints without revealing wallet identity", async () => {
+  const { assessCryptoPaymentNetworkHealth } = await import("../server/payments/paymentHealth");
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_PAYMENT_SCAN_INTERVAL_MS: "60000",
+    CRYPTO_USDT_BSC_ENABLED: "true",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS: "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+    CRYPTO_USDT_ETHEREUM_ENABLED: "true",
+    CRYPTO_USDT_ETHEREUM_RPC_URL: "https://rpc.example",
+    CRYPTO_USDT_ETHEREUM_RECEIVING_ADDRESS: "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_ETHEREUM_CONFIRMATIONS: "80",
+  };
+  const now = new Date("2026-10-10T15:00:00.000Z");
+  const states = [
+    {
+      network: "bsc" as const,
+      receiving_address: "0x2222222222222222222222222222222222222222",
+      token_identifier: "0x55d398326f99059ff775485246999027b3197955",
+      last_scanned_at: "2026-10-10T14:59:30Z",
+    },
+    {
+      network: "ethereum" as const,
+      receiving_address: "0x2222222222222222222222222222222222222222",
+      token_identifier: "0xdac17f958d2ee523a2206206994597c13d831ec7",
+      last_scanned_at: "2026-10-10T14:55:00Z",
+    },
+  ];
+
+  const assessment = assessCryptoPaymentNetworkHealth(states, env, now);
+  assert.equal(assessment.staleAfterSeconds, 180);
+  assert.deepEqual(assessment.networks.map(item => item.state), ["recent", "stale", "disabled"]);
+  assert.equal(assessment.networks[0].ageSeconds, 30);
+  assert.equal(assessment.networks[1].ageSeconds, 300);
+  assert.ok(!JSON.stringify(assessment).includes("2222222222222222222222222222222222222222"));
+
+  const noCurrentWallet = assessCryptoPaymentNetworkHealth(
+    [{ ...states[0], receiving_address: "0x3333333333333333333333333333333333333333" }],
+    { ...env, CRYPTO_USDT_ETHEREUM_ENABLED: "false" },
+    now
+  );
+  assert.equal(noCurrentWallet.networks[0].state, "never_scanned");
+});
+
+test("disabled scanner ignores old records; invalid scan timestamps are not healthy", async () => {
+  const { assessCryptoPaymentNetworkHealth } = await import("../server/payments/paymentHealth");
+  const row = {
+    network: "ton" as const,
+    receiving_address: "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+    token_identifier: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+    last_scanned_at: "not-a-timestamp",
+  };
+  const disabled = assessCryptoPaymentNetworkHealth([row], {}, new Date("2026-10-10T15:00:00Z"));
+  assert.equal(disabled.networks[2].state, "disabled");
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_TON_ENABLED: "true",
+    CRYPTO_USDT_TON_RPC_URL: "https://toncenter.com",
+    CRYPTO_USDT_TON_RECEIVING_ADDRESS: row.receiving_address,
+    CRYPTO_USDT_TON_CONFIRMATIONS: "1",
+  };
+  const enabled = assessCryptoPaymentNetworkHealth([row], env, new Date("2026-10-10T15:00:00Z"));
+  assert.equal(enabled.networks[2].state, "never_scanned");
 });

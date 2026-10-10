@@ -1,3 +1,4 @@
+import { assessCryptoPaymentNetworkHealth } from "./paymentHealth";
 import { getPostgresPool } from "../utils/postgresPool";
 
 export interface CryptoPaymentOverviewQuery {
@@ -5,7 +6,9 @@ export interface CryptoPaymentOverviewQuery {
 }
 
 export async function loadCryptoPaymentOverview(
-  query: CryptoPaymentOverviewQuery = (sql) => getPostgresPool().query(sql)
+  query: CryptoPaymentOverviewQuery = (sql) => getPostgresPool().query(sql),
+  env: Record<string, string | undefined> = process.env,
+  now: Date = new Date()
 ) {
   // A platform super-admin can audit payments without changing per-owner ledger
   // attribution. Call only behind authMiddleware + requireSuperAdmin.
@@ -20,10 +23,10 @@ export async function loadCryptoPaymentOverview(
       from public.crypto_payment_invoices
     `),
     query(`
-      select network, last_scanned_at, updated_at
+      select network, receiving_address, token_identifier, last_scanned_at, updated_at
       from public.crypto_payment_network_state
-      order by network asc
-      limit 10
+      order by last_scanned_at desc nulls last
+      limit 100
     `),
     query(`
       select id, owner_principal, asset_code, network,
@@ -51,7 +54,12 @@ export async function loadCryptoPaymentOverview(
 
   return {
     summary: counts.rows[0] ?? { total: 0, paid: 0, active: 0, attention: 0 },
-    networkStates: networkStates.rows,
+    networkStates: networkStates.rows.map((row) => ({
+      network: row.network,
+      last_scanned_at: row.last_scanned_at,
+      updated_at: row.updated_at,
+    })),
+    networkHealth: assessCryptoPaymentNetworkHealth(networkStates.rows as any, env, now),
     invoices: invoices.rows,
     transactions: transactions.rows,
     events: events.rows,

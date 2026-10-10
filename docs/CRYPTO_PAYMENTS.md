@@ -230,6 +230,7 @@ Available operations:
 
 ```text
 GET  /api/crypto-payments/status
+GET  /api/crypto-payments/overview
 POST /api/crypto-payments/preflight
 POST /api/crypto-payments/scan
 POST /api/crypto-payments/invoices
@@ -304,3 +305,17 @@ with a user owner principal, network, amount, and invoice lifetime.
 
 The payment layer must not contain product-tier rules. Conversely, product-tier
 logic must not implement blockchain verification itself.
+
+## Operational payment scan health
+
+The super-admin payment overview distinguishes network *configuration* from an
+actual recent successful chain scanner checkpoint. For the currently configured
+network/token/merchant identity, a checkpoint is considered recent for up to
+three scan intervals (minimum three minutes). Missing or older checkpoints
+are labeled separately, without exposing merchant addresses or RPC credentials
+to the browser. A green checkpoint confirms scanner recency only; it does **not**
+prove that any given payment is settled, nor that an indexer is fully caught up.
+
+The overview is read-only and bounded. A stale scanner does not automatically
+credit invoices or change their state; it is an operational alert requiring
+investigation.

@@ -44,7 +44,14 @@ interface PaymentEvent {
   owner_principal: string;
   occurred_at: string;
 }
+interface NetworkScanHealth {
+  network: PaymentNetwork;
+  state: "disabled" | "never_scanned" | "recent" | "stale";
+  lastScannedAt: string | null;
+  ageSeconds: number | null;
+}
 interface Overview {
+  networkHealth: { checkedAt: string; staleAfterSeconds: number; networks: NetworkScanHealth[] };
   summary: { total: number; paid: number; active: number; attention: number };
   networkStates: ScanState[];
   invoices: Invoice[];
@@ -202,7 +209,7 @@ export default function CryptoPayments({ token }: { token: string }) {
           <div className="grid gap-3 md:grid-cols-3">
             {NETWORKS.map(network => {
               const config = status?.networks.find(item => item.id === network);
-              const scan = overview.networkStates.find(item => item.network === network);
+              const scan = overview.networkHealth.networks.find(item => item.network === network);
               const check = preflight?.networks.find(item => item.network === network);
               return <div key={network} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="flex items-center justify-between gap-2">
@@ -210,13 +217,18 @@ export default function CryptoPayments({ token }: { token: string }) {
                   <StatusPill state={config ? "good" : "neutral"} label={config ? t("payments.enabled") : t("payments.disabled")} />
                 </div>
                 <p className="mt-3 text-xs text-slate-500">{t("payments.lastScan")}</p>
-                <p className="mt-1 text-sm font-semibold text-slate-700">{date(scan?.last_scanned_at)}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-700">{date(scan?.lastScannedAt)}</p>
+                {scan && <div className="mt-2"><StatusPill
+                  state={scan.state === "recent" ? "good" : scan.state === "disabled" ? "neutral" : "warn"}
+                  label={t(`payments.scanHealth.${scan.state}`)}
+                /></div>}
+                {scan?.state === "stale" && <p className="mt-2 text-xs font-semibold text-amber-700" role="status">{t("payments.staleHint", { seconds: overview.networkHealth.staleAfterSeconds })}</p>}
                 {config && <p className="mt-2 text-xs text-slate-500">{t("payments.requiredConfirmations")}: {config.requiredConfirmations}</p>}
                 {check && <div className="mt-3"><StatusPill state={check.ok ? "good" : "warn"} label={check.ok ? `${t("payments.preflightPassed")} · ${check.assetDecimals ?? "?"} ${t("payments.decimals")}` : t("payments.preflightFailed")} /></div>}
               </div>;
             })}
           </div>
-          <p className="mt-4 text-xs leading-5 text-slate-500">{t("payments.readOnlyNote")}</p>
+          <p className="mt-4 text-xs leading-5 text-slate-500">{t("payments.readOnlyNote")} {t("payments.healthDisclaimer")}</p>
         </section>
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4"><Wallet className="h-5 w-5 text-sky-600" /><h3 className="font-display text-lg font-bold text-slate-900">{t("payments.recentInvoices")}</h3></div>

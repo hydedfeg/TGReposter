@@ -117,6 +117,14 @@ const system = {
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
   payments: {
+    scanHealth: {
+      recent: "Recent checkpoint",
+      stale: "Scanner delayed",
+      never_scanned: "No scan checkpoint",
+      disabled: "Scanner disabled",
+    },
+    staleHint: "No recent successful checkpoint (threshold: {{seconds}}s).",
+    healthDisclaimer: "Health reflects scan recency, not blockchain finality or proof of payment.",
     "adminOnly": "Super-admin only",
     "title": "Payment Operations",
     "description": "Monitor USDT payment networks, invoices, confirmed transfers, and ledger events. Pricing and customer checkout are not configured.",
