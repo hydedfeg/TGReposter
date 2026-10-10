@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import { CRYPTO_PAYMENT_NETWORKS } from "../payments/types";
+import { loadCryptoPaymentOverview } from "../payments/paymentOverview";
 import {
   getCryptoPaymentRuntimeStatus,
   preflightConfiguredCryptoPayments,
@@ -83,6 +84,28 @@ export function createCryptoPaymentRouter({
           typeof error?.message === "string"
             ? error.message
             : "Crypto payment configuration is invalid.",
+      });
+    }
+  });
+
+  router.get("/overview", async (_req, res) => {
+    if (!process.env.DATABASE_URL?.trim()) {
+      return res.status(503).json({
+        code: "CRYPTO_PAYMENT_DATABASE_UNAVAILABLE",
+        error: "Payment monitoring requires the normalized database backend.",
+      });
+    }
+
+    try {
+      return res.json(await loadCryptoPaymentOverview());
+    } catch (error: any) {
+      console.error("Crypto payment overview failed:", {
+        name: error?.name,
+        code: error?.code,
+      });
+      return res.status(503).json({
+        code: "CRYPTO_PAYMENT_OVERVIEW_FAILED",
+        error: "Payment overview is temporarily unavailable.",
       });
     }
   });
