@@ -188,7 +188,7 @@ test("reconciliation reports truncated results rather than silently claiming com
 
 test("payment operations renders automatic read-only alert reconciliation with bounded poll", () => {
   const source = readFileSync(resolve(root, "src/components/CryptoPayments.tsx"), "utf8");
-  assert.match(source, /overview\.reconciliation\.alerts/);
+  assert.match(source, /overview\?\.reconciliation\.alerts/);
   assert.match(source, /document\.visibilityState !== "visible"/);
   assert.match(source, /window\.setInterval\(/);
   assert.match(source, /60_000/);
