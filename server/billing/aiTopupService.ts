@@ -1,5 +1,4 @@
 import { getPostgresPool } from "../utils/postgresPool";
-import { displayAiUnits } from "./aiUnits";
 
 /**
  * Commercial top-ups are prepared and fulfilled by trusted backend workflows.
@@ -83,7 +82,32 @@ export async function prepareTopupOrder(
       [owner,input.invoiceId]
     );
     const invoice = invoices[0];
-    if (!invoice || invoice.status !== "pending" || new Date(invoice.expires_at) <= new Date()) {
+    if (!invoice) {
+      throw new AITopupError("INVALID_INVOICE", "Invoice does not belong to this owner.");
+    }
+
+    // Idempotent retry after a payment was finalized is safe. A different
+    // product, quote, or owner must never reuse the same invoice.
+    const { rows: existing } = await client.query(
+      `select id,pack_id,ai_units::text,quoted_usdt_amount::text,status,quote_reference
+       from public.billing_ai_topup_orders where invoice_id=$1::uuid`,
+      [input.invoiceId]
+    );
+    if (existing.length) {
+      const order = existing[0];
+      const { rows: quoteMatch } = await client.query(
+        "select ($1::numeric = $2::numeric) as matches",
+        [order.quoted_usdt_amount,input.quotedUsdtAmount]
+      );
+      if (order.pack_id !== input.packId || order.quote_reference !== input.quoteReference
+          || !quoteMatch[0]?.matches) {
+        throw new AITopupError("INVOICE_ALREADY_USED", "Invoice is attached to another order.");
+      }
+      await client.query("COMMIT");
+      return { orderId:order.id,units:order.ai_units,fulfilled:order.status==="fulfilled",created:false };
+    }
+
+    if (invoice.status !== "pending" || new Date(invoice.expires_at) <= new Date()) {
       throw new AITopupError("INVALID_INVOICE", "A valid pending invoice is required.");
     }
 
@@ -95,20 +119,6 @@ export async function prepareTopupOrder(
     );
     if (!amounts[0]?.matches) {
       throw new AITopupError("QUOTE_MISMATCH", "Invoice does not match quoted purchase amount.");
-    }
-
-    const { rows: existing } = await client.query(
-      `select id,pack_id,ai_units::text,quoted_usdt_amount::text,status,quote_reference
-       from public.billing_ai_topup_orders where invoice_id=$1::uuid`,
-      [input.invoiceId]
-    );
-    if (existing.length) {
-      const order = existing[0];
-      if (order.pack_id !== input.packId || order.quote_reference !== input.quoteReference) {
-        throw new AITopupError("INVOICE_ALREADY_USED", "Invoice is attached to another order.");
-      }
-      await client.query("COMMIT");
-      return { orderId:order.id,units:order.ai_units,fulfilled:order.status==="fulfilled",created:false };
     }
 
     const { rows } = await client.query(
