@@ -218,7 +218,13 @@ export async function runBillingOperationsBatch(
           await grant(candidate.owner_principal);
         }
         stages[stage].completed += 1;
-        await clearFailure(stage,candidate);
+        try {
+          await clearFailure(stage,candidate);
+        } catch {
+          // Fulfillment already committed: a failure to clear stale retry
+          // metadata must not turn a successful payment into a failed charge.
+          report.failureCodes.push({stage,code:"RETRY_CLEANUP_FAILED"});
+        }
       } catch (error) {
         stages[stage].failed += 1;
         const code = (error && typeof error === "object" && "code" in error
