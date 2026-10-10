@@ -7,6 +7,7 @@ import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
 import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
+import { startBillingOperationsScheduler } from "./server/billing/billingOperationsScheduler";
 import { runCryptoPaymentStartupPreflight } from "./server/payments/paymentRuntime";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
@@ -2275,6 +2276,8 @@ async function startServer() {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
     void runCryptoPaymentStartupPreflight();
     startCryptoPaymentScheduler();
+    // Commercial processing remains OFF unless explicitly enabled at deployment.
+    startBillingOperationsScheduler();
   });
 }
 
