@@ -35,8 +35,14 @@ function fixed(value: bigint, scale: number): string {
 }
 
 export function parseAiUnits(value: string): bigint {
-  // Six decimal digits of AI Units, never float arithmetic.
+  // Six decimal digits of nonnegative AI Units, never float arithmetic.
   return scaledDecimal(value, 6);
+}
+
+export function parseSignedAiUnits(value: string): bigint {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("-")) return -scaledDecimal(trimmed.slice(1), 6);
+  return scaledDecimal(trimmed.startsWith("+") ? trimmed.slice(1) : trimmed, 6);
 }
 
 export function displayAiUnits(microunits: bigint): string {
