@@ -12,6 +12,7 @@ import DatabaseConfig from "./components/DatabaseConfig";
 import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
+import BillingOverview from "./components/BillingOverview";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
@@ -54,7 +55,7 @@ function settingsCacheKey() {
 
 function initialWorkspaceView(): WorkspaceView {
   const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
-  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database"];
+  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "billing", "team", "database"];
   return stored && validViews.includes(stored) ? stored : "dashboard";
 }
 
@@ -784,6 +785,10 @@ export default function App() {
             geminiActive={geminiActive}
             openrouterActive={openrouterActive}
           />
+        ) : null}
+
+        {activeWorkspaceTab === "billing" ? (
+          <BillingOverview authToken={authToken} />
         ) : null}
 
         {activeWorkspaceTab === "database" && currentUserRole === "super-admin" ? <DatabaseConfig /> : null}
