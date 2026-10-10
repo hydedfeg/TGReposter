@@ -15,7 +15,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
       return { rows: [{ total: 2, paid: 1, active: 1, attention: 0 }] };
     }
     return { rows: [] };
-  });
+  }, {});
 
   assert.equal(queries.length, 5);
   assert.equal(output.summary.paid, 1);
