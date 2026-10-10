@@ -287,6 +287,7 @@ export async function fulfillVerifiedSubscription(
            status='active',payment_provider='crypto',
            current_period_start=excluded.current_period_start,
            current_period_end=excluded.current_period_end,
+           cancel_at_period_end=false,scheduled_plan_id=null,
            updated_at=now()`,
         [owner,order.plan_id,order.billing_interval,start.toISOString(),end.toISOString()]);
     }
@@ -339,13 +340,18 @@ export async function activateDueSubscriptionTerm(
       `update public.billing_subscription_terms
        set status='active',activated_at=now()
        where id=$1::uuid and owner_principal=$2 and status='scheduled'`,[term.id,owner]);
-    await client.query(
+    const updated = await client.query(
       `update public.billing_subscriptions
        set plan_id=$2,billing_interval=$3,status='active',
          payment_provider='crypto',current_period_start=$4,
-         current_period_end=$5,updated_at=now()
+         current_period_end=$5,cancel_at_period_end=false,
+         scheduled_plan_id=null,updated_at=now()
        where owner_principal=$1`,
       [owner,term.plan_id,term.billing_interval,term.term_start,term.term_end]);
+    if (updated.rowCount !== 1) {
+      throw new SubscriptionCheckoutError("SUBSCRIPTION_MISSING",
+        "Cannot activate a renewal without an existing subscription.");
+    }
     await client.query("COMMIT");
     return true;
   } catch (error) {
