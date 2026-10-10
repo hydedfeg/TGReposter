@@ -75,6 +75,17 @@ export async function prepareTopupOrder(
       throw new AITopupError("PACK_NOT_AVAILABLE", "AI top-up product is not launched.");
     }
 
+    // Quote references must resolve to a genuine, unexpired server-issued
+    // FX snapshot for THIS owner, product and listed EUR price.
+    const { rows: quoteRows } = await client.query(
+      `select id,pack_id,eur_cents,usdt_amount::text as usdt_amount,expires_at
+       from public.billing_fx_quotes
+       where owner_principal=$1 and id=$2::uuid and product_kind='topup'
+       for update`,
+      [owner,input.quoteReference]
+    );
+    const quote = quoteRows[0];
+
     const { rows: invoices } = await client.query(
       `select id,status,requested_amount::text as requested_amount,expires_at
        from public.crypto_payment_invoices where owner_principal=$1
@@ -109,6 +120,23 @@ export async function prepareTopupOrder(
 
     if (invoice.status !== "pending" || new Date(invoice.expires_at) <= new Date()) {
       throw new AITopupError("INVALID_INVOICE", "A valid pending invoice is required.");
+    }
+    const { rows: quoteValidation } = await client.query(
+      `select ($1::numeric = $2::numeric) as amount_matches,
+         ($3::numeric = $4::numeric) as product_matches`,
+      [quote?.usdt_amount ?? "0",input.quotedUsdtAmount,quote?.eur_cents ?? 0,packs[0].price_eur_cents]
+    );
+    if (!quote || quote.pack_id !== input.packId ||
+        new Date(quote.expires_at) <= new Date() ||
+        !quoteValidation[0]?.amount_matches ||
+        !quoteValidation[0]?.product_matches) {
+      throw new AITopupError("INVALID_QUOTE", "A matching unexpired server-issued quote is required.");
+    }
+    const {rows: subscriptionUse} = await client.query(
+      `select exists(select 1 from public.billing_subscription_orders
+        where invoice_id=$1::uuid) as already_used`,[input.invoiceId]);
+    if (subscriptionUse[0]?.already_used) {
+      throw new AITopupError("INVOICE_ALREADY_USED", "Invoice is already used for a subscription.");
     }
 
     // Same nominal amount as checkout quote. The discriminator remains in
