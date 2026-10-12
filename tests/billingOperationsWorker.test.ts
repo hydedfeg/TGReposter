@@ -72,7 +72,7 @@ test("verified subscriptions and renewals are processed BEFORE included AI alloc
   });
   assert.equal(report.enabled,true);
   assert.deepEqual(report.failureCodes,[]);
-  assert.equal(Object.values(report.stages).reduce((sum,s)=>sum+s.completed,0),4);
+  assert.equal(Object.values(report.stages).reduce((sum,s)=>sum+s.completed,0),5);
   assert.ok(order.indexOf("activated:renewal")<order.indexOf("expired:subscription"));
   assert.ok(order.indexOf("expired:subscription")<order.indexOf("granted:ai"));
   assert.deepEqual(order.filter(x=>x.startsWith("list:")),stages.map(x=>"list:"+x));
