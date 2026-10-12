@@ -71,7 +71,20 @@ interface UnassignedTransfer {
   first_seen_at: string;
   last_seen_at: string;
 }
+interface PersistedAlert {
+  id: number;
+  category: "scanner" | "invoice" | "unassigned";
+  code: string;
+  network: PaymentNetwork;
+  severity: "warning" | "critical";
+  status: "open" | "resolved";
+  first_seen_at: string;
+  last_seen_at: string;
+  notified_at: string | null;
+  notification_state: "pending" | "skipped" | "sent";
+}
 interface Overview {
+  persistedAlerts: PersistedAlert[];
   unassignedTransfers: { items: UnassignedTransfer[]; truncated: boolean };
   reconciliation: {
     checkedAt: string;
@@ -242,6 +255,37 @@ export default function CryptoPayments({ token }: { token: string }) {
       {notice && <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">{notice}</div>}
       {!overview && busy === "refresh" && <div role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("payments.loading")}</div>}
       {overview && <>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={t("payments.alertJournal.title")}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <h3 className="font-display text-lg font-bold text-slate-900">{t("payments.alertJournal.title")}</h3>
+            <StatusPill state="neutral" label={t("payments.alertJournal.count", { count: overview.persistedAlerts.length })}/>
+          </div>
+          <p className="px-5 pt-3 text-xs text-slate-500">{t("payments.alertJournal.description")}</p>
+          {overview.persistedAlerts.length === 0 ? (
+            <p className="p-5 text-sm text-slate-500">{t("payments.alertJournal.none")}</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {overview.persistedAlerts.map((alert) => (
+                <div key={alert.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {NETWORK_NAMES[alert.network]} · {t(`payments.alerts.codes.${alert.code}`, { defaultValue: alert.code.replaceAll("_", " ") })}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t("payments.alertJournal.lastSeen")}: {date(alert.last_seen_at)}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <StatusPill state={alert.status === "open" ? "warn" : "good"}
+                      label={t(`payments.alertJournal.states.${alert.status}`)}/>
+                    <StatusPill state="neutral"
+                      label={t(`payments.alertJournal.delivery.${alert.notification_state}`)}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={t("payments.unassigned.title")}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
             <div className="flex items-center gap-2">

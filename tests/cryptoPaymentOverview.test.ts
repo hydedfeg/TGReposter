@@ -17,7 +17,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
     return { rows: [] };
   }, {});
 
-  assert.equal(queries.length, 7);
+  assert.equal(queries.length, 8);
   assert.equal(output.summary.paid, 1);
   assert.deepEqual(output.networkStates, []);
   assert.equal(output.networkHealth.networks.length, 3);
@@ -25,6 +25,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
   assert.deepEqual(output.invoices, []);
   assert.deepEqual(output.transactions, []);
   assert.deepEqual(output.events, []);
+  assert.deepEqual(output.persistedAlerts, []);
   assert.deepEqual(output.reconciliation.alerts, []);
   assert.equal(output.reconciliation.truncated, false);
   assert.equal(output.reconciliation.includesUnmatchedOnChainTransfers, true);

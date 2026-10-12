@@ -117,6 +117,22 @@ const system = {
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
   payments: {
+    alertJournal: {
+      "title": "Background alert history",
+      "count": "{{count}} recent alerts",
+      "description": "Persistent, server-maintained operational alerts. Delivery stays disabled until an authorized administrator destination is configured.",
+      "none": "No background alerts recorded yet.",
+      "lastSeen": "Last observed",
+      "states": {
+        "open": "Open",
+        "resolved": "Resolved"
+      },
+      "delivery": {
+        "pending": "Delivery pending",
+        "skipped": "Delivery disabled",
+        "sent": "Notified"
+      }
+    },
     unassigned: {
       "title": "Unassigned transfers",
       "count": "{{count}} review items",
