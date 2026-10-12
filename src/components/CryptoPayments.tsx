@@ -90,7 +90,7 @@ interface Overview {
     checkedAt: string;
     alerts: ReconciliationAlert[];
     truncated: boolean;
-    includesUnmatchedOnChainTransfers: false;
+    includesUnmatchedOnChainTransfers: boolean;
   };
   networkHealth: { checkedAt: string; staleAfterSeconds: number; networks: NetworkScanHealth[] };
   summary: { total: number; paid: number; active: number; attention: number };

@@ -139,8 +139,8 @@ export async function loadCryptoPaymentOverview(
       checkedAt: now.toISOString(),
       alerts: [...networkAlerts, ...ledgerAlerts],
       truncated: discrepancies.rows.length > 30,
-      // We only inspect persisted ledger transactions. Unmatched on-chain
-      // observations are not stored and cannot be audited from this report.
+      // Unassigned observations are in a separate bounded review queue.
+      // This flag does not imply a historical chain backfill.
       includesUnmatchedOnChainTransfers: true,
     },
     unassignedTransfers: {
