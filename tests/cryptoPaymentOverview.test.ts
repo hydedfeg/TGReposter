@@ -39,7 +39,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
 
   assert.ok(queries.some(sql => /limit 31/i.test(sql)));
   assert.ok(queries.some(sql => /limit 50/i.test(sql)));
-  assert.ok(queries.filter(sql => /limit 30/i.test(sql)).length === 2);
+  assert.ok(queries.filter(sql => /limit 30/i.test(sql)).length === 3);
   assert.ok(queries.some(sql => /owner_principal/i.test(sql)));
 });
 
