@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { getBillingOverview } from "../billing/billingOverviewService";
+import { setEndOfTermCancellation, SubscriptionLifecycleError } from "../billing/subscriptionLifecycleService";
 
 /**
  * No checkout or mutation routes. The authenticated session is the ONLY
@@ -11,10 +12,14 @@ export function createBillingOverviewRouter(options: {
   authMiddleware: RequestHandler;
   loadOverview?: typeof getBillingOverview;
   hasDatabase?: () => boolean;
+  setCancellation?: typeof setEndOfTermCancellation;
+  canManage?: () => boolean;
 }) {
   const router = Router();
   const load = options.loadOverview ?? getBillingOverview;
   const hasDatabase = options.hasDatabase ?? (() => Boolean(process.env.DATABASE_URL?.trim()));
+  const manage = options.setCancellation ?? setEndOfTermCancellation;
+  const canManage = options.canManage ?? (() => process.env.TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED === "true");
 
   router.use(options.authMiddleware);
   router.get("/overview", async (req: any, res) => {
@@ -52,6 +57,44 @@ export function createBillingOverviewRouter(options: {
         code: "BILLING_UNAVAILABLE",
         error: "Billing information could not be loaded."
       });
+    }
+  });
+
+  // Disabled by default. Financially safe status change only: no charges,
+  // refunds, instant entitlement reduction, or new subscriptions.
+  router.post("/subscription/cancellation", async (req: any, res) => {
+    res.set("Cache-Control", "private, no-store");
+    res.set("Vary", "Authorization");
+    if (!req.user) {
+      return res.status(401).json({code:"BILLING_AUTH_REQUIRED",error:"Sign in required."});
+    }
+    if (!canManage() || !hasDatabase()) {
+      return res.status(503).json({code:"BILLING_MANAGEMENT_DISABLED",error:"Subscription management is not available yet."});
+    }
+    const body = req.body;
+    if (!body || typeof body !== "object" ||
+        typeof body.cancelAtPeriodEnd !== "boolean" ||
+        Object.keys(body).some(key => key !== "cancelAtPeriodEnd")) {
+      return res.status(400).json({
+        code:"INVALID_CANCELLATION_REQUEST",
+        error:"Provide only cancelAtPeriodEnd as a boolean."
+      });
+    }
+    try {
+      const owner = ownerPrincipalForUser(req.user);
+      const result = await manage(owner,body.cancelAtPeriodEnd);
+      return res.json({ cancellation:result });
+    } catch (error: any) {
+      if (error?.code === "42P01" || error?.code === "42703") {
+        return res.status(503).json({code:"BILLING_NOT_READY",error:"Billing schema is not ready."});
+      }
+      if (error instanceof SubscriptionLifecycleError) {
+        const status = error.code === "MANAGEMENT_DISABLED" ? 503
+          : error.code === "INVALID_ACTION" ? 400 : 409;
+        return res.status(status).json({code:error.code,error:error.message});
+      }
+      console.error("Subscription cancellation failed:",{code:error?.code??"UNEXPECTED"});
+      return res.status(503).json({code:"BILLING_UNAVAILABLE",error:"Subscription management temporarily unavailable."});
     }
   });
 
