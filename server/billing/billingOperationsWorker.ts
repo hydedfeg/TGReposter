@@ -5,6 +5,7 @@ import {
 } from "./subscriptionCheckoutService";
 import { fulfillVerifiedTopup } from "./aiTopupService";
 import { ensureMonthlyAIAllowance } from "./monthlyAIAllowance";
+import { expireEndedSubscription } from "./subscriptionLifecycleService";
 import { noteBillingOperationFailure, clearBillingOperationFailure } from "./billingOperationsRetry";
 
 /**
@@ -19,6 +20,7 @@ import { noteBillingOperationFailure, clearBillingOperationFailure } from "./bil
  * - TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED (subscription operations)
  * - TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED (top-up grants)
  * - TGREPOSTER_COMMERCIAL_AI_ENABLED (monthly allowances)
+ * - TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED (paid period expiry)
  *
  * All flags default to OFF. A separate scheduler handles timing/DB locks.
  */
@@ -30,6 +32,7 @@ export type BillingStage =
   | "subscriptions"
   | "topups"
   | "renewals"
+  | "expirations"
   | "allowances";
 
 export interface BillingCandidate {
@@ -57,13 +60,14 @@ export interface BillingBatchDependencies {
   fulfillSubscription?: typeof fulfillVerifiedSubscription;
   fulfillTopup?: typeof fulfillVerifiedTopup;
   activateRenewal?: typeof activateDueSubscriptionTerm;
+  expireSubscription?: typeof expireEndedSubscription;
   grantAllowance?: typeof ensureMonthlyAIAllowance;
   noteFailure?: typeof noteBillingOperationFailure;
   clearFailure?: typeof clearBillingOperationFailure;
 }
 
 const STAGES: BillingStage[] = [
-  "subscriptions", "topups", "renewals", "allowances"
+  "subscriptions", "topups", "renewals", "expirations", "allowances"
 ];
 
 export function isBillingWorkerEnabled(env: Environment = process.env): boolean {
@@ -124,6 +128,22 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
           and a.item_id=t.id and a.next_retry_at>now()
       )
     order by t.term_start asc, t.id asc limit $1
+  `,
+  expirations: `
+    select s.owner_principal,s.id::text as id
+    from public.billing_subscriptions s
+    where s.status='active' and s.current_period_end<=now()
+      and not exists (
+        select 1 from public.billing_subscription_terms t
+        where t.owner_principal=s.owner_principal and t.status='scheduled'
+          and t.term_start<=now() and t.term_end>now()
+      )
+      and not exists (
+        select 1 from public.billing_operation_attempts a
+        where a.stage='expirations' and a.owner_principal=s.owner_principal
+          and a.item_id=s.id and a.next_retry_at>now()
+      )
+    order by s.current_period_end asc,s.id asc limit $1
   `,
   allowances: `
     select s.owner_principal, s.id::text as id
@@ -190,6 +210,7 @@ export async function runBillingOperationsBatch(
   const fulfillSubscription = dependencies.fulfillSubscription ?? fulfillVerifiedSubscription;
   const fulfillTopup = dependencies.fulfillTopup ?? fulfillVerifiedTopup;
   const activate = dependencies.activateRenewal ?? activateDueSubscriptionTerm;
+  const expire = dependencies.expireSubscription ?? expireEndedSubscription;
   const grant = dependencies.grantAllowance ?? ensureMonthlyAIAllowance;
   const noteFailure = dependencies.noteFailure ?? noteBillingOperationFailure;
   const clearFailure = dependencies.clearFailure ?? clearBillingOperationFailure;
@@ -198,6 +219,7 @@ export async function runBillingOperationsBatch(
   for (const stage of STAGES) {
     if (stage === "topups" && env.TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED !== "true") continue;
     if (stage === "allowances" && env.TGREPOSTER_COMMERCIAL_AI_ENABLED !== "true") continue;
+    if (stage === "expirations" && env.TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED !== "true") continue;
     const candidates = await list(stage, size);
     for (const candidate of candidates) {
       stages[stage].attempted += 1;
@@ -213,6 +235,12 @@ export async function runBillingOperationsBatch(
           if (!activated) {
             await clearFailure(stage,candidate);
             continue; // already advanced by another worker
+          }
+        } else if (stage === "expirations") {
+          const expired = await expire(candidate.owner_principal);
+          if (!expired) {
+            await clearFailure(stage,candidate);
+            continue;
           }
         } else {
           await grant(candidate.owner_principal);

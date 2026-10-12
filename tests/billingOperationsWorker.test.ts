@@ -14,16 +14,18 @@ const activeFlags = {
   TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED:"true",
   TGREPOSTER_COMMERCIAL_AI_ENABLED:"true",
   TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED:"true",
+  TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED:"true",
 };
 
 const ids:Record<BillingStage,string> = {
   subscriptions:"11111111-1111-4111-8111-111111111111",
   topups:"22222222-2222-4222-8222-222222222222",
   renewals:"33333333-3333-4333-8333-333333333333",
+  expirations:"55555555-5555-4555-8555-555555555555",
   allowances:"44444444-4444-4444-8444-444444444444",
 };
 
-const stages:BillingStage[]=["subscriptions","topups","renewals","allowances"];
+const stages:BillingStage[]=["subscriptions","topups","renewals","expirations","allowances"];
 const candidate=(stage:BillingStage):BillingCandidate=>({
   owner_principal:"supabase:alice",id:ids[stage]
 });
@@ -59,6 +61,7 @@ test("verified subscriptions and renewals are processed BEFORE included AI alloc
       return {orderId:ids.topups,units:"500",fulfilled:true,created:true};
     },
     activateRenewal:async()=>{order.push("activated:renewal");return true},
+    expireSubscription:async()=>{order.push("expired:subscription");return true},
     grantAllowance:async()=>{
       order.push("granted:ai");
       return {planId:"creator",units:"100",granted:true,
@@ -69,8 +72,9 @@ test("verified subscriptions and renewals are processed BEFORE included AI alloc
   });
   assert.equal(report.enabled,true);
   assert.deepEqual(report.failureCodes,[]);
-  assert.equal(Object.values(report.stages).reduce((sum,s)=>sum+s.completed,0),4);
-  assert.ok(order.indexOf("activated:renewal")<order.indexOf("granted:ai"));
+  assert.equal(Object.values(report.stages).reduce((sum,s)=>sum+s.completed,0),5);
+  assert.ok(order.indexOf("activated:renewal")<order.indexOf("expired:subscription"));
+  assert.ok(order.indexOf("expired:subscription")<order.indexOf("granted:ai"));
   assert.deepEqual(order.filter(x=>x.startsWith("list:")),stages.map(x=>"list:"+x));
 });
 
@@ -108,6 +112,7 @@ test("disabled top-up and monthly allowance switches exclude those stages",async
   });
   assert.deepEqual(listed,["subscriptions","renewals"]);
   assert.equal(report.stages.topups.attempted,0);
+  assert.equal(report.stages.expirations.attempted,0);
   assert.equal(report.stages.allowances.attempted,0);
 });
 
