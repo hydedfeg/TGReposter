@@ -7,7 +7,7 @@ import { PGlite } from "@electric-sql/pglite";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migration = fs.readFileSync(
-  path.join(root, "supabase/migrations/20261010163500_create_commercial_foundation.sql"),
+  path.join(root, "supabase/migrations/20261012144506_create_commercial_foundation.sql"),
   "utf8"
 );
 
