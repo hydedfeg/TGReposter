@@ -1,4 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
+import type { PoolClient } from "pg";
 
 /**
  * Commercial top-ups are prepared and fulfilled by trusted backend workflows.
@@ -174,11 +175,11 @@ export async function prepareTopupOrder(
 export async function fulfillVerifiedTopup(
   ownerPrincipal: string,
   orderId: string,
-  options: { enabled?: boolean } = {}
+  options: { enabled?: boolean; clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">> } = {}
 ): Promise<TopupOrderResult> {
   requireTopupsEnabled(options.enabled);
   const owner = normalizeOwner(ownerPrincipal);
-  const client = await getPostgresPool().connect();
+  const client = await (options.clientFactory ?? (()=>getPostgresPool().connect()))();
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
