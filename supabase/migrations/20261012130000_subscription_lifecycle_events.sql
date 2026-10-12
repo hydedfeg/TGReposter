@@ -21,3 +21,10 @@ revoke all on public.billing_subscription_events from public,anon,authenticated;
 grant select,insert on public.billing_subscription_events to service_role;
 comment on table public.billing_subscription_events is
  'Backend-only immutable-intent audit of paid subscription cancellation and expiry transitions. No direct browser access.';
+
+-- Expand the private retry stage enum for expiry reconciliation.
+alter table public.billing_operation_attempts
+ drop constraint if exists billing_operation_attempts_stage_check;
+alter table public.billing_operation_attempts
+ add constraint billing_operation_attempts_stage_check
+ check(stage in ('subscriptions','topups','renewals','expirations','allowances'));
