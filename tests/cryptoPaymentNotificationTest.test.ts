@@ -91,3 +91,44 @@ test("only authenticated super-admins may inspect status or send test", () => {
   assert.match(view, /notificationStatus\.readyForTest/);
   assert.doesNotMatch(view, /CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN|CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID/);
 });
+
+
+test("Telegram failure categories produce actionable safe codes without leaking upstream text", async () => {
+  const cases: Array<[number, string, string]> = [
+    [401, "Unauthorized", "TEST_INVALID_BOT_TOKEN"],
+    [400, "Bad Request: chat not found", "TEST_CHAT_NOT_FOUND"],
+    [403, "Forbidden: bot was blocked by the user", "TEST_CHAT_FORBIDDEN"],
+    [403, "Forbidden: bot was kicked from the group chat", "TEST_CHAT_FORBIDDEN"],
+    [400, "Bad Request: not enough rights to send text messages to the chat", "TEST_NO_SEND_PERMISSION"],
+    [400, "Bad Request: group chat was upgraded to a supergroup chat", "TEST_CHAT_MIGRATED"],
+    [429, "Too Many Requests: retry after 20", "TEST_TELEGRAM_RATE_LIMITED"],
+    [502, "Bad Gateway", "TEST_TELEGRAM_UNAVAILABLE"],
+    [400, "Bad Request: secret_token_very_sensitive", "TEST_DELIVERY_FAILED"],
+  ];
+  let now = 4_000_000;
+  for (const [status, description, code] of cases) {
+    const result = await sendPaymentNotificationTest(
+      env,
+      (async () => new Response(JSON.stringify({ok:false, description}), {status})) as typeof fetch,
+      now,
+    );
+    assert.deepEqual(result, {ok:false, code});
+    assert.ok(!JSON.stringify(result).includes(description));
+    now += 61_000;
+  }
+});
+
+test("Telegram timeout and network errors return distinct non-sensitive diagnostics", async () => {
+  const timeout = await sendPaymentNotificationTest(
+    env,
+    (async () => { const err = new Error("https://api.telegram.org/botSECRET"); err.name = "TimeoutError"; throw err; }) as typeof fetch,
+    5_000_000,
+  );
+  assert.deepEqual(timeout, {ok:false,code:"TEST_CONNECTION_TIMEOUT"});
+  const network = await sendPaymentNotificationTest(
+    env,
+    (async () => { throw Error("DNS lookup contained secret data"); }) as typeof fetch,
+    5_061_000,
+  );
+  assert.deepEqual(network, {ok:false,code:"TEST_NETWORK_ERROR"});
+});
