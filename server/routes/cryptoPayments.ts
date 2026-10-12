@@ -2,6 +2,10 @@ import { Router, type RequestHandler } from "express";
 import { CRYPTO_PAYMENT_NETWORKS } from "../payments/types";
 import { loadCryptoPaymentOverview } from "../payments/paymentOverview";
 import {
+  getPaymentNotificationStatus,
+  sendPaymentNotificationTest,
+} from "../payments/paymentNotificationTest";
+import {
   getCryptoPaymentRuntimeStatus,
   preflightConfiguredCryptoPayments,
 } from "../payments/paymentRuntime";
@@ -108,6 +112,26 @@ export function createCryptoPaymentRouter({
         error: "Payment overview is temporarily unavailable.",
       });
     }
+  });
+
+  router.get("/notifications/status", (_req, res) => {
+    return res.json(getPaymentNotificationStatus());
+  });
+
+  router.post("/notifications/test", async (_req, res) => {
+    const result = await sendPaymentNotificationTest();
+    if (result.ok) return res.json(result);
+    const status = result.code === "TEST_RATE_LIMITED" ? 429
+      : result.code === "TEST_UNAVAILABLE" ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code: result.code,
+      error: result.code === "TEST_RATE_LIMITED"
+        ? "Please wait before sending another test notification."
+        : result.code === "TEST_UNAVAILABLE"
+          ? "Telegram test delivery is not configured."
+          : "Telegram did not accept the test notification.",
+    });
   });
 
   router.post("/preflight", async (_req, res) => {

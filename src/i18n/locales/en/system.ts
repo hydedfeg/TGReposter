@@ -117,6 +117,22 @@ const system = {
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
   payments: {
+    telegramSetup: {
+      "title": "Telegram alert destination",
+      "description": "Use a dedicated bot and authorized private administrator chat. Automatic delivery remains separately controlled in Railway.",
+      "autoOn": "Automatic alerts enabled",
+      "autoOff": "Automatic alerts disabled",
+      "journalOn": "Alert history enabled",
+      "journalOff": "Alert history disabled",
+      "botSet": "Bot token configured",
+      "botMissing": "Bot token missing",
+      "chatSet": "Admin chat configured",
+      "chatMissing": "Admin chat missing",
+      "testButton": "Send test notification",
+      "confirm": "Send one test message to the configured administrator chat? This does not affect any payments.",
+      "testSuccess": "Telegram accepted the test notification. Check the administrator chat.",
+      "instructions": "Configure CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN and CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID privately in Railway. Test delivery can work while automatic alert delivery stays disabled."
+    },
     alertJournal: {
       "title": "Background alert history",
       "count": "{{count}} recent alerts",

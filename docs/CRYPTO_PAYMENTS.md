@@ -385,3 +385,25 @@ a process crash following a successful Telegram API response.
 
 Scanner-wide outages still require an external uptime monitor: an offline
 server cannot send its own alerts.
+
+## Dedicated Telegram notification destination test
+
+Only a super-admin can inspect the redacted `GET /api/crypto-payments/notifications/status`
+configuration summary or trigger `POST /api/crypto-payments/notifications/test`.
+Neither API returns the bot token, administrator chat ID, merchant address,
+transaction hashes, or Telegram's raw response.
+
+Set the dedicated `CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and numeric
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` privately in Railway. Set
+`CRYPTO_PAYMENT_ALERT_TEST_ENABLED=true` to permit the separate test action,
+which is disabled by default. Clicking **Send test notification** in Payments
+asks for confirmation and sends a fixed, non-sensitive synthetic message;
+no payment invoices, ledger events, or alert records are changed.
+The test endpoint is process-rate-limited to once per 60 seconds and times
+out after 8 seconds. It requires Telegram's successful Bot API response,
+not merely an HTTP success status.
+
+Do **not** enable `CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED` solely to run
+this test. Background delivery stays disabled until the administrator
+verifies that the test message reached an authorized chat and deliberately
+opts in to automatic notifications.

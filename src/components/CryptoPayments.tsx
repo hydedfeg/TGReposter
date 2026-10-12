@@ -8,7 +8,7 @@ import { normalizeAppLocale } from "../i18n";
 import { safeResponseJson } from "../utils/api";
 
 type PaymentNetwork = "bsc" | "ethereum" | "ton";
-type Operation = "preflight" | "scan";
+type Operation = "preflight" | "scan" | "notification-test";
 interface NetworkConfig {
   id: PaymentNetwork;
   asset: string;
@@ -16,6 +16,15 @@ interface NetworkConfig {
   requiredConfirmations: number;
 }
 interface PaymentStatus { enabled: boolean; networks: NetworkConfig[] }
+interface NotificationStatus {
+  journalEnabled: boolean;
+  telegramDeliveryEnabled: boolean;
+  tokenPresent: boolean;
+  chatPresent: boolean;
+  testEnabled: boolean;
+  readyForTest: boolean;
+  readyForDelivery: boolean;
+}
 interface ScanState { network: PaymentNetwork; last_scanned_at: string | null }
 interface Invoice {
   id: string;
@@ -127,6 +136,7 @@ export default function CryptoPayments({ token }: { token: string }) {
   const { t, i18n } = useTranslation("system");
   const locale = normalizeAppLocale(i18n.language);
   const [status, setStatus] = useState<PaymentStatus | null>(null);
+  const [notificationStatus, setNotificationStatus] = useState<NotificationStatus | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [preflight, setPreflight] = useState<Preflight | null>(null);
   const [busy, setBusy] = useState<Operation | "refresh" | null>("refresh");
@@ -151,18 +161,22 @@ export default function CryptoPayments({ token }: { token: string }) {
   }, [token]);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
-    const [nextStatus, nextOverview] = await Promise.all([
-      request("status", { signal }), request("overview", { signal }),
+    const [nextStatus, nextOverview, nextNotifications] = await Promise.all([
+      request("status", { signal }),
+      request("overview", { signal }),
+      request("notifications/status", { signal }).catch(() => null),
     ]);
     if (!signal?.aborted) {
       setStatus(nextStatus);
       setOverview(nextOverview);
+      setNotificationStatus(nextNotifications);
     }
   }, [request]);
 
   useEffect(() => {
     const controller = new AbortController();
     setStatus(null);
+    setNotificationStatus(null);
     setOverview(null);
     setPreflight(null);
     setBusy("refresh");
@@ -199,6 +213,9 @@ export default function CryptoPayments({ token }: { token: string }) {
     try {
       if (action === "refresh") {
         await reload();
+      } else if (action === "notification-test") {
+        await request("notifications/test", { method: "POST" });
+        setNotice(t("payments.telegramSetup.testSuccess"));
       } else if (action === "preflight") {
         const result: Preflight = await request("preflight", { method: "POST" });
         setPreflight(result);
@@ -254,6 +271,41 @@ export default function CryptoPayments({ token }: { token: string }) {
       {error && <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div>}
       {notice && <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">{notice}</div>}
       {!overview && busy === "refresh" && <div role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("payments.loading")}</div>}
+      {notificationStatus && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-label={t("payments.telegramSetup.title")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="font-display text-lg font-bold text-slate-900">{t("payments.telegramSetup.title")}</h3>
+            <StatusPill
+              state={notificationStatus.telegramDeliveryEnabled ? "good" : "neutral"}
+              label={notificationStatus.telegramDeliveryEnabled
+                ? t("payments.telegramSetup.autoOn")
+                : t("payments.telegramSetup.autoOff")}
+            />
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-500">{t("payments.telegramSetup.description")}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <StatusPill state={notificationStatus.journalEnabled ? "good" : "warn"}
+              label={t(notificationStatus.journalEnabled ? "payments.telegramSetup.journalOn" : "payments.telegramSetup.journalOff")}/>
+            <StatusPill state={notificationStatus.tokenPresent ? "good" : "warn"}
+              label={t(notificationStatus.tokenPresent ? "payments.telegramSetup.botSet" : "payments.telegramSetup.botMissing")}/>
+            <StatusPill state={notificationStatus.chatPresent ? "good" : "warn"}
+              label={t(notificationStatus.chatPresent ? "payments.telegramSetup.chatSet" : "payments.telegramSetup.chatMissing")}/>
+          </div>
+          <button
+            type="button"
+            className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+            disabled={!!busy || !notificationStatus.readyForTest}
+            onClick={() => {
+              if (window.confirm(t("payments.telegramSetup.confirm"))) {
+                void execute("notification-test");
+              }
+            }}
+          >
+            <CheckCircle2 className="h-4 w-4" /> {t("payments.telegramSetup.testButton")}
+          </button>
+          <p className="mt-3 text-xs leading-5 text-slate-500">{t("payments.telegramSetup.instructions")}</p>
+        </section>
+      )}
       {overview && <>
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={t("payments.alertJournal.title")}>
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
