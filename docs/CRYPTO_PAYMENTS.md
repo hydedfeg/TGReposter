@@ -230,6 +230,7 @@ Available operations:
 
 ```text
 GET  /api/crypto-payments/status
+GET  /api/crypto-payments/overview
 POST /api/crypto-payments/preflight
 POST /api/crypto-payments/scan
 POST /api/crypto-payments/invoices
@@ -304,3 +305,105 @@ with a user owner principal, network, amount, and invoice lifetime.
 
 The payment layer must not contain product-tier rules. Conversely, product-tier
 logic must not implement blockchain verification itself.
+
+## Operational payment scan health
+
+The super-admin payment overview distinguishes network *configuration* from an
+actual recent successful chain scanner checkpoint. For the currently configured
+network/token/merchant identity, a checkpoint is considered recent for up to
+three scan intervals (minimum three minutes). Missing or older checkpoints
+are labeled separately, without exposing merchant addresses or RPC credentials
+to the browser. A green checkpoint confirms scanner recency only; it does **not**
+prove that any given payment is settled, nor that an indexer is fully caught up.
+
+The overview is read-only and bounded. A stale scanner does not automatically
+credit invoices or change their state; it is an operational alert requiring
+investigation.
+
+## In-dashboard reconciliation alerts
+
+The super-admin overview automatically checks for scanner delay/missing
+checkpoints, paid invoices without an assigned confirmed transfer, confirmed
+transfers whose invoices did not reach `paid` after five minutes, invoices
+stuck in `detected`/`confirming` for over one hour, and invoice states
+`underpaid`, `overpaid`, or `failed`. Alerts are derived from read-only
+database queries; neither reconciliation nor UI polling changes payment state.
+The dashboard refreshes while the Payments workspace is open and visible.
+
+This first iteration is *in-app* and provides no email, push, or Telegram alert
+delivery when nobody has the dashboard open. It is a bounded operational
+exception feed (at most 30 ledger exceptions plus network alerts), not a full
+ledger audit. An overflow indicator warns when more results exist. Unassigned on-chain
+observations are now durably recorded in a separate platform-only ledger,
+but only from scanner observations after activation. This is not a historical
+backfill or a mechanism for automatically crediting invoices. The scanner never auto-credits an invoice based on these alerts.
+
+## Durable unmatched transfer review
+
+A backend-only ledger, `crypto_payment_unassigned_transfers`, records
+incoming USDT observations that match no invoice or multiple open invoices.
+It stores network, event identity, token/merchant, amount, confirmations,
+and timestamps; sender addresses and private keys are not stored.
+A unique (network, transaction hash, event index) identity deduplicates re-scans.
+Review items remain platform-scoped and are not assigned to any user.
+A review item is resolved automatically only after the same blockchain event
+is linked to an invoice transaction in the owner-scoped ledger.
+
+The dashboard lists a maximum of 30 open transfer observations, with a
+truncation notice. It cannot manually credit or resolve them. This does
+not backfill arbitrary historical chain data; coverage begins with observations
+seen by scanners after the migration. Actual settlement remains governed
+solely by existing transaction-matching and confirmation rules.
+
+A zero-value on-chain Transfer event may also be recorded as unmatched; it can
+never satisfy an invoice's positive expected amount. Keeping that event in the
+platform-only ledger prevents zero-value token spam from halting scan progress.
+
+## Background payment operations alerts
+
+When `CRYPTO_PAYMENT_ALERTS_ENABLED=true`, the backend's scheduled scan
+cycle reconciles operational warnings independently of dashboard browser
+sessions. A protected PostgreSQL journal deduplicates active alerts using
+network, code and invoice (or unmatched chain event), and persists first/last
+seen and resolution times. Query results remain bounded; truncated result
+sets never cause unseen invoice/unassigned alerts to be falsely resolved.
+The journal is platform-only, behind RLS with `anon` and `authenticated`
+table privileges revoked. No alert can change an invoice's state.
+
+External delivery is **disabled by default**. It requires an explicit
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED=true` plus a separate
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and a numeric authorized
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` configured privately on Railway.
+When delivery is disabled, newly recorded alerts are marked `skipped` so
+enabling delivery later cannot flood the destination with historical alerts.
+Only newly opened/reopened alerts are queued once delivery is configured.
+The sender transmits only severity, network and alert code, not sender/merchant
+wallet addresses, owner principals, transaction hashes, or credentials.
+Delivery is retried up to five times at five-minute intervals, in batches
+of three per scan. Delivery has at-least-once semantics and can repeat after
+a process crash following a successful Telegram API response.
+
+Scanner-wide outages still require an external uptime monitor: an offline
+server cannot send its own alerts.
+
+## Dedicated Telegram notification destination test
+
+Only a super-admin can inspect the redacted `GET /api/crypto-payments/notifications/status`
+configuration summary or trigger `POST /api/crypto-payments/notifications/test`.
+Neither API returns the bot token, administrator chat ID, merchant address,
+transaction hashes, or Telegram's raw response.
+
+Set the dedicated `CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and numeric
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` privately in Railway. Set
+`CRYPTO_PAYMENT_ALERT_TEST_ENABLED=true` to permit the separate test action,
+which is disabled by default. Clicking **Send test notification** in Payments
+asks for confirmation and sends a fixed, non-sensitive synthetic message;
+no payment invoices, ledger events, or alert records are changed.
+The test endpoint is process-rate-limited to once per 60 seconds and times
+out after 8 seconds. It requires Telegram's successful Bot API response,
+not merely an HTTP success status.
+
+Do **not** enable `CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED` solely to run
+this test. Background delivery stays disabled until the administrator
+verifies that the test message reached an authorized chat and deliberately
+opts in to automatic notifications.

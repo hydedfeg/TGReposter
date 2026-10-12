@@ -1,3 +1,4 @@
+import { reconcileCryptoPaymentAlertJournal, deliverCryptoPaymentAlerts } from "./paymentAlertJournal";
 import { getPostgresPool } from "../utils/postgresPool";
 import {
   getCryptoPaymentRuntimeStatus,
@@ -88,6 +89,18 @@ export async function runCryptoPaymentScanWithAdvisoryLock(
 
     const result = await scanConfiguredCryptoPayments(env);
     const maintenance = await maintainCryptoPaymentInvoices();
+    // Operational monitoring must never prevent successful payment scanning.
+    if (env.CRYPTO_PAYMENT_ALERTS_ENABLED?.trim().toLowerCase() === "true") {
+      try {
+        await reconcileCryptoPaymentAlertJournal(env);
+        await deliverCryptoPaymentAlerts(env);
+      } catch (error: any) {
+        console.error("Crypto payment background alert processing failed:", {
+          name: error?.name,
+          code: error?.code,
+        });
+      }
+    }
 
     return {
       acquired: true,

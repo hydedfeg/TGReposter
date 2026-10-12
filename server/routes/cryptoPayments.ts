@@ -1,5 +1,10 @@
 import { Router, type RequestHandler } from "express";
 import { CRYPTO_PAYMENT_NETWORKS } from "../payments/types";
+import { loadCryptoPaymentOverview } from "../payments/paymentOverview";
+import {
+  getPaymentNotificationStatus,
+  sendPaymentNotificationTest,
+} from "../payments/paymentNotificationTest";
 import {
   getCryptoPaymentRuntimeStatus,
   preflightConfiguredCryptoPayments,
@@ -85,6 +90,48 @@ export function createCryptoPaymentRouter({
             : "Crypto payment configuration is invalid.",
       });
     }
+  });
+
+  router.get("/overview", async (_req, res) => {
+    if (!process.env.DATABASE_URL?.trim()) {
+      return res.status(503).json({
+        code: "CRYPTO_PAYMENT_DATABASE_UNAVAILABLE",
+        error: "Payment monitoring requires the normalized database backend.",
+      });
+    }
+
+    try {
+      return res.json(await loadCryptoPaymentOverview());
+    } catch (error: any) {
+      console.error("Crypto payment overview failed:", {
+        name: error?.name,
+        code: error?.code,
+      });
+      return res.status(503).json({
+        code: "CRYPTO_PAYMENT_OVERVIEW_FAILED",
+        error: "Payment overview is temporarily unavailable.",
+      });
+    }
+  });
+
+  router.get("/notifications/status", (_req, res) => {
+    return res.json(getPaymentNotificationStatus());
+  });
+
+  router.post("/notifications/test", async (_req, res) => {
+    const result = await sendPaymentNotificationTest();
+    if (result.ok) return res.json(result);
+    const status = result.code === "TEST_RATE_LIMITED" ? 429
+      : result.code === "TEST_UNAVAILABLE" ? 409 : 502;
+    return res.status(status).json({
+      ok: false,
+      code: result.code,
+      error: result.code === "TEST_RATE_LIMITED"
+        ? "Please wait before sending another test notification."
+        : result.code === "TEST_UNAVAILABLE"
+          ? "Telegram test delivery is not configured."
+          : "Telegram did not accept the test notification.",
+    });
   });
 
   router.post("/preflight", async (_req, res) => {

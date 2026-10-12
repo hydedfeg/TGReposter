@@ -91,6 +91,8 @@ test("payment watcher promotes the same transfer from confirming to paid", async
     async saveNetworkCursor(input) {
       cursor = input.cursor;
     },
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return invoice.status === "paid" ? [] : [invoice];
     },
@@ -162,6 +164,8 @@ test("payment watcher refuses ambiguous same-amount open invoices", async () => 
     async saveNetworkCursor(input) {
       savedCursor = input.cursor;
     },
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [invoiceA, invoiceB];
     },
@@ -212,6 +216,8 @@ test("payment watcher does not reuse a transfer assigned to a terminal invoice",
       return "110";
     },
     async saveNetworkCursor() {},
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [makeInvoice()];
     },
@@ -270,6 +276,8 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
       return null;
     },
     async saveNetworkCursor() {},
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [];
     },
@@ -295,4 +303,90 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
   assert.equal(result.unmatched, 1);
   assert.equal(result.matched, 0);
   assert.equal(upsertCalls, 0);
+});
+
+test("watcher records unassigned event before advancing scanner checkpoint", async () => {
+  const calls: string[] = [];
+  let cursor: string | null = null;
+  const observed = observation(1);
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [observed], nextCursor: "101" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return cursor; },
+    async saveNetworkCursor(input) { calls.push("save"); cursor = input.cursor; },
+    async recordUnassignedObservation(_event, reason) {
+      assert.equal(reason, "unmatched");
+      calls.push("record");
+    },
+    async resolveUnassignedObservation() { calls.push("resolved"); },
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw Error("must not credit"); },
+    async appendEvent() { throw Error("must not create invoice event"); },
+    async updateInvoiceStatus() { throw Error("must not change invoice"); },
+  };
+  const result = await new CryptoPaymentWatcher(config, adapter, repository).runOnce();
+  assert.equal(result.unmatched, 1);
+  assert.deepEqual(calls, ["record", "save"]);
+  assert.equal(cursor, "101");
+});
+
+test("failed unassigned persistence prevents cursor advancement and invoice credit", async () => {
+  let saved = false;
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [observation(3)], nextCursor: "120" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return null; },
+    async saveNetworkCursor() { saved = true; },
+    async recordUnassignedObservation() { throw Error("storage unavailable"); },
+    async resolveUnassignedObservation() {},
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw Error("must not credit"); },
+    async appendEvent() { throw Error("must not write an event"); },
+    async updateInvoiceStatus() { throw Error("must not update invoice"); },
+  };
+  await assert.rejects(
+    () => new CryptoPaymentWatcher(config, adapter, repository).runOnce(),
+    /storage unavailable/
+  );
+  assert.equal(saved, false);
+});
+
+test("watcher safely records a zero-value transfer as unmatched without crediting", async () => {
+  let reasonSeen: string | null = null;
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [{ ...observation(1), amount: "0" }], nextCursor: "200" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return null; },
+    async saveNetworkCursor(input) { assert.equal(input.cursor, "200"); },
+    async recordUnassignedObservation(_observation, reason) { reasonSeen = reason; },
+    async resolveUnassignedObservation() {},
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw new Error("zero-value observation must never credit"); },
+    async appendEvent() { throw new Error("no invoice event for zero-value observation"); },
+    async updateInvoiceStatus() { throw new Error("no invoice update for zero-value observation"); },
+  };
+  const result = await new CryptoPaymentWatcher(config, adapter, repository).runOnce();
+  assert.equal(result.unmatched, 1);
+  assert.equal(reasonSeen, "unmatched");
 });

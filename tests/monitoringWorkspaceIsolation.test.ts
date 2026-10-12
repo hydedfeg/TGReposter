@@ -58,7 +58,7 @@ test("all authenticated users can manage their private monitoring configuration"
     serverSource,
     /Admins can edit posts and manage only their own Telegram destinations/
   );
-  assert.match(appSource, /new Set<WorkspaceView>\(\["team", "database"\]\)/);
+  assert.match(appSource, /new Set<WorkspaceView>\(\["team", "database", "payments"\]\)/);
   assert.match(appSource, /activeWorkspaceTab === "channels" \?/);
   assert.match(appSource, /activeWorkspaceTab === "filters" \?/);
   assert.match(appSource, /activeWorkspaceTab === "ai" \?/);
