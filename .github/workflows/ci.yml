@@ -6,10 +6,12 @@ on:
       - main
       - feat/multilingual-step-1-i18n-foundation
       - feat/commercial-staging-integration
+      - feat/billing-financial-acceptance-tests
   pull_request:
     branches:
       - main
       - feat/crypto-payment-infrastructure
+      - feat/commercial-staging-integration
 
 permissions:
   contents: read
