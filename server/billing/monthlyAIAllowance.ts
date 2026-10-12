@@ -5,6 +5,7 @@
  * Plan activation and automatic grants require explicit launch enablement.
  */
 import { getPostgresPool } from "../utils/postgresPool";
+import type { PoolClient } from "pg";
 import { getEffectivePlanId, type SubscriptionSnapshot } from "./planCatalog";
 
 export class AIGrantError extends Error {
@@ -112,13 +113,13 @@ function asIso(value: string | Date | null): string | null {
  */
 export async function ensureMonthlyAIAllowance(
   ownerPrincipal: string,
-  options: { enabled?: boolean; at?: Date } = {}
+  options: { enabled?: boolean; at?: Date; clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">> } = {}
 ): Promise<AIGrantResult> {
   if (options.enabled !== true && process.env.TGREPOSTER_COMMERCIAL_AI_ENABLED !== "true") {
     throw new AIGrantError("NOT_LAUNCHED", "Commercial AI allowance allocation is disabled.");
   }
   const owner = ownerKey(ownerPrincipal);
-  const client = await getPostgresPool().connect();
+  const client = await (options.clientFactory ?? (()=>getPostgresPool().connect()))();
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
