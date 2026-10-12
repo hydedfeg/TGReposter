@@ -13,7 +13,7 @@ export async function loadCryptoPaymentOverview(
   // A platform super-admin can audit payments without changing per-owner ledger
   // attribution. Call only behind authMiddleware + requireSuperAdmin.
   // All datasets are bounded and select explicit non-secret columns.
-  const [counts, networkStates, invoices, transactions, events, discrepancies, unassignedTransfers] = await Promise.all([
+  const [counts, networkStates, invoices, transactions, events, discrepancies, unassignedTransfers, persistedAlerts] = await Promise.all([
     query(`
       select
         count(*)::int as total,
@@ -101,6 +101,14 @@ export async function loadCryptoPaymentOverview(
       order by last_seen_at desc, network asc, tx_hash asc, event_index asc
       limit 31
     `),
+    query(`
+      select id, category, code, network, severity, status,
+             first_seen_at, last_seen_at, notified_at,
+             notification_state
+      from public.crypto_payment_operational_alerts
+      order by last_seen_at desc, id desc
+      limit 30
+    `),
   ]);
 
   const networkHealth = assessCryptoPaymentNetworkHealth(networkStates.rows as any, env, now);
@@ -126,6 +134,7 @@ export async function loadCryptoPaymentOverview(
   }));
 
   return {
+    persistedAlerts: persistedAlerts.rows,
     reconciliation: {
       checkedAt: now.toISOString(),
       alerts: [...networkAlerts, ...ledgerAlerts],

@@ -358,3 +358,30 @@ solely by existing transaction-matching and confirmation rules.
 A zero-value on-chain Transfer event may also be recorded as unmatched; it can
 never satisfy an invoice's positive expected amount. Keeping that event in the
 platform-only ledger prevents zero-value token spam from halting scan progress.
+
+## Background payment operations alerts
+
+When `CRYPTO_PAYMENT_ALERTS_ENABLED=true`, the backend's scheduled scan
+cycle reconciles operational warnings independently of dashboard browser
+sessions. A protected PostgreSQL journal deduplicates active alerts using
+network, code and invoice (or unmatched chain event), and persists first/last
+seen and resolution times. Query results remain bounded; truncated result
+sets never cause unseen invoice/unassigned alerts to be falsely resolved.
+The journal is platform-only, behind RLS with `anon` and `authenticated`
+table privileges revoked. No alert can change an invoice's state.
+
+External delivery is **disabled by default**. It requires an explicit
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED=true` plus a separate
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and a numeric authorized
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` configured privately on Railway.
+When delivery is disabled, newly recorded alerts are marked `skipped` so
+enabling delivery later cannot flood the destination with historical alerts.
+Only newly opened/reopened alerts are queued once delivery is configured.
+The sender transmits only severity, network and alert code, not sender/merchant
+wallet addresses, owner principals, transaction hashes, or credentials.
+Delivery is retried up to five times at five-minute intervals, in batches
+of three per scan. Delivery has at-least-once semantics and can repeat after
+a process crash following a successful Telegram API response.
+
+Scanner-wide outages still require an external uptime monitor: an offline
+server cannot send its own alerts.
