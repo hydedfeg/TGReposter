@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from "express";
 import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { getBillingOverview } from "../billing/billingOverviewService";
 import { setEndOfTermCancellation, SubscriptionLifecycleError } from "../billing/subscriptionLifecycleService";
+import { getPlanChangePreview, PlanChangePreviewError } from "../billing/planChangePreview";
 
 /**
  * No checkout or mutation routes. The authenticated session is the ONLY
@@ -14,12 +15,16 @@ export function createBillingOverviewRouter(options: {
   hasDatabase?: () => boolean;
   setCancellation?: typeof setEndOfTermCancellation;
   canManage?: () => boolean;
+  previewChange?: typeof getPlanChangePreview;
+  canPreview?: () => boolean;
 }) {
   const router = Router();
   const load = options.loadOverview ?? getBillingOverview;
   const hasDatabase = options.hasDatabase ?? (() => Boolean(process.env.DATABASE_URL?.trim()));
   const manage = options.setCancellation ?? setEndOfTermCancellation;
   const canManage = options.canManage ?? (() => process.env.TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED === "true");
+  const previewChange = options.previewChange ?? getPlanChangePreview;
+  const canPreview = options.canPreview ?? (() => process.env.TGREPOSTER_PLAN_CHANGE_PREVIEW_ENABLED === "true");
 
   router.use(options.authMiddleware);
   router.get("/overview", async (req: any, res) => {
@@ -57,6 +62,45 @@ export function createBillingOverviewRouter(options: {
         code: "BILLING_UNAVAILABLE",
         error: "Billing information could not be loaded."
       });
+    }
+  });
+
+  // This only estimates an internal pricing difference; it NEVER produces
+  // an executable quote, subscription change, payment or refund.
+  router.get("/subscription/change-preview", async (req: any, res) => {
+    res.set("Cache-Control","private, no-store");
+    res.set("Vary","Authorization");
+    if(!req.user) {
+      return res.status(401).json({code:"BILLING_AUTH_REQUIRED",error:"Sign in required."});
+    }
+    if(!canPreview() || !hasDatabase()) {
+      return res.status(503).json({
+        code:"PLAN_CHANGE_PREVIEW_DISABLED",error:"Plan change estimates are not available yet."
+      });
+    }
+    const keys=Object.keys(req.query??{});
+    if(keys.length!==1 || keys[0]!=="targetPlanId"
+       || typeof req.query.targetPlanId!=="string"
+       || req.query.targetPlanId.length>40) {
+      return res.status(400).json({
+        code:"INVALID_TARGET_PLAN",error:"Provide a targetPlanId only."
+      });
+    }
+    try {
+      const owner=ownerPrincipalForUser(req.user);
+      const preview=await previewChange(owner,req.query.targetPlanId);
+      return res.json({preview});
+    } catch(error:any) {
+      if(error?.code==="42P01" || error?.code==="42703") {
+        return res.status(503).json({code:"BILLING_NOT_READY",error:"Billing schema is not ready."});
+      }
+      if(error instanceof PlanChangePreviewError) {
+        const status=error.code==="PREVIEW_DISABLED"?503
+          : error.code==="INVALID_TARGET_PLAN"?400:409;
+        return res.status(status).json({code:error.code,error:error.message});
+      }
+      console.error("Plan change preview failed:",{code:error?.code??"UNEXPECTED_ERROR"});
+      return res.status(503).json({code:"BILLING_UNAVAILABLE",error:"Plan change preview unavailable."});
     }
   });
 
