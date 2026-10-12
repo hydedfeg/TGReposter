@@ -24,6 +24,13 @@ export interface CryptoPaymentWatcherRepository {
   findInvoicesMatchingObservation(
     observation: CryptoPaymentTransferObservation
   ): Promise<CryptoPaymentInvoiceRecord[]>;
+  recordUnassignedObservation(
+    observation: CryptoPaymentTransferObservation,
+    reason: "unmatched" | "ambiguous"
+  ): Promise<void>;
+  resolveUnassignedObservation(
+    observation: CryptoPaymentTransferObservation
+  ): Promise<void>;
   getTransactionAssignment(input: {
     network: CryptoPaymentNetworkConfig["id"];
     txHash: string;
@@ -146,11 +153,13 @@ export class CryptoPaymentWatcher {
         );
 
       if (matches.length === 0) {
+        await this.repository.recordUnassignedObservation(observation, "unmatched");
         result.unmatched += 1;
         continue;
       }
 
       if (matches.length > 1) {
+        await this.repository.recordUnassignedObservation(observation, "ambiguous");
         result.ambiguous += 1;
         continue;
       }
@@ -211,6 +220,7 @@ export class CryptoPaymentWatcher {
       invoice.status = invoiceStatus;
     }
 
+    await this.repository.resolveUnassignedObservation(observation);
     result.matched += 1;
     if (confirmed) {
       result.confirmed += 1;

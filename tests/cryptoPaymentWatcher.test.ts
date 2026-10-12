@@ -91,6 +91,8 @@ test("payment watcher promotes the same transfer from confirming to paid", async
     async saveNetworkCursor(input) {
       cursor = input.cursor;
     },
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return invoice.status === "paid" ? [] : [invoice];
     },
@@ -162,6 +164,8 @@ test("payment watcher refuses ambiguous same-amount open invoices", async () => 
     async saveNetworkCursor(input) {
       savedCursor = input.cursor;
     },
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [invoiceA, invoiceB];
     },
@@ -212,6 +216,8 @@ test("payment watcher does not reuse a transfer assigned to a terminal invoice",
       return "110";
     },
     async saveNetworkCursor() {},
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [makeInvoice()];
     },
@@ -270,6 +276,8 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
       return null;
     },
     async saveNetworkCursor() {},
+    async recordUnassignedObservation() {},
+    async resolveUnassignedObservation() {},
     async findInvoicesMatchingObservation() {
       return [];
     },

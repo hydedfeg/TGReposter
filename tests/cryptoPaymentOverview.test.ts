@@ -17,7 +17,7 @@ test("super-admin overview is bounded, read-only, and does not select payment se
     return { rows: [] };
   }, {});
 
-  assert.equal(queries.length, 6);
+  assert.equal(queries.length, 7);
   assert.equal(output.summary.paid, 1);
   assert.deepEqual(output.networkStates, []);
   assert.equal(output.networkHealth.networks.length, 3);
@@ -27,7 +27,8 @@ test("super-admin overview is bounded, read-only, and does not select payment se
   assert.deepEqual(output.events, []);
   assert.deepEqual(output.reconciliation.alerts, []);
   assert.equal(output.reconciliation.truncated, false);
-  assert.equal(output.reconciliation.includesUnmatchedOnChainTransfers, false);
+  assert.equal(output.reconciliation.includesUnmatchedOnChainTransfers, true);
+  assert.deepEqual(output.unassignedTransfers, { items: [], truncated: false });
 
   for (const sql of queries) {
     assert.match(sql, /^\s*(?:select|with)\s/i);
@@ -194,4 +195,23 @@ test("payment operations renders automatic read-only alert reconciliation with b
   assert.match(source, /60_000/);
   assert.match(source, /controller\.abort\(\)/);
   assert.doesNotMatch(source, /localStorage\.setItem\(/);
+});
+
+test("unassigned chain transfers remain platform-only, reviewable, and bounded", async () => {
+  const result = await loadCryptoPaymentOverview(async (sql) => {
+    if (sql.includes("from public.crypto_payment_unassigned_transfers")) {
+      return { rows: Array.from({ length: 31 }, (_, i) => ({
+        network: "bsc", tx_hash: "0x" + i.toString(16).padStart(64, "0"),
+        event_index: "0", amount: "1.25", reason: "unmatched",
+        confirmations: 120, first_seen_at: "2026-10-12T00:00:00Z",
+        last_seen_at: "2026-10-12T00:01:00Z",
+        observed_at: "2026-10-12T00:00:00Z"
+      })) };
+    }
+    return { rows: [] };
+  }, {});
+  assert.equal(result.unassignedTransfers.items.length, 30);
+  assert.equal(result.unassignedTransfers.truncated, true);
+  assert.equal(result.reconciliation.includesUnmatchedOnChainTransfers, true);
+  assert.ok(!JSON.stringify(result.unassignedTransfers).includes("from_address"));
 });

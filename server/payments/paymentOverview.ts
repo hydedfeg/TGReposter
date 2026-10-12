@@ -13,7 +13,7 @@ export async function loadCryptoPaymentOverview(
   // A platform super-admin can audit payments without changing per-owner ledger
   // attribution. Call only behind authMiddleware + requireSuperAdmin.
   // All datasets are bounded and select explicit non-secret columns.
-  const [counts, networkStates, invoices, transactions, events, discrepancies] = await Promise.all([
+  const [counts, networkStates, invoices, transactions, events, discrepancies, unassignedTransfers] = await Promise.all([
     query(`
       select
         count(*)::int as total,
@@ -93,6 +93,14 @@ export async function loadCryptoPaymentOverview(
       order by occurred_at desc, invoice_id desc
       limit 31
     `),
+    query(`
+      select network, tx_hash, event_index, amount::text,
+             confirmations, reason, observed_at, first_seen_at, last_seen_at
+      from public.crypto_payment_unassigned_transfers
+      where resolved_at is null
+      order by last_seen_at desc, network asc, tx_hash asc, event_index asc
+      limit 31
+    `),
   ]);
 
   const networkHealth = assessCryptoPaymentNetworkHealth(networkStates.rows as any, env, now);
@@ -124,7 +132,11 @@ export async function loadCryptoPaymentOverview(
       truncated: discrepancies.rows.length > 30,
       // We only inspect persisted ledger transactions. Unmatched on-chain
       // observations are not stored and cannot be audited from this report.
-      includesUnmatchedOnChainTransfers: false,
+      includesUnmatchedOnChainTransfers: true,
+    },
+    unassignedTransfers: {
+      items: unassignedTransfers.rows.slice(0, 30),
+      truncated: unassignedTransfers.rows.length > 30,
     },
     summary: counts.rows[0] ?? { total: 0, paid: 0, active: 0, attention: 0 },
     networkStates: networkStates.rows.map((row) => ({

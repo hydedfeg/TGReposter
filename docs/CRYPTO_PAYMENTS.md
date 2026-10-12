@@ -338,3 +338,20 @@ on-chain observations are not durably recorded by the current watcher, so this
 report cannot detect or list them. Add durable unmatched-observation recording,
 with privacy and deduplication safeguards, before claiming coverage for that
 case. The scanner never auto-credits an invoice based on these alerts.
+
+## Durable unmatched transfer review
+
+A backend-only ledger, `crypto_payment_unassigned_transfers`, records
+incoming USDT observations that match no invoice or multiple open invoices.
+It stores network, event identity, token/merchant, amount, confirmations,
+and timestamps; sender addresses and private keys are not stored.
+A unique (network, transaction hash, event index) identity deduplicates re-scans.
+Review items remain platform-scoped and are not assigned to any user.
+A review item is resolved automatically only after the same blockchain event
+is linked to an invoice transaction in the owner-scoped ledger.
+
+The dashboard lists a maximum of 30 open transfer observations, with a
+truncation notice. It cannot manually credit or resolve them. This does
+not backfill arbitrary historical chain data; coverage begins with observations
+seen by scanners after the migration. Actual settlement remains governed
+solely by existing transaction-matching and confirmation rules.

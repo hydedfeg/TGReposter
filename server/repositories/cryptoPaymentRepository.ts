@@ -45,6 +45,68 @@ export interface CryptoPaymentInvoiceRecord {
 }
 
 export class CryptoPaymentRepository {
+  async recordUnassignedObservation(
+    observation: CryptoPaymentTransferObservation,
+    reason: "unmatched" | "ambiguous"
+  ): Promise<void> {
+    // No verified owner exists yet. Store only public chain metadata in
+    // the platform-only ledger. Never save a sender address here.
+    await getPostgresPool().query(
+      `
+        insert into public.crypto_payment_unassigned_transfers
+          (network, tx_hash, event_index, token_identifier,
+           receiving_address, amount, block_reference, confirmations,
+           observed_at, reason)
+        values ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9::timestamptz, $10)
+        on conflict (network, tx_hash, event_index) do update
+        set confirmations = greatest(
+              public.crypto_payment_unassigned_transfers.confirmations,
+              excluded.confirmations
+            ),
+            reason = excluded.reason,
+            last_seen_at = now()
+        where public.crypto_payment_unassigned_transfers.resolved_at is null
+          and public.crypto_payment_unassigned_transfers.token_identifier = excluded.token_identifier
+          and public.crypto_payment_unassigned_transfers.receiving_address = excluded.receiving_address
+          and public.crypto_payment_unassigned_transfers.amount = excluded.amount
+      `,
+      [
+        observation.network,
+        observation.txHash,
+        observation.eventIndex,
+        observation.tokenIdentifier,
+        observation.toAddress,
+        observation.amount,
+        observation.blockReference ?? null,
+        observation.confirmations,
+        observation.observedAt,
+        reason,
+      ]
+    );
+  }
+
+  async resolveUnassignedObservation(
+    observation: CryptoPaymentTransferObservation
+  ): Promise<void> {
+    // Never close an alert solely because an invoice amount looks plausible.
+    // Require the chain event to be assigned in the owned transaction ledger.
+    await getPostgresPool().query(
+      `
+        update public.crypto_payment_unassigned_transfers u
+        set resolved_at = now(), last_seen_at = now()
+        where u.network = $1 and u.tx_hash = $2 and u.event_index = $3
+          and u.resolved_at is null
+          and exists (
+            select 1 from public.crypto_payment_transactions t
+            where t.network = u.network and t.tx_hash = u.tx_hash
+              and t.event_index = u.event_index
+          )
+      `,
+      [observation.network, observation.txHash, observation.eventIndex]
+    );
+  }
+
+
   async createInvoice(
     ownerPrincipal: string,
     input: CreateCryptoPaymentInvoiceInput
