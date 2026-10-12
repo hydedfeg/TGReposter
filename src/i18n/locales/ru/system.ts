@@ -111,6 +111,20 @@ const system = {
   },
   payments: {
     telegramSetup: {
+      errors: {
+        "TEST_RATE_LIMITED": "Подождите 60 секунд перед повторным тестом.",
+        "TEST_UNAVAILABLE": "Адрес оповещений Telegram настроен не полностью.",
+        "TEST_INVALID_BOT_TOKEN": "Telegram отклонил токен. Проверьте токен отдельного бота в Railway.",
+        "TEST_CHAT_NOT_FOUND": "Чат не найден. Проверьте числовой Chat ID, отправьте боту /start или добавьте его в группу.",
+        "TEST_CHAT_FORBIDDEN": "Бот заблокирован или удалён из чата. Разблокируйте, запустите или добавьте его снова.",
+        "TEST_NO_SEND_PERMISSION": "У бота нет права отправлять сообщения. Выдайте необходимые разрешения.",
+        "TEST_CHAT_MIGRATED": "Группа стала супергруппой. Обновите Chat ID с префиксом -100 в Railway.",
+        "TEST_TELEGRAM_RATE_LIMITED": "Telegram ограничивает запросы. Подождите и повторите.",
+        "TEST_TELEGRAM_UNAVAILABLE": "Telegram временно недоступен. Повторите позже.",
+        "TEST_CONNECTION_TIMEOUT": "Превышено время ожидания Telegram. Проверьте подключение Railway.",
+        "TEST_NETWORK_ERROR": "Railway не удалось подключиться к Telegram. Проверьте сеть и DNS.",
+        "TEST_DELIVERY_FAILED": "Telegram отклонил тест по неизвестной причине."
+      },
       "title": "Telegram для оповещений",
       "description": "Используйте отдельного бота и приватный чат уполномоченного администратора. Автоматическая отправка отдельно включается в Railway.",
       "autoOn": "Автооповещения включены",

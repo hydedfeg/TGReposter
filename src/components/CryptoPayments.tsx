@@ -156,7 +156,11 @@ export default function CryptoPayments({ token }: { token: string }) {
       cache: "no-store",
     });
     const data = await safeResponseJson(response);
-    if (!response.ok) throw new Error(data?.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      const failure = new Error(data?.error || `HTTP ${response.status}`) as Error & { code?: string };
+      if (typeof data?.code === "string") failure.code = data.code;
+      throw failure;
+    }
     return data;
   }, [token]);
 
@@ -231,7 +235,12 @@ export default function CryptoPayments({ token }: { token: string }) {
         await reload();
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t("payments.requestFailed"));
+      const code = reason instanceof Error && "code" in reason && typeof reason.code === "string"
+        ? reason.code : null;
+      const fallback = reason instanceof Error ? reason.message : t("payments.requestFailed");
+      setError(action === "notification-test" && code?.startsWith("TEST_")
+        ? t(`payments.telegramSetup.errors.${code}`, { defaultValue: fallback })
+        : fallback);
     } finally {
       setBusy(null);
     }
