@@ -333,11 +333,10 @@ The dashboard refreshes while the Payments workspace is open and visible.
 This first iteration is *in-app* and provides no email, push, or Telegram alert
 delivery when nobody has the dashboard open. It is a bounded operational
 exception feed (at most 30 ledger exceptions plus network alerts), not a full
-ledger audit. An overflow indicator warns when more results exist. Unmatched
-on-chain observations are not durably recorded by the current watcher, so this
-report cannot detect or list them. Add durable unmatched-observation recording,
-with privacy and deduplication safeguards, before claiming coverage for that
-case. The scanner never auto-credits an invoice based on these alerts.
+ledger audit. An overflow indicator warns when more results exist. Unassigned on-chain
+observations are now durably recorded in a separate platform-only ledger,
+but only from scanner observations after activation. This is not a historical
+backfill or a mechanism for automatically crediting invoices. The scanner never auto-credits an invoice based on these alerts.
 
 ## Durable unmatched transfer review
 

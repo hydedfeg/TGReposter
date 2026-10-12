@@ -138,7 +138,7 @@ const system = {
       "lastChecked": "Checked",
       "none": "No active issues detected in the available records.",
       "truncated": "More reconciliation issues exist; this view shows the first 30 ledger exceptions.",
-      "scope": "Read-only. Unmatched on-chain transfers are not yet retained for review. No alerts are sent when this dashboard is closed.",
+      "scope": "Read-only. Unassigned transfers are reviewed separately. No alerts are sent when this dashboard is closed.",
       "severity": {
         "critical": "Critical",
         "warning": "Review"
