@@ -7,9 +7,9 @@ import { PGlite } from "@electric-sql/pglite";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const packMigration=fs.readFileSync(
-  path.join(root,"supabase/migrations/20261010182000_add_ai_topup_packs.sql"),"utf8");
+  path.join(root,"supabase/migrations/20261012144532_add_ai_topup_packs.sql"),"utf8");
 const orderMigration=fs.readFileSync(
-  path.join(root,"supabase/migrations/20261010182100_add_ai_topup_orders.sql"),"utf8");
+  path.join(root,"supabase/migrations/20261012144536_add_ai_topup_orders.sql"),"utf8");
 
 test("top-up packs are unpublished, orders are owner-scoped and invoices single-use",async()=>{
   const db=new PGlite();
