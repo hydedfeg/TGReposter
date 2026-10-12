@@ -1,4 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
+import type { PoolClient } from "pg";
 import { addUtcMonths } from "./monthlyAIAllowance";
 
 export class SubscriptionCheckoutError extends Error {
@@ -8,8 +9,8 @@ export class SubscriptionCheckoutError extends Error {
   }
 }
 
-function checkEnabled(): void {
-  if (process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED !== "true") {
+function checkEnabled(enabled = false): void {
+  if (!enabled && process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED !== "true") {
     throw new SubscriptionCheckoutError("CHECKOUT_DISABLED", "Subscription checkout is disabled.");
   }
 }
@@ -189,11 +190,12 @@ export function confirmedTransferQuery(): string {
 
 export async function fulfillVerifiedSubscription(
   ownerPrincipal: string,
-  orderId: string
+  orderId: string,
+  options: { enabled?: boolean; clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">> } = {}
 ): Promise<SubscriptionFulfillment> {
-  checkEnabled();
+  checkEnabled(options.enabled);
   const owner=normalizeOwner(ownerPrincipal);
-  const client=await getPostgresPool().connect();
+  const client=await (options.clientFactory ?? (()=>getPostgresPool().connect()))();
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
