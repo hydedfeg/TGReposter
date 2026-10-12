@@ -51,6 +51,7 @@ test("a scheduler uses one timer, immediately runs one cycle and stops cleanly",
       subscriptions:{attempted:0,completed:0,failed:0},
       topups:{attempted:0,completed:0,failed:0},
       renewals:{attempted:0,completed:0,failed:0},
+      expirations:{attempted:0,completed:0,failed:0},
       allowances:{attempted:0,completed:0,failed:0}
     },
     failureCodes:[]
