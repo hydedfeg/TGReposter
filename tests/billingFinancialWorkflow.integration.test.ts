@@ -11,13 +11,13 @@ import {fulfillVerifiedTopup} from "../server/billing/aiTopupService";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const migrations=[
- "20261010163500_create_commercial_foundation.sql",
- "20261010175200_add_ai_usage_reconciliation.sql",
- "20261010182000_add_ai_topup_packs.sql",
- "20261010182100_add_ai_topup_orders.sql",
- "20261010184000_subscription_checkout_foundation.sql",
- "20261010191500_billing_operation_retries.sql",
- "20261012130000_subscription_lifecycle_events.sql"
+ "20261012144506_create_commercial_foundation.sql",
+ "20261012144528_add_ai_usage_reconciliation.sql",
+ "20261012144532_add_ai_topup_packs.sql",
+ "20261012144536_add_ai_topup_orders.sql",
+ "20261012144539_subscription_checkout_foundation.sql",
+ "20261012144544_billing_operation_retries.sql",
+ "20261012144548_subscription_lifecycle_events.sql"
 ];
 
 async function createDb() {
