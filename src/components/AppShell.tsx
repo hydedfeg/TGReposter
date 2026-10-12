@@ -4,7 +4,6 @@ import {
   CreditCard,
   CheckCircle2,
   Database,
-  CreditCard,
   Filter,
   History,
   Home,
