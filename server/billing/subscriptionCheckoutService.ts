@@ -83,9 +83,13 @@ export async function prepareSubscriptionOrder(
     }
 
     const {rows: subRows} = await client.query(
-      `select plan_id,billing_interval,status,current_period_end
+      `select plan_id,billing_interval,status,current_period_end,cancel_at_period_end
        from public.billing_subscriptions where owner_principal=$1 for update`,[owner]);
     const subscription=subRows[0];
+    if (subscription?.status === "active" && subscription.cancel_at_period_end) {
+      throw new SubscriptionCheckoutError("CANCELLATION_SCHEDULED",
+        "Reverse the end-of-term cancellation before buying a renewal.");
+    }
     if (subscription?.status === "active"
       && subscription.current_period_end
       && new Date(subscription.current_period_end) > new Date(clock[0].now)
@@ -232,7 +236,7 @@ export async function fulfillVerifiedSubscription(
     }
 
     const {rows: subscriptionRows}=await client.query(
-      `select plan_id,billing_interval,status,current_period_start,current_period_end
+      `select plan_id,billing_interval,status,current_period_start,current_period_end,cancel_at_period_end
        from public.billing_subscriptions where owner_principal=$1 for update`,[owner]);
     const subscription=subscriptionRows[0];
     const {rows: nowRows}=await client.query("select now() as now");
@@ -241,6 +245,10 @@ export async function fulfillVerifiedSubscription(
       && subscription.current_period_start && subscription.current_period_end
       && new Date(subscription.current_period_start) <= now
       && new Date(subscription.current_period_end) > now;
+    if (active && subscription.cancel_at_period_end) {
+      throw new SubscriptionCheckoutError("CANCELLATION_SCHEDULED",
+        "This paid renewal conflicts with an end-of-term cancellation and requires review.");
+    }
     if (active && (subscription.plan_id !== order.plan_id
       || subscription.billing_interval !== order.billing_interval)) {
       throw new SubscriptionCheckoutError("PLAN_CHANGE_NOT_READY",
