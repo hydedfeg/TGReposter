@@ -110,7 +110,7 @@ export async function commercialOpenRouterCuration(
     });
     if (!result.ok) {
       // An upstream HTTP error is not reliable evidence of zero charge.
-      throw new CommercialAIError(502, "AI_PROVIDER_ERROR", result.error);
+      throw new CommercialAIError(502, "AI_PROVIDER_ERROR", "error" in result ? String(result.error) : "OpenRouter request failed.");
     }
     generationId = result.generationId;
     if (!result.usage) {
