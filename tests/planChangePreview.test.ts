@@ -109,7 +109,7 @@ test("unpublished target plans cannot be quoted and no owner override is accepte
       enabled:true,now:halfway,query:fixtures([])
     }));
   }
-  await assert.rejects(getPlanChangePreview("legacy:bob&owner=legacy:alice","professional",{
+  await assert.rejects(getPlanChangePreview("legacy:bob owner=legacy:alice","professional",{
     enabled:true,now:halfway,query:fixtures([])
   }),/Valid authenticated billing owner/);
 });
