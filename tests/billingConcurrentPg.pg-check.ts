@@ -102,7 +102,9 @@ test("two independent PostgreSQL transactions enforce the same advisory owner lo
   const first=await pool.connect();
   const second=await pool.connect();
   try{
-    assert.notEqual(first.processID,second.processID,"tests must use distinct PostgreSQL sessions");
+    const p1=await first.query<{pid:number}>("select pg_backend_pid() as pid");
+    const p2=await second.query<{pid:number}>("select pg_backend_pid() as pid");
+    assert.notEqual(p1.rows[0].pid,p2.rows[0].pid,"tests must use distinct PostgreSQL sessions");
     const lockKey="tgreposter:phase11:concurrency:disposable";
     await first.query("begin");
     await first.query("select pg_advisory_xact_lock(hashtextextended($1,0))",[lockKey]);
