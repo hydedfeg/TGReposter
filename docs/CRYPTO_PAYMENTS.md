@@ -354,3 +354,7 @@ truncation notice. It cannot manually credit or resolve them. This does
 not backfill arbitrary historical chain data; coverage begins with observations
 seen by scanners after the migration. Actual settlement remains governed
 solely by existing transaction-matching and confirmation rules.
+
+A zero-value on-chain Transfer event may also be recorded as unmatched; it can
+never satisfy an invoice's positive expected amount. Keeping that event in the
+platform-only ledger prevents zero-value token spam from halting scan progress.

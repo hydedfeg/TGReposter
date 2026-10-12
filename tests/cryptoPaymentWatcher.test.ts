@@ -364,3 +364,29 @@ test("failed unassigned persistence prevents cursor advancement and invoice cred
   );
   assert.equal(saved, false);
 });
+
+test("watcher safely records a zero-value transfer as unmatched without crediting", async () => {
+  let reasonSeen: string | null = null;
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [{ ...observation(1), amount: "0" }], nextCursor: "200" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return null; },
+    async saveNetworkCursor(input) { assert.equal(input.cursor, "200"); },
+    async recordUnassignedObservation(_observation, reason) { reasonSeen = reason; },
+    async resolveUnassignedObservation() {},
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw new Error("zero-value observation must never credit"); },
+    async appendEvent() { throw new Error("no invoice event for zero-value observation"); },
+    async updateInvoiceStatus() { throw new Error("no invoice update for zero-value observation"); },
+  };
+  const result = await new CryptoPaymentWatcher(config, adapter, repository).runOnce();
+  assert.equal(result.unmatched, 1);
+  assert.equal(reasonSeen, "unmatched");
+});
