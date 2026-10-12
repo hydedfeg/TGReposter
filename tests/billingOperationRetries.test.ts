@@ -7,7 +7,7 @@ import {PGlite} from "@electric-sql/pglite";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const migration=fs.readFileSync(
- path.join(root,"supabase/migrations/20261010191500_billing_operation_retries.sql"),"utf8");
+ path.join(root,"supabase/migrations/20261012144544_billing_operation_retries.sql"),"utf8");
 
 test("retry table is private, owner-scoped and keyed by operation",async()=>{
  const db=new PGlite();
