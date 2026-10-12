@@ -7,7 +7,7 @@ import {PGlite} from "@electric-sql/pglite";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const migration=fs.readFileSync(
-  path.join(root,"supabase/migrations/20261012130000_subscription_lifecycle_events.sql"),"utf8"
+  path.join(root,"supabase/migrations/20261012144548_subscription_lifecycle_events.sql"),"utf8"
 );
 
 test("subscription lifecycle audit is owner-scoped and hidden from browser roles",async()=>{
