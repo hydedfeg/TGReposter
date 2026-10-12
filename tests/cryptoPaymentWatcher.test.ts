@@ -304,3 +304,63 @@ test("payment watcher ignores transfers outside the invoice lifetime", async () 
   assert.equal(result.matched, 0);
   assert.equal(upsertCalls, 0);
 });
+
+test("watcher records unassigned event before advancing scanner checkpoint", async () => {
+  const calls: string[] = [];
+  let cursor: string | null = null;
+  const observed = observation(1);
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [observed], nextCursor: "101" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return cursor; },
+    async saveNetworkCursor(input) { calls.push("save"); cursor = input.cursor; },
+    async recordUnassignedObservation(_event, reason) {
+      assert.equal(reason, "unmatched");
+      calls.push("record");
+    },
+    async resolveUnassignedObservation() { calls.push("resolved"); },
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw Error("must not credit"); },
+    async appendEvent() { throw Error("must not create invoice event"); },
+    async updateInvoiceStatus() { throw Error("must not change invoice"); },
+  };
+  const result = await new CryptoPaymentWatcher(config, adapter, repository).runOnce();
+  assert.equal(result.unmatched, 1);
+  assert.deepEqual(calls, ["record", "save"]);
+  assert.equal(cursor, "101");
+});
+
+test("failed unassigned persistence prevents cursor advancement and invoice credit", async () => {
+  let saved = false;
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() { return 18; },
+    async scanTransfers() {
+      return { observations: [observation(3)], nextCursor: "120" };
+    },
+  };
+  const repository: CryptoPaymentWatcherRepository = {
+    async getNetworkCursor() { return null; },
+    async saveNetworkCursor() { saved = true; },
+    async recordUnassignedObservation() { throw Error("storage unavailable"); },
+    async resolveUnassignedObservation() {},
+    async findInvoicesMatchingObservation() { return []; },
+    async getTransactionAssignment() { return null; },
+    async getInvoice() { return null; },
+    async upsertObservedTransfer() { throw Error("must not credit"); },
+    async appendEvent() { throw Error("must not write an event"); },
+    async updateInvoiceStatus() { throw Error("must not update invoice"); },
+  };
+  await assert.rejects(
+    () => new CryptoPaymentWatcher(config, adapter, repository).runOnce(),
+    /storage unavailable/
+  );
+  assert.equal(saved, false);
+});

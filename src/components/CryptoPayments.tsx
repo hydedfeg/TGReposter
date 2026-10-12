@@ -60,7 +60,19 @@ interface ReconciliationAlert {
   ownerPrincipal: string | null;
   occurredAt: string | null;
 }
+interface UnassignedTransfer {
+  network: PaymentNetwork;
+  tx_hash: string;
+  event_index: string;
+  amount: string;
+  confirmations: number;
+  reason: "unmatched" | "ambiguous";
+  observed_at: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
 interface Overview {
+  unassignedTransfers: { items: UnassignedTransfer[]; truncated: boolean };
   reconciliation: {
     checkedAt: string;
     alerts: ReconciliationAlert[];
@@ -230,6 +242,39 @@ export default function CryptoPayments({ token }: { token: string }) {
       {notice && <div role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">{notice}</div>}
       {!overview && busy === "refresh" && <div role="status" className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">{t("payments.loading")}</div>}
       {overview && <>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label={t("payments.unassigned.title")}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <h3 className="font-display text-lg font-bold text-slate-900">{t("payments.unassigned.title")}</h3>
+            </div>
+            <StatusPill state={overview.unassignedTransfers.items.length ? "warn" : "good"}
+              label={t("payments.unassigned.count", { count: overview.unassignedTransfers.items.length })}/>
+          </div>
+          <p className="px-5 pt-3 text-xs leading-5 text-slate-500">{t("payments.unassigned.description")}</p>
+          {overview.unassignedTransfers.items.length === 0 ? (
+            <p className="p-5 text-sm text-slate-500">{t("payments.unassigned.none")}</p>
+          ) : <div className="divide-y divide-slate-100">
+            {overview.unassignedTransfers.items.map((item) => (
+              <div key={`${item.network}:${item.tx_hash}:${item.event_index}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {NETWORK_NAMES[item.network]} · <span dir="ltr">{item.amount} USDT</span>
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-slate-500" dir="ltr" title={item.tx_hash}>
+                    {compact(item.tx_hash, 28)} · #{item.event_index}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {t("payments.unassigned.lastSeen")}: {date(item.last_seen_at)} · {item.confirmations} {t("payments.confirmations")}
+                  </p>
+                </div>
+                <StatusPill state="warn" label={t(`payments.unassigned.reasons.${item.reason}`)}/>
+              </div>
+            ))}
+          </div>}
+          {overview.unassignedTransfers.truncated && <p role="status" className="px-5 pb-4 text-sm text-amber-700">{t("payments.unassigned.truncated")}</p>}
+          <p className="border-t border-slate-100 px-5 py-3 text-xs leading-5 text-slate-500">{t("payments.unassigned.scope")}</p>
+        </section>
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" aria-label={t("payments.alerts.title")}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">

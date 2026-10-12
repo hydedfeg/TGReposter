@@ -117,6 +117,19 @@ const system = {
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
   payments: {
+    unassigned: {
+      "title": "Unassigned transfers",
+      "count": "{{count}} review items",
+      "description": "Observed USDT transfers that could not be safely linked to exactly one invoice.",
+      "none": "No unassigned transfers recorded so far.",
+      "lastSeen": "Last observed",
+      "truncated": "More transfers exist; showing the 30 most recently observed.",
+      "scope": "Platform-only review. No customer identity is inferred and no payment can be credited from this list.",
+      "reasons": {
+        "unmatched": "No invoice match",
+        "ambiguous": "Multiple invoice matches"
+      }
+    },
     alerts: {
       "title": "Payment alerts & reconciliation",
       "count": "{{count}} alerts",
