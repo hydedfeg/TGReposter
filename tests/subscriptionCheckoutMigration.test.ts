@@ -7,7 +7,7 @@ import {PGlite} from "@electric-sql/pglite";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const migration=fs.readFileSync(
-  path.join(root,"supabase/migrations/20261010184000_subscription_checkout_foundation.sql"),"utf8");
+  path.join(root,"supabase/migrations/20261012144539_subscription_checkout_foundation.sql"),"utf8");
 
 test("checkout schema isolates accounts, binds invoices and prevents double renewals",async()=>{
   const db=new PGlite();
