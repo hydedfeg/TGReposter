@@ -4,7 +4,7 @@
 BEGIN;
 DO $phase10$
 DECLARE
-  invoice_id uuid;
+  fixture_invoice_uuid uuid;
   chain_event_id uuid;
   paid boolean;
   owner text := 'legacy:phase10-fixture-alice';
@@ -17,13 +17,13 @@ BEGIN
   VALUES
     (owner,'USDT','bsc',16.5,16.500001,'0xphase10receiver',
      '0xphase10token','paid',now(),now()+interval '1 hour')
-  RETURNING id INTO invoice_id;
+  RETURNING id INTO fixture_invoice_uuid;
 
   INSERT INTO public.crypto_payment_transactions
     (owner_principal,invoice_id,network,tx_hash,event_index,
      token_identifier,to_address,amount,confirmations,status,confirmed_at)
   VALUES
-    (owner,invoice_id,'bsc',transfer_hash,'0','0xwrongtoken',
+    (owner,fixture_invoice_uuid,'bsc',transfer_hash,'0','0xwrongtoken',
      '0xphase10receiver',16.500001,15,'confirmed',now())
   RETURNING id INTO chain_event_id;
 
@@ -31,7 +31,7 @@ BEGIN
     SELECT 1 FROM public.crypto_payment_transactions t
     JOIN public.crypto_payment_invoices i
       ON t.owner_principal=i.owner_principal AND t.invoice_id=i.id
-    WHERE t.owner_principal=owner AND t.invoice_id=invoice_id
+    WHERE t.owner_principal=owner AND t.invoice_id=fixture_invoice_uuid
       AND i.status='paid' AND i.confirmed_at IS NOT NULL
       AND t.status='confirmed' AND t.confirmed_at IS NOT NULL
       AND t.confirmations>0
@@ -48,7 +48,7 @@ BEGIN
     SELECT 1 FROM public.crypto_payment_transactions t
     JOIN public.crypto_payment_invoices i
       ON t.owner_principal=i.owner_principal AND t.invoice_id=i.id
-    WHERE t.owner_principal=owner AND t.invoice_id=invoice_id
+    WHERE t.owner_principal=owner AND t.invoice_id=fixture_invoice_uuid
       AND i.status='paid' AND i.confirmed_at IS NOT NULL
       AND t.status='confirmed' AND t.confirmed_at IS NOT NULL
       AND t.confirmations>0
@@ -64,7 +64,7 @@ BEGIN
     SELECT 1 FROM public.crypto_payment_transactions t
     JOIN public.crypto_payment_invoices i
       ON t.owner_principal=i.owner_principal AND t.invoice_id=i.id
-    WHERE t.owner_principal=owner AND t.invoice_id=invoice_id
+    WHERE t.owner_principal=owner AND t.invoice_id=fixture_invoice_uuid
       AND i.status='paid' AND i.confirmed_at IS NOT NULL
       AND t.status='confirmed' AND t.confirmed_at IS NOT NULL
       AND t.confirmations>0
@@ -78,7 +78,7 @@ BEGIN
     INSERT INTO public.crypto_payment_transactions
       (owner_principal,invoice_id,network,tx_hash,event_index,
        token_identifier,to_address,amount,confirmations,status,confirmed_at)
-    VALUES (owner,invoice_id,'bsc',transfer_hash,'0',
+    VALUES (owner,fixture_invoice_uuid,'bsc',transfer_hash,'0',
       '0xphase10token','0xphase10receiver',16.500001,15,'confirmed',now());
     RAISE EXCEPTION 'Duplicate chain event accepted';
   EXCEPTION WHEN unique_violation THEN NULL;
@@ -88,7 +88,7 @@ BEGIN
     INSERT INTO public.crypto_payment_transactions
       (owner_principal,invoice_id,network,tx_hash,event_index,
        token_identifier,to_address,amount,confirmations,status,confirmed_at)
-    VALUES (other_owner,invoice_id,'bsc',transfer_hash,'1',
+    VALUES (other_owner,fixture_invoice_uuid,'bsc',transfer_hash,'1',
       '0xphase10token','0xphase10receiver',16.500001,15,'confirmed',now());
     RAISE EXCEPTION 'Cross-owner invoice event accepted';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
