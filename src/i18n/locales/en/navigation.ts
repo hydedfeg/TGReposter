@@ -16,6 +16,7 @@ const navigation = {
     billing: "Billing & Usage",
     teamAccess: "Team & Access",
     systemSettings: "System Settings",
+    payments: "Payments",
   },
   titles: {
     dashboard: "Dashboard",
@@ -29,6 +30,7 @@ const navigation = {
     billing: "Billing & Usage",
     team: "Team & Access",
     database: "System Settings",
+    payments: "Payment Operations",
   },
   mobile: {
     home: "Home",
