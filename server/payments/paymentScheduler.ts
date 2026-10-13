@@ -202,6 +202,10 @@ export function startCryptoPaymentScheduler(
       if (failures.length > 0) {
         logger.warn("Crypto payment scan completed with network failures:", {
           networks: failures.map((failure) => failure.network),
+          diagnostics: failures.map((failure) => ({
+            network: failure.network,
+            code: failure.errorCode ?? "SCAN_FAILED",
+          })),
         });
       }
 
