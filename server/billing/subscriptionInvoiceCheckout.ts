@@ -1,12 +1,33 @@
 import {getPostgresPool} from "../utils/postgresPool";
+import {parseFixedDecimal} from "./checkoutQuoteService";
+import type {CryptoPaymentInvoiceRecord} from "../repositories/cryptoPaymentRepository";
 import {CryptoPaymentInvoiceService} from "../payments/invoiceService";
 import type {CryptoPaymentNetwork} from "../payments/types";
 import {prepareSubscriptionOrder, type SubscriptionOrderRecord,SubscriptionCheckoutError} from "./subscriptionCheckoutService";
 
 /**
- * Internal-only composition; no public route invokes this yet.
- * Invoice amount is ALWAYS read from the server-issued quote.
+ * Trusted composition. Price always comes from a live, owner-scoped server quote.
+ * The five-minute FX quote is for starting checkout, not for completing a
+ * blockchain transfer. Once issued, the exact payable amount is locked for
+ * forty-five minutes and cannot be repriced by the browser.
  */
+export const CHECKOUT_INVOICE_TTL_MS = 45 * 60_000;
+
+export function assertCheckoutInvoiceMatches(
+  invoice: Pick<CryptoPaymentInvoiceRecord,"network"|"requested_amount"|"status"|"expires_at">,
+  network: CryptoPaymentNetwork,
+  quotedAmount: string,
+  now: number = Date.now()
+): void {
+  if (invoice.network !== network ||
+      parseFixedDecimal(invoice.requested_amount,18) !== parseFixedDecimal(quotedAmount,18)) {
+    throw new SubscriptionCheckoutError("INVOICE_CONFLICT",
+      "This quote is already attached to a different payment.");
+  }
+  if (invoice.status !== "pending" || new Date(invoice.expires_at).getTime() <= now) {
+    throw new SubscriptionCheckoutError("INVOICE_NOT_PENDING","Create a new quote for this payment.");
+  }
+}
 export async function createSubscriptionCheckoutInvoice(
   ownerPrincipal:string,
   quoteId:string,
@@ -40,9 +61,10 @@ export async function createSubscriptionCheckoutInvoice(
   const invoice=await (deps.invoiceService ?? new CryptoPaymentInvoiceService()).createInvoice(
     owner,{
       network,baseAmount:quote.usdt_amount,
-      expiresAt:new Date(expiry).toISOString(),
+      expiresAt:new Date(Date.now() + CHECKOUT_INVOICE_TTL_MS).toISOString(),
       requestKey:`subscription-quote:${quoteId}`
     });
+  assertCheckoutInvoiceMatches(invoice,network,quote.usdt_amount);
   const order=await (deps.prepare ?? prepareSubscriptionOrder)(owner,quoteId,invoice.id);
   return {order,invoiceId:invoice.id,expectedAmount:invoice.expected_amount};
 }

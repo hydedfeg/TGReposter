@@ -7,6 +7,7 @@ import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
 import { createBillingOverviewRouter } from "./server/routes/billingOverview";
+import { createCustomerCheckoutRouter } from "./server/routes/customerCheckout";
 import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
 import { startBillingOperationsScheduler } from "./server/billing/billingOperationsScheduler";
 import { runCryptoPaymentStartupPreflight } from "./server/payments/paymentRuntime";
@@ -526,6 +527,7 @@ app.use("/api/promotion", createPromotionRouter({
 // They remain inert until CRYPTO_PAYMENTS_ENABLED and at least one network are enabled.
 // Customer Billing & Usage is strictly read-only and owner-scoped.
 app.use("/api/billing", createBillingOverviewRouter({ authMiddleware }));
+app.use("/api/billing/checkout", createCustomerCheckoutRouter({ authMiddleware }));
 
 app.use("/api/crypto-payments", createCryptoPaymentRouter({
   authMiddleware,
