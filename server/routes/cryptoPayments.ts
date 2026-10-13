@@ -121,16 +121,31 @@ export function createCryptoPaymentRouter({
   router.post("/notifications/test", async (_req, res) => {
     const result = await sendPaymentNotificationTest();
     if (result.ok) return res.json(result);
-    const status = result.code === "TEST_RATE_LIMITED" ? 429
-      : result.code === "TEST_UNAVAILABLE" ? 409 : 502;
+    // Log only the controlled diagnostic code; never the token, chat ID,
+    // raw Telegram response, request URL or payment data.
+    console.warn("Payment alert notification test failed:", { code: result.code });
+    const errors: Record<string, string> = {
+      TEST_RATE_LIMITED: "Please wait 60 seconds before testing again.",
+      TEST_UNAVAILABLE: "Telegram test delivery is not fully configured.",
+      TEST_INVALID_BOT_TOKEN: "Telegram rejected the bot token. Check the dedicated bot token in Railway.",
+      TEST_CHAT_NOT_FOUND: "Telegram could not find the chat. Verify its numeric Chat ID and start the bot or add it to the group.",
+      TEST_CHAT_FORBIDDEN: "The bot is blocked or no longer has access to this chat. Start or unblock it, or add it to the group.",
+      TEST_NO_SEND_PERMISSION: "The bot cannot send messages to this chat. Grant it permission to post.",
+      TEST_CHAT_MIGRATED: "The group has moved to a supergroup. Update Railway with its new -100 Chat ID.",
+      TEST_TELEGRAM_RATE_LIMITED: "Telegram temporarily limited requests. Wait and try again.",
+      TEST_TELEGRAM_UNAVAILABLE: "Telegram's API is temporarily unavailable. Try again later.",
+      TEST_CONNECTION_TIMEOUT: "Telegram did not respond within 8 seconds. Check outbound network connectivity.",
+      TEST_NETWORK_ERROR: "The server could not connect to Telegram. Check network or DNS access.",
+      TEST_DELIVERY_FAILED: "Telegram rejected the test notification for an unrecognized reason.",
+    };
+    const status = result.code === "TEST_RATE_LIMITED" || result.code === "TEST_TELEGRAM_RATE_LIMITED" ? 429
+      : result.code === "TEST_UNAVAILABLE" ? 409
+      : result.code === "TEST_CHAT_NOT_FOUND" || result.code === "TEST_CHAT_MIGRATED" || result.code === "TEST_NO_SEND_PERMISSION" ? 422
+      : 502;
     return res.status(status).json({
       ok: false,
       code: result.code,
-      error: result.code === "TEST_RATE_LIMITED"
-        ? "Please wait before sending another test notification."
-        : result.code === "TEST_UNAVAILABLE"
-          ? "Telegram test delivery is not configured."
-          : "Telegram did not accept the test notification.",
+      error: errors[result.code] ?? errors.TEST_DELIVERY_FAILED,
     });
   });
 

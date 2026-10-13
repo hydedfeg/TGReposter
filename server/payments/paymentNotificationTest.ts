@@ -38,9 +38,46 @@ export function getPaymentNotificationStatus(
   };
 }
 
+export type TelegramTestFailureCode =
+  | "TEST_UNAVAILABLE" | "TEST_RATE_LIMITED" | "TEST_DELIVERY_FAILED"
+  | "TEST_INVALID_BOT_TOKEN" | "TEST_CHAT_NOT_FOUND" | "TEST_CHAT_FORBIDDEN"
+  | "TEST_NO_SEND_PERMISSION" | "TEST_CHAT_MIGRATED"
+  | "TEST_TELEGRAM_RATE_LIMITED" | "TEST_TELEGRAM_UNAVAILABLE"
+  | "TEST_CONNECTION_TIMEOUT" | "TEST_NETWORK_ERROR";
+
 export type TelegramTestResult =
   | { ok: true; code: "TEST_SENT" }
-  | { ok: false; code: "TEST_UNAVAILABLE" | "TEST_RATE_LIMITED" | "TEST_DELIVERY_FAILED" };
+  | { ok: false; code: TelegramTestFailureCode };
+
+/** Strictly classify common Bot API failures; never expose arbitrary descriptions. */
+function classifyTelegramFailure(
+  status: number,
+  data: unknown
+): TelegramTestFailureCode {
+  let description = "";
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    const payload = data as Record<string, unknown>;
+    if (typeof payload.description === "string") {
+      description = payload.description.slice(0, 240).toLowerCase();
+    }
+  }
+  if (status === 401) return "TEST_INVALID_BOT_TOKEN";
+  if (status === 429) return "TEST_TELEGRAM_RATE_LIMITED";
+  if (/migrated to a supergroup|group chat was upgraded|migrate.to.chat/.test(description)) {
+    return "TEST_CHAT_MIGRATED";
+  }
+  if (/not enough rights|have no rights|chat_write_forbidden|not allowed to send|can't send messages/.test(description)) {
+    return "TEST_NO_SEND_PERMISSION";
+  }
+  if (/chat not found|user not found|peer_id_invalid/.test(description)) {
+    return "TEST_CHAT_NOT_FOUND";
+  }
+  if (status === 403 || /blocked by the user|kicked from|not a member/.test(description)) {
+    return "TEST_CHAT_FORBIDDEN";
+  }
+  if (status >= 500) return "TEST_TELEGRAM_UNAVAILABLE";
+  return "TEST_DELIVERY_FAILED";
+}
 
 const TEST_COOLDOWN_MS = 60_000;
 let lastTestAttemptMs = Number.NEGATIVE_INFINITY;
@@ -77,13 +114,23 @@ export async function sendPaymentNotificationTest(
       signal: AbortSignal.timeout(8_000),
     });
 
-    if (!response.ok) return { ok: false, code: "TEST_DELIVERY_FAILED" };
-    const data: unknown = await response.json();
-    if (data && typeof data === "object" && "ok" in data && data.ok === true) {
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      return { ok: false, code: response.ok ? "TEST_DELIVERY_FAILED" : classifyTelegramFailure(response.status, null) };
+    }
+    if (response.ok && data && typeof data === "object" && "ok" in data && data.ok === true) {
       return { ok: true, code: "TEST_SENT" };
     }
-    return { ok: false, code: "TEST_DELIVERY_FAILED" };
-  } catch {
-    return { ok: false, code: "TEST_DELIVERY_FAILED" };
+    return { ok: false, code: classifyTelegramFailure(response.status, data) };
+  } catch (error) {
+    const name = error && typeof error === "object" && "name" in error ? error.name : null;
+    return {
+      ok: false,
+      code: name === "TimeoutError" || name === "AbortError"
+        ? "TEST_CONNECTION_TIMEOUT"
+        : "TEST_NETWORK_ERROR",
+    };
   }
 }

@@ -118,6 +118,20 @@ const system = {
   },
   payments: {
     telegramSetup: {
+      errors: {
+        "TEST_RATE_LIMITED": "Please wait 60 seconds before testing again.",
+        "TEST_UNAVAILABLE": "The Telegram alert destination is not fully configured.",
+        "TEST_INVALID_BOT_TOKEN": "Telegram rejected the bot token. Verify the dedicated bot token in Railway.",
+        "TEST_CHAT_NOT_FOUND": "Chat not found. Check the numeric Chat ID in Railway; send /start to the bot or add it to your group.",
+        "TEST_CHAT_FORBIDDEN": "The bot has been blocked or removed from the chat. Start or unblock the bot, or re-add it to the group.",
+        "TEST_NO_SEND_PERMISSION": "The bot cannot send messages there. Grant it permission to post in the group or channel.",
+        "TEST_CHAT_MIGRATED": "The group became a supergroup. Update Railway with its new Chat ID starting with -100.",
+        "TEST_TELEGRAM_RATE_LIMITED": "Telegram is rate-limiting the bot. Wait and retry.",
+        "TEST_TELEGRAM_UNAVAILABLE": "Telegram is temporarily unavailable. Try again later.",
+        "TEST_CONNECTION_TIMEOUT": "The request to Telegram timed out. Check Railway network connectivity.",
+        "TEST_NETWORK_ERROR": "Railway could not connect to Telegram. Check outbound networking and DNS.",
+        "TEST_DELIVERY_FAILED": "Telegram rejected the notification for an unrecognized reason."
+      },
       "title": "Telegram alert destination",
       "description": "Use a dedicated bot and authorized private administrator chat. Automatic delivery remains separately controlled in Railway.",
       "autoOn": "Automatic alerts enabled",
