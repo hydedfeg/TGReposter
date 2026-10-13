@@ -8,6 +8,7 @@ on:
       - feat/commercial-staging-integration
       - feat/billing-financial-acceptance-tests
       - feat/live-staging-acceptance-harness
+      - feat/phase12-payment-audit-acceptance
   pull_request:
     branches:
       - main
@@ -79,3 +80,47 @@ jobs:
 
       - name: Prove real PostgreSQL concurrency and idempotence
         run: node --import tsx --test tests/billingConcurrentPg.pg-check.ts
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Retrieve advisory metadata
+        shell: bash
+        run: |
+          npm audit --json > audit-full.json || status=$?
+          if [ "${status:-0}" -gt 1 ]; then
+            echo "npm audit full-tree failed unexpectedly"
+            exit 1
+          fi
+          npm audit --omit=dev --json > audit-production.json || status_prod=$?
+          if [ "${status_prod:-0}" -gt 1 ]; then
+            echo "npm audit production-tree failed unexpectedly"
+            exit 1
+          fi
+
+      - name: Report direct, transitive and production vulnerability baseline
+        run: node scripts/reportNpmAudit.mjs audit-full.json audit-production.json
+
+      - name: Preserve evidence for reviewed dependency updates
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase12-dependency-audit
+          path: |
+            audit-full.json
+            audit-production.json
+          retention-days: 14
