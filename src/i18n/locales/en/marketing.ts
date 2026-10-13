@@ -12,6 +12,7 @@ const marketing = {
     flowImage: "Abstract content flow moving through AI processing to Telegram destinations",
   },
   nav: {
+    salesPlan: "Sales Plan",
     workflow: "How it works",
     capabilities: "Capabilities",
     security: "Security",
@@ -76,6 +77,90 @@ const marketing = {
     title: "Your workspace is yours.",
     body: "Sources, filters, inbox posts, destinations, campaigns, and AI preferences are isolated per user. Sensitive credentials stay on the backend, protected by authenticated, role-aware access.",
   },
+  salesPlan: {
+    "eyebrow": "Sales Plan · Proposed pricing",
+    "title": "One platform. A plan for every Telegram operation.",
+    "intro": "Start with content curation and scale to multi-channel publishing, campaigns, and teamwork.",
+    "billingLabel": "Billing period",
+    "periods": {
+      "monthly": "Monthly",
+      "annual": "Annual"
+    },
+    "notice": "Approved pricing preview and planned limits. Subscriptions, checkout, and AI top-up purchases are not yet available. Request demo access to discuss a plan.",
+    "popular": "Most popular",
+    "custom": "Custom",
+    "perMonth": "/ month",
+    "enterpriseBilling": "Tailored contract",
+    "freeForever": "Free forever",
+    "monthlyCharge": "Billed monthly",
+    "annualCharge": "Billed {{price}} yearly",
+    "plannedLimits": "Planned plan limits",
+    "metrics": {
+      "users": "Team members",
+      "sources": "Monitored sources",
+      "destinations": "Publishing destinations",
+      "campaigns": "Active campaigns",
+      "ai": "AI Units / month",
+      "history": "Publishing history"
+    },
+    "history": {
+      "days7": "7 days",
+      "days90": "90 days",
+      "year1": "1 year",
+      "year2": "2 years",
+      "year3": "3 years",
+      "custom": "Custom"
+    },
+    "request": "Request access",
+    "contact": "Talk to our team",
+    "discussPlan": "Discuss the {{plan}} plan",
+    "annualSavings": "Save up to 17% with annual billing—equivalent to approximately two months free.",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "audience": "Get started",
+        "description": "Explore the complete content workflow with a small channel setup."
+      },
+      "creator": {
+        "name": "Creator",
+        "audience": "Solo creators",
+        "description": "Save time curating and publishing across a few channels."
+      },
+      "professional": {
+        "name": "Professional",
+        "audience": "Multi-channel operators",
+        "description": "Bring monitoring, publishing, and promotion into one workspace."
+      },
+      "business": {
+        "name": "Business",
+        "audience": "Media teams",
+        "description": "Plan for larger operations with team-level collaboration."
+      },
+      "agency": {
+        "name": "Agency",
+        "audience": "Channel networks",
+        "description": "Coordinate large publishing networks and campaign portfolios."
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "audience": "Organizations",
+        "description": "Discuss bespoke scale, governance, integrations, and support."
+      }
+    },
+    "topUps": {
+      "eyebrow": "Optional AI capacity",
+      "title": "Add AI Units when you need more.",
+      "description": "Planned one-time AI Unit packs complement the monthly allowance included in each tier.",
+      "units": "{{units}} AI Units",
+      "note": "AI Units reflect underlying model usage, not a fixed number of AI actions. Purchases and commercial AI metering are not live.",
+      "packs": {
+        "mini": "AI Mini",
+        "plus": "AI Plus",
+        "pro": "AI Pro",
+        "max": "AI Max"
+      }
+    }
+  },
   cta: {
     eyebrow: "See it in your workflow",
     title: "Request demo access.",
@@ -116,6 +201,7 @@ const marketing = {
     error: "We couldn’t send your request. Please check your connection and try again.",
   },
   footer: {
+    salesPlan: "Sales Plan",
     workflow: "Workflow",
     capabilities: "Capabilities",
     security: "Security",
