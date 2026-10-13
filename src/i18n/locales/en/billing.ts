@@ -40,7 +40,7 @@ const billing = {
   "payment": "Payment",
   "fulfillment": "Fulfillment",
   "amount": "Amount",
-  "readOnlyNotice": "This page is informational. Subscription changes, invoices and checkout will be introduced after billing verification."
+  "readOnlyNotice": "This page is informational. Subscription changes, invoices and checkout will be introduced after billing verification.",
   "checkout": {
     "open": "USDT checkout",
     "back": "Back to billing",
