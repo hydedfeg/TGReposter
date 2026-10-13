@@ -16,6 +16,7 @@ import {
 import { type FormEvent, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import LanguageSelector from "./components/LanguageSelector";
+import MarketingSalesPlan from "./components/MarketingSalesPlan";
 import { getLocaleDirection, normalizeAppLocale } from "./i18n";
 import { safeResponseJson } from "./utils/api";
 
@@ -126,7 +127,7 @@ export default function MarketingHome() {
           </a>
 
           <nav
-            className="hidden items-center gap-8 md:flex"
+            className="hidden items-center gap-5 xl:flex"
             aria-label={t("marketing:accessibility.mainNavigation")}
           >
             <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#workflow">
@@ -135,12 +136,15 @@ export default function MarketingHome() {
             <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#capabilities">
               {t("marketing:nav.capabilities")}
             </a>
+            <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#sales-plan">
+              {t("marketing:nav.salesPlan")}
+            </a>
             <a className="text-sm font-semibold text-slate-300 transition hover:text-white" href="#security">
               {t("marketing:nav.security")}
             </a>
           </nav>
 
-          <div className="hidden items-center gap-3 md:flex">
+          <div className="hidden items-center gap-3 xl:flex">
             <a
               href={dashboardUrl}
               className="px-2 text-sm font-semibold text-slate-300 transition hover:text-white"
@@ -159,7 +163,7 @@ export default function MarketingHome() {
 
           <button
             type="button"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-white md:hidden"
+            className="flex h-11 w-11 items-center justify-center rounded-full border border-white/15 text-white xl:hidden"
             onClick={() => setMenuOpen((open) => !open)}
             aria-label={menuOpen ? t("marketing:accessibility.closeMenu") : t("marketing:accessibility.openMenu")}
             aria-expanded={menuOpen}
@@ -169,7 +173,7 @@ export default function MarketingHome() {
         </div>
 
         {menuOpen ? (
-          <div className="border-t border-white/10 bg-[#061725] px-5 py-5 md:hidden">
+          <div className="border-t border-white/10 bg-[#061725] px-5 py-5 xl:hidden">
             <nav
               className="mx-auto grid max-w-[1240px] gap-2"
               aria-label={t("marketing:accessibility.mobileNavigation")}
@@ -179,6 +183,7 @@ export default function MarketingHome() {
                 [t("marketing:nav.workflow"), "#workflow"],
                 [t("marketing:nav.capabilities"), "#capabilities"],
                 [t("marketing:nav.security"), "#security"],
+                [t("marketing:nav.salesPlan"), "#sales-plan"],
               ].map(([label, href]) => (
                 <a
                   key={href}
@@ -436,6 +441,8 @@ export default function MarketingHome() {
           </div>
         </section>
 
+        <MarketingSalesPlan locale={locale} />
+
         <section id="security" className="scroll-mt-20 bg-[#dff8a0] px-5 py-20 sm:px-8 lg:py-24">
           <div className="mx-auto grid max-w-[1240px] gap-10 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div className="flex items-center gap-5">
@@ -597,6 +604,7 @@ export default function MarketingHome() {
           <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium">
             <a href="#workflow" className="hover:text-white">{t("marketing:footer.workflow")}</a>
             <a href="#capabilities" className="hover:text-white">{t("marketing:footer.capabilities")}</a>
+            <a href="#sales-plan" className="hover:text-white">{t("marketing:footer.salesPlan")}</a>
             <a href="#security" className="hover:text-white">{t("marketing:footer.security")}</a>
             <a href="#request-demo" className="hover:text-white">{t("marketing:footer.demo")}</a>
             <a href={dashboardUrl} className="hover:text-white">{t("marketing:footer.dashboard")}</a>
