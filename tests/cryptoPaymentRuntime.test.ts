@@ -162,7 +162,8 @@ test("crypto payment preflight isolates network validation failures", async () =
   assert.equal(result.enabled, true);
   assert.equal(result.networks.length, 1);
   assert.equal(result.networks[0].ok, false);
-  assert.equal(result.networks[0].error, "chain validation failed");
+  assert.equal(result.networks[0].errorCode, "SCAN_FAILED");
+  assert.equal(result.networks[0].error, "Blockchain payment scanner encountered an unexpected error.");
 });
 
 test("preflight runs while scheduler switches remain disabled", async () => {
@@ -267,4 +268,22 @@ test("server startup wires the optional read-only preflight before the scheduler
 
   assert.ok(preflightIndex >= 0);
   assert.ok(schedulerIndex > preflightIndex);
+});
+
+test("payment preflight failures redact provider response secrets while preserving categories", async () => {
+  const env = {
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_ETHEREUM_ENABLED: "true",
+    CRYPTO_USDT_ETHEREUM_RPC_URL: "https://private-provider.test/key-SUPER_SECRET",
+    CRYPTO_USDT_ETHEREUM_RECEIVING_ADDRESS: "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_ETHEREUM_CONFIRMATIONS: "80",
+  };
+  const result = await preflightConfiguredCryptoPayments(env, () => ({
+    async getAssetDecimals() {
+      throw new Error("ethereum RPC request failed with HTTP 429. url=https://private-provider.test/key-SUPER_SECRET");
+    },
+  }));
+  assert.equal(result.networks[0].errorCode, "RPC_RATE_LIMITED");
+  assert.match(result.networks[0].error ?? "", /rate limiting/i);
+  assert.doesNotMatch(JSON.stringify(result), /SUPER_SECRET|private-provider\.test|222222222222/);
 });

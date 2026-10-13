@@ -181,3 +181,36 @@ test("payment scheduler uses a PostgreSQL advisory lock", () => {
   const server = fs.readFileSync(path.join(repoRoot, "server.ts"), "utf8");
   assert.match(server, /startCryptoPaymentScheduler\(\);/);
 });
+
+test("scheduler logs only controlled network diagnostics when provider fails", async () => {
+  const warnings: unknown[] = [];
+  const env = { ...enabledEnv };
+  const stop = startCryptoPaymentScheduler({
+    env,
+    runLockedScan: async () => ({
+      acquired: true,
+      result: {
+        enabled: true,
+        networks: [{
+          network: "ethereum",
+          ok: false,
+          errorCode: "RPC_RATE_LIMITED",
+          error: "Blockchain RPC provider is rate limiting requests.",
+        }],
+      },
+    }),
+    setIntervalFn: () => ({}),
+    logger: {
+      info() {},
+      warn(_message, value) { warnings.push(value); },
+      error() {},
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  stop();
+  assert.deepEqual(warnings, [{
+    networks: ["ethereum"],
+    diagnostics: [{ network: "ethereum", code: "RPC_RATE_LIMITED" }],
+  }]);
+  assert.doesNotMatch(JSON.stringify(warnings), /secret|https?:\/\//i);
+});

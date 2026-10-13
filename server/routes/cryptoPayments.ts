@@ -154,12 +154,11 @@ export function createCryptoPaymentRouter({
       const result = await preflightConfiguredCryptoPayments();
       return res.json(result);
     } catch (error: any) {
+      // Configuration errors may embed user-supplied endpoints or token values.
+      // Do not forward exception text to the browser.
       return res.status(503).json({
         code: "CRYPTO_PAYMENT_PREFLIGHT_FAILED",
-        error:
-          typeof error?.message === "string"
-            ? error.message
-            : "Crypto payment preflight failed.",
+        error: "Crypto payment preflight failed. Check staging network configuration.",
       });
     }
   });

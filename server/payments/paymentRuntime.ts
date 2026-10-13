@@ -1,4 +1,5 @@
 import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
+import { safeCryptoPaymentFailure, type CryptoPaymentFailureCode } from "./paymentFailureDiagnostics";
 import { CANONICAL_USDT_ASSETS } from "./usdtAssetRegistry";
 import {
   loadCryptoPaymentNetworkConfigs,
@@ -15,6 +16,7 @@ export interface CryptoPaymentNetworkRuntimeResult {
   ok: boolean;
   result?: Awaited<ReturnType<CryptoPaymentWatcher["runOnce"]>>;
   error?: string;
+  errorCode?: CryptoPaymentFailureCode;
 }
 
 export interface CryptoPaymentPreflightNetworkResult {
@@ -26,6 +28,7 @@ export interface CryptoPaymentPreflightNetworkResult {
     | "bnb-chain-usdt-representation";
   assetDecimals?: number;
   error?: string;
+  errorCode?: CryptoPaymentFailureCode;
 }
 
 export interface CryptoPaymentPreflightResult {
@@ -93,10 +96,7 @@ export async function preflightConfiguredCryptoPayments(
         asset: "USDT",
         assetProvenance:
           CANONICAL_USDT_ASSETS[config.id].provenance,
-        error:
-          typeof error?.message === "string"
-            ? error.message
-            : "Crypto payment network preflight failed.",
+        ...safeCryptoPaymentFailure(error),
       });
     }
   }
@@ -159,11 +159,7 @@ export async function runCryptoPaymentStartupPreflight(
     return result;
   } catch (error: any) {
     logger.error("Crypto payment startup preflight failed.", {
-      name: error?.name,
-      message:
-        typeof error?.message === "string"
-          ? error.message
-          : "Unknown crypto payment preflight error.",
+      code: safeCryptoPaymentFailure(error).errorCode,
     });
     return null;
   }
@@ -196,10 +192,7 @@ export async function scanConfiguredCryptoPayments(
       networks.push({
         network: config.id,
         ok: false,
-        error:
-          typeof error?.message === "string"
-            ? error.message
-            : "Crypto payment scan failed.",
+        ...safeCryptoPaymentFailure(error),
       });
     }
   }
