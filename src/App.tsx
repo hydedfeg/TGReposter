@@ -55,6 +55,7 @@ function settingsCacheKey() {
 }
 
 function initialWorkspaceView(): WorkspaceView {
+  if (window.location.pathname.replace(/\/$/, "") === "/dashboard/billing/checkout") return "billing";
   const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
   const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "billing", "team", "database", "payments"];
   return stored && validViews.includes(stored) ? stored : "dashboard";

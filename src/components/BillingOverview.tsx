@@ -5,6 +5,7 @@ import {
   RefreshCw, ShieldCheck, Sparkles, Wallet, AlertCircle
 } from "lucide-react";
 import { safeResponseJson } from "../utils/api";
+import BillingCheckout from "./BillingCheckout";
 
 type Overview = {
   availability: "active" | "prelaunch";
@@ -61,7 +62,27 @@ export default function BillingOverview({
   const { t, i18n } = useTranslation("billing");
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [refresh, setRefresh] = useState(0);
+  const [checkoutOpen, setCheckoutOpen] = useState(
+    () => window.location.pathname.replace(/\/$/, "") === "/dashboard/billing/checkout"
+  );
+  const [checkoutOrderId, setCheckoutOrderId] = useState<string|null>(null);
   const reload = useCallback(() => setRefresh(value => value + 1), []);
+  const openCheckout = useCallback((orderId: string|null=null) => {
+    setCheckoutOrderId(orderId);
+    window.history.pushState({},"","/dashboard/billing/checkout");
+    setCheckoutOpen(true);
+  },[]);
+  const closeCheckout = useCallback(() => {
+    window.history.pushState({},"","/dashboard/");
+    setCheckoutOpen(false);setCheckoutOrderId(null);reload();
+  },[reload]);
+
+  useEffect(() => {
+    const onPopState = () =>
+      setCheckoutOpen(window.location.pathname.replace(/\/$/, "") === "/dashboard/billing/checkout");
+    window.addEventListener("popstate",onPopState);
+    return () => window.removeEventListener("popstate",onPopState);
+  },[]);
 
   useEffect(() => {
     if (!authToken) {
@@ -105,6 +126,8 @@ export default function BillingOverview({
 
   const cardClass = "rounded-2xl border border-slate-200 bg-white p-5 shadow-xs";
 
+  if (checkoutOpen) return <BillingCheckout authToken={authToken} initialOrderId={checkoutOrderId} onBack={closeCheckout}/>;
+
   return (
     <div className="space-y-5 sm:space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -113,10 +136,16 @@ export default function BillingOverview({
           <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{t("title")}</h1>
           <p className="mt-1 text-sm text-slate-500">{t("description")}</p>
         </div>
+        <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => openCheckout()}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white hover:bg-slate-800">
+          <CreditCard className="h-4 w-4" aria-hidden="true" /> {t("checkout.open")}
+        </button>
         <button type="button" onClick={reload} disabled={state.kind === "loading"}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
           <RefreshCw className="h-4 w-4" aria-hidden="true" /> {t("refresh")}
         </button>
+        </div>
       </header>
 
       {state.kind === "loading" ? (
@@ -274,7 +303,11 @@ export default function BillingOverview({
                   <tbody className="divide-y divide-slate-100">
                     {state.overview.orders.map(order => (
                       <tr key={order.id}>
-                        <td className="px-3 py-4 font-semibold text-slate-900">{order.description}</td>
+                        <td className="px-3 py-4 font-semibold text-slate-900">
+                          {order.type === "subscription" ? (
+                            <button type="button" onClick={() => openCheckout(order.id)} className="text-sky-700 hover:underline">{order.description}</button>
+                          ) : order.description}
+                        </td>
                         <td className="px-3 py-4 text-slate-600">{formatDate(order.createdAt)}</td>
                         <td className="px-3 py-4 text-slate-600">{order.paymentStatus}</td>
                         <td className="px-3 py-4 text-slate-600">{order.status}</td>
