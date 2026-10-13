@@ -15,6 +15,7 @@ const navigation = {
     aiConfiguration: "تنظیمات هوش مصنوعی من",
     teamAccess: "تیم و دسترسی",
     systemSettings: "تنظیمات سیستم",
+    payments: "پرداخت‌ها",
   },
   titles: {
     dashboard: "داشبورد",
@@ -27,6 +28,7 @@ const navigation = {
     ai: "تنظیمات هوش مصنوعی",
     team: "تیم و دسترسی",
     database: "تنظیمات سیستم",
+    payments: "عملیات پرداخت",
   },
   mobile: {
     home: "خانه",

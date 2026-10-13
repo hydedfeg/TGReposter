@@ -15,6 +15,7 @@ const navigation = {
     aiConfiguration: "Мои настройки ИИ",
     teamAccess: "Команда и доступ",
     systemSettings: "Системные настройки",
+    payments: "Платежи",
   },
   titles: {
     dashboard: "Панель управления",
@@ -27,6 +28,7 @@ const navigation = {
     ai: "Настройки ИИ",
     team: "Команда и доступ",
     database: "Системные настройки",
+    payments: "Платёжные операции",
   },
   mobile: {
     home: "Главная",

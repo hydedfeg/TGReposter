@@ -1,0 +1,409 @@
+# Crypto Payment Infrastructure
+
+## Scope
+
+TGReposter's crypto payment layer is a plan-agnostic, non-custodial payment
+detection system. It is responsible for receiving metadata, observing supported
+USDT networks, matching transfers to payment invoices, and recording an
+idempotent audit trail.
+
+Pricing, subscriptions, entitlements, checkout presentation, and sales plans
+are intentionally outside this module.
+
+## Supported networks
+
+The infrastructure currently supports:
+
+- USD₮ on Ethereum using Tether's canonical ERC-20 contract
+- USD₮ on TON using Tether's canonical Jetton master
+- the widely used BNB Smart Chain USDT representation at the allow-listed BSC contract
+
+BSC and Ethereum share the same ERC-20 JSON-RPC adapter. TON uses a TON
+Center-compatible API v3 Jetton indexer.
+
+The asset identifiers are pinned in code. Configuration may repeat the
+identifier for clarity, but a different contract/master is rejected. This
+prevents a lookalike token using the USDT symbol from being credited.
+
+BSC provenance is intentionally reported separately from Tether-issued
+Ethereum/TON USD₮ in the super-admin runtime status.
+
+## Security boundary
+
+TGReposter must never store or request:
+
+- wallet private keys
+- seed phrases or mnemonics
+- signing keys
+- wallet passwords
+- withdrawal credentials
+
+The runtime requires only read-side payment metadata:
+
+- receiving address
+- exact token contract / Jetton master identifier
+- blockchain RPC or indexer URL
+- optional read-only provider API key
+- confirmation/finality configuration
+
+Payment network configuration is server-side only.
+
+## Database
+
+The payment database layer contains:
+
+- `crypto_payment_invoices`
+- `crypto_payment_transactions`
+- `crypto_payment_events`
+- `crypto_payment_network_state`
+- `crypto_payment_amount_reservations`
+
+Invoice, transaction, and event rows are owner-scoped. Chain scanner state is
+global to the configured merchant payment identity.
+
+All payment tables have RLS enabled and direct `anon` / `authenticated`
+table privileges revoked. The Railway backend is the authority for payment
+writes.
+
+A chain event is uniquely identified by:
+
+```text
+network + transaction hash + event index
+```
+
+This prevents the same transfer from being assigned to more than one invoice.
+
+## Invoice state
+
+Supported invoice states are:
+
+```text
+pending
+detected
+confirming
+paid
+expired
+underpaid
+overpaid
+failed
+cancelled
+```
+
+Terminal states do not transition back to an active state.
+
+Invoice state changes are serialized with a database row lock.
+
+## Invoice amount reservation
+
+The payment layer can create plan-neutral invoices from a nominal USDT amount.
+
+For shared merchant addresses, it reserves a small unique suffix in the final
+six USDT decimal places. With the default four-digit discriminator, a nominal
+amount such as `20.00` may become `20.003827`.
+
+Allocation uses integer token base units only; JavaScript floating-point money
+math is never used.
+
+Reservations are enforced by a database uniqueness constraint across:
+
+```text
+network + receiving address + token identifier + expected amount
+```
+
+A reservation stays quarantined beyond invoice expiry for a configurable reuse
+delay (24 hours by default), which reduces the risk that a late transfer is
+mistaken for a newer invoice.
+
+The pricing layer will eventually supply the nominal amount and invoice expiry.
+It will not allocate suffixes or perform blockchain matching itself.
+
+Invoice creation is idempotent per owner. The caller supplies an
+`Idempotency-Key` (8-128 characters). The first successful request stores both
+the nominal `requested_amount` and exact payable `expected_amount`; retries
+with the same key return that original invoice instead of reserving another
+amount. The owner + request-key uniqueness is enforced in PostgreSQL, so
+concurrent retries are safe as well.
+
+## Transfer matching
+
+The current matcher requires:
+
+1. the configured network,
+2. the configured receiving address,
+3. the configured token contract / Jetton master,
+4. the exact expected token amount,
+5. a blockchain timestamp within the invoice lifetime.
+
+Already-assigned transfers are looked up before matching new invoices, so a
+historical transfer cannot be replayed against another account.
+
+If multiple open invoices would match the same unassigned transfer, the watcher
+marks the observation as ambiguous and does not credit any invoice.
+
+## EVM watcher
+
+The EVM watcher uses standard JSON-RPC only.
+
+Before scanning, it verifies:
+
+- BSC reports chain ID 56;
+- Ethereum reports chain ID 1;
+- the configured token identifier matches the network's allow-listed USDT asset;
+- the configured token identifier contains deployed contract bytecode;
+- token decimals are readable from `decimals()`.
+
+Incoming ERC-20 `Transfer` logs are filtered by both the token contract and
+merchant receiving address.
+
+The scan cursor intentionally retains blocks that have not reached the required
+confirmation count. Those blocks are rescanned until transfers become final
+enough for the configured network.
+
+## TON watcher
+
+The TON watcher uses TON Center-compatible API v3 endpoints:
+
+- `/api/v3/jetton/masters`
+- `/api/v3/jetton/transfers`
+
+It filters incoming Jetton transfers by merchant owner address and the
+allow-listed Tether USD₮ Jetton master. Aborted transactions are rejected.
+
+Jetton decimals are read from master metadata rather than inferred from the
+display symbol.
+
+The TON scanner stores a timestamp-window cursor with a page offset. Full
+TON Center result pages continue from the saved offset on the next scheduler
+tick, while completed windows advance with a short timestamp overlap so backend
+restarts and ordinary indexer lag do not create a blind boundary.
+
+## Scanner scheduling
+
+The Railway backend starts the payment scheduler only when:
+
+- `CRYPTO_PAYMENTS_ENABLED=true`;
+- at least one payment network is enabled and fully configured;
+- `DATABASE_URL` is available.
+
+The default scan interval is 60 seconds. The minimum allowed interval is 15
+seconds.
+
+BSC and Ethereum confirmation depth must be configured explicitly when those
+networks are enabled. The infrastructure intentionally has no one-confirmation
+fallback for EVM payments. TON's indexed transfer adapter requires a finalized
+observation and therefore uses a confirmation value of 1.
+
+Every automatic or manual scan uses the same PostgreSQL advisory lock. If two
+Railway instances are running, only one may execute a chain scan at a time.
+
+The lock is released in a `finally` block. Closing the PostgreSQL session also
+releases the session-level lock if an explicit unlock fails.
+
+After chain scans finish, the same locked cycle performs invoice lifecycle
+maintenance. Pending invoices are not marked expired until their amount
+reservation quarantine has elapsed, giving delayed RPC/indexer observations a
+grace period. Terminal reservations are then released for future reuse.
+
+## Network request safety
+
+Every blockchain HTTP request has a bounded timeout. The default is 10 seconds.
+
+Scan ranges are bounded:
+
+- EVM scans have a maximum block window.
+- TON scans have a maximum indexed-transfer batch.
+
+Provider failures are isolated by network; a failure on one enabled network
+does not prevent another network from being scanned.
+
+## Backend operations API
+
+Infrastructure operations are mounted under:
+
+```text
+/api/crypto-payments
+```
+
+They require an authenticated super-admin session.
+
+Available operations:
+
+```text
+GET  /api/crypto-payments/status
+GET  /api/crypto-payments/overview
+POST /api/crypto-payments/preflight
+POST /api/crypto-payments/scan
+POST /api/crypto-payments/invoices
+GET  /api/crypto-payments/invoices/:id
+POST /api/crypto-payments/invoices/:id/cancel
+```
+
+Invoice operations are also super-admin-only at this stage. They exist for
+infrastructure testing and are not yet a customer checkout API.
+
+`POST /api/crypto-payments/invoices` requires an `Idempotency-Key` header.
+This contract is intended to be reused unchanged by the later customer checkout
+surface.
+
+The status response exposes capabilities only. It never returns RPC URLs,
+provider API keys, merchant receiving addresses, or token identifiers.
+
+The preflight endpoint is read-only. It verifies each enabled network's chain
+identity and allow-listed USDT asset metadata/precision without scanning
+transfers, creating invoices, or writing payment ledger rows. Its response is
+also redacted from RPC URLs, API credentials, wallet addresses, and token
+identifiers.
+
+## Environment variables
+
+Global:
+
+```text
+CRYPTO_PAYMENTS_ENABLED
+CRYPTO_PAYMENT_SCAN_INTERVAL_MS
+CRYPTO_PAYMENT_REQUEST_TIMEOUT_MS
+CRYPTO_PAYMENT_AMOUNT_DISCRIMINATOR_DIGITS
+CRYPTO_PAYMENT_AMOUNT_REUSE_DELAY_MS
+```
+
+Per network:
+
+```text
+CRYPTO_USDT_<NETWORK>_ENABLED
+CRYPTO_USDT_<NETWORK>_RPC_URL
+CRYPTO_USDT_<NETWORK>_RECEIVING_ADDRESS
+CRYPTO_USDT_<NETWORK>_TOKEN_IDENTIFIER
+CRYPTO_USDT_<NETWORK>_CONFIRMATIONS
+CRYPTO_USDT_<NETWORK>_MAX_BLOCKS_PER_SCAN
+```
+
+TON additionally supports:
+
+```text
+CRYPTO_USDT_TON_API_KEY
+```
+
+All networks are disabled by default.
+
+## Deployment state
+
+The schema has been exercised only in the TGReposter staging Supabase project.
+
+Production payment infrastructure must remain disabled until:
+
+1. merchant receiving addresses are selected;
+2. exact official USDT token identifiers are verified for each enabled network;
+3. RPC/indexer providers are selected;
+4. environment secrets are configured in Railway;
+5. a read-only live-chain smoke test passes;
+6. invoice creation and later sales-plan integration are approved.
+
+## Future integration boundary
+
+The future pricing/subscription layer should call the payment infrastructure
+with a user owner principal, network, amount, and invoice lifetime.
+
+The payment layer must not contain product-tier rules. Conversely, product-tier
+logic must not implement blockchain verification itself.
+
+## Operational payment scan health
+
+The super-admin payment overview distinguishes network *configuration* from an
+actual recent successful chain scanner checkpoint. For the currently configured
+network/token/merchant identity, a checkpoint is considered recent for up to
+three scan intervals (minimum three minutes). Missing or older checkpoints
+are labeled separately, without exposing merchant addresses or RPC credentials
+to the browser. A green checkpoint confirms scanner recency only; it does **not**
+prove that any given payment is settled, nor that an indexer is fully caught up.
+
+The overview is read-only and bounded. A stale scanner does not automatically
+credit invoices or change their state; it is an operational alert requiring
+investigation.
+
+## In-dashboard reconciliation alerts
+
+The super-admin overview automatically checks for scanner delay/missing
+checkpoints, paid invoices without an assigned confirmed transfer, confirmed
+transfers whose invoices did not reach `paid` after five minutes, invoices
+stuck in `detected`/`confirming` for over one hour, and invoice states
+`underpaid`, `overpaid`, or `failed`. Alerts are derived from read-only
+database queries; neither reconciliation nor UI polling changes payment state.
+The dashboard refreshes while the Payments workspace is open and visible.
+
+This first iteration is *in-app* and provides no email, push, or Telegram alert
+delivery when nobody has the dashboard open. It is a bounded operational
+exception feed (at most 30 ledger exceptions plus network alerts), not a full
+ledger audit. An overflow indicator warns when more results exist. Unassigned on-chain
+observations are now durably recorded in a separate platform-only ledger,
+but only from scanner observations after activation. This is not a historical
+backfill or a mechanism for automatically crediting invoices. The scanner never auto-credits an invoice based on these alerts.
+
+## Durable unmatched transfer review
+
+A backend-only ledger, `crypto_payment_unassigned_transfers`, records
+incoming USDT observations that match no invoice or multiple open invoices.
+It stores network, event identity, token/merchant, amount, confirmations,
+and timestamps; sender addresses and private keys are not stored.
+A unique (network, transaction hash, event index) identity deduplicates re-scans.
+Review items remain platform-scoped and are not assigned to any user.
+A review item is resolved automatically only after the same blockchain event
+is linked to an invoice transaction in the owner-scoped ledger.
+
+The dashboard lists a maximum of 30 open transfer observations, with a
+truncation notice. It cannot manually credit or resolve them. This does
+not backfill arbitrary historical chain data; coverage begins with observations
+seen by scanners after the migration. Actual settlement remains governed
+solely by existing transaction-matching and confirmation rules.
+
+A zero-value on-chain Transfer event may also be recorded as unmatched; it can
+never satisfy an invoice's positive expected amount. Keeping that event in the
+platform-only ledger prevents zero-value token spam from halting scan progress.
+
+## Background payment operations alerts
+
+When `CRYPTO_PAYMENT_ALERTS_ENABLED=true`, the backend's scheduled scan
+cycle reconciles operational warnings independently of dashboard browser
+sessions. A protected PostgreSQL journal deduplicates active alerts using
+network, code and invoice (or unmatched chain event), and persists first/last
+seen and resolution times. Query results remain bounded; truncated result
+sets never cause unseen invoice/unassigned alerts to be falsely resolved.
+The journal is platform-only, behind RLS with `anon` and `authenticated`
+table privileges revoked. No alert can change an invoice's state.
+
+External delivery is **disabled by default**. It requires an explicit
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED=true` plus a separate
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and a numeric authorized
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` configured privately on Railway.
+When delivery is disabled, newly recorded alerts are marked `skipped` so
+enabling delivery later cannot flood the destination with historical alerts.
+Only newly opened/reopened alerts are queued once delivery is configured.
+The sender transmits only severity, network and alert code, not sender/merchant
+wallet addresses, owner principals, transaction hashes, or credentials.
+Delivery is retried up to five times at five-minute intervals, in batches
+of three per scan. Delivery has at-least-once semantics and can repeat after
+a process crash following a successful Telegram API response.
+
+Scanner-wide outages still require an external uptime monitor: an offline
+server cannot send its own alerts.
+
+## Dedicated Telegram notification destination test
+
+Only a super-admin can inspect the redacted `GET /api/crypto-payments/notifications/status`
+configuration summary or trigger `POST /api/crypto-payments/notifications/test`.
+Neither API returns the bot token, administrator chat ID, merchant address,
+transaction hashes, or Telegram's raw response.
+
+Set the dedicated `CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN` and numeric
+`CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID` privately in Railway. Set
+`CRYPTO_PAYMENT_ALERT_TEST_ENABLED=true` to permit the separate test action,
+which is disabled by default. Clicking **Send test notification** in Payments
+asks for confirmation and sends a fixed, non-sensitive synthetic message;
+no payment invoices, ledger events, or alert records are changed.
+The test endpoint is process-rate-limited to once per 60 seconds and times
+out after 8 seconds. It requires Telegram's successful Bot API response,
+not merely an HTTP success status.
+
+Do **not** enable `CRYPTO_PAYMENT_ALERT_TELEGRAM_ENABLED` solely to run
+this test. Background delivery stays disabled until the administrator
+verifies that the test message reached an authorized chat and deliberately
+opts in to automatic notifications.

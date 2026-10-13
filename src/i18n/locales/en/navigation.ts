@@ -15,6 +15,7 @@ const navigation = {
     aiConfiguration: "My AI Configuration",
     teamAccess: "Team & Access",
     systemSettings: "System Settings",
+    payments: "Payments",
   },
   titles: {
     dashboard: "Dashboard",
@@ -27,6 +28,7 @@ const navigation = {
     ai: "AI Configuration",
     team: "Team & Access",
     database: "System Settings",
+    payments: "Payment Operations",
   },
   mobile: {
     home: "Home",

@@ -9,6 +9,7 @@ import FilterConfig from "./components/FilterConfig";
 import DestinationConfig from "./components/DestinationConfig";
 import CurationFeed from "./components/CurationFeed";
 import DatabaseConfig from "./components/DatabaseConfig";
+import CryptoPayments from "./components/CryptoPayments";
 import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
@@ -20,7 +21,7 @@ import { API_ERROR_CODES } from "../shared/apiErrorCodes";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
-const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["team", "database", "payments"]);
 
 const PUBLISHING_ERROR_KEYS: Record<string, string> = {
   [API_ERROR_CODES.publishing.postNotFound]: "runtime.publishing.errors.postNotFound",
@@ -54,7 +55,7 @@ function settingsCacheKey() {
 
 function initialWorkspaceView(): WorkspaceView {
   const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
-  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database"];
+  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database", "payments"];
   return stored && validViews.includes(stored) ? stored : "dashboard";
 }
 
@@ -787,6 +788,10 @@ export default function App() {
         ) : null}
 
         {activeWorkspaceTab === "database" && currentUserRole === "super-admin" ? <DatabaseConfig /> : null}
+
+        {activeWorkspaceTab === "payments" && currentUserRole === "super-admin" && authToken ? (
+          <CryptoPayments token={authToken} />
+        ) : null}
 
         {activeWorkspaceTab === "team" && currentUserRole === "super-admin" ? (
           <UserManagement users={settings.users || []} onAddUser={handleAddUser} onDeleteUser={handleDeleteUser} currentUsername={currentUsername} />
