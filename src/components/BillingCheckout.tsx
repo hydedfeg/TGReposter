@@ -10,15 +10,22 @@ type Network = "bsc" | "ethereum" | "ton";
 interface CheckoutPlan {
   id: string; name: string; monthlyEurCents: number; annualEurCents: number;
 }
+interface CheckoutPack {
+  id:string;name:string;aiUnits:string;priceEurCents:number;
+}
 interface CheckoutStatus {
-  enabled: boolean; plans: CheckoutPlan[]; networks: Network[];
+  enabled:boolean;topupsEnabled:boolean;plans:CheckoutPlan[];
+  packs:CheckoutPack[];networks:Network[];
 }
 interface Quote {
   id: string; eurCents: number; usdtAmount: string; expiresAt: string;
-  product: { kind:"subscription";planId:string;interval:"monthly"|"annual" };
+  product:
+    | {kind:"subscription";planId:string;interval:"monthly"|"annual"}
+    | {kind:"topup";packId:string};
 }
 interface Order {
-  orderId:string;invoiceId:string;planId:string;interval:string;
+  orderId:string;invoiceId:string;kind:"subscription"|"topup";
+  planId:string|null;packId:string|null;aiUnits:string|null;interval:string|null;
   orderStatus:string;paymentStatus:string;listedEurCents:number;
   network:Network;asset:"USDT";amount:string;receivingAddress:string;
   tokenIdentifier:string;expiresAt:string;confirmedAt:string|null;
@@ -29,7 +36,9 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
 }){
   const {t,i18n}=useTranslation("billing");
   const [catalog,setCatalog]=useState<CheckoutStatus|null>(null);
+  const [productKind,setProductKind]=useState<"subscription"|"topup">("subscription");
   const [planId,setPlanId]=useState("");
+  const [packId,setPackId]=useState("");
   const [interval,setInterval]=useState<"monthly"|"annual">("monthly");
   const [network,setNetwork]=useState<Network>("bsc");
   const [quote,setQuote]=useState<Quote|null>(null);
@@ -63,6 +72,7 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
       const status=body as CheckoutStatus;
       setCatalog(status);
       if(status.plans.length)setPlanId(status.plans[0].id);
+      if(status.packs.length)setPackId(status.packs[0].id);
       if(status.networks.length)setNetwork(status.networks[0]);
     }).catch(()=>{if(active)setError(t("checkout.requestFailed"));});
     return ()=>{active=false;};
@@ -94,8 +104,9 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
   async function getQuote(){
     setBusy(true);setError("");setNotice("");setQuote(null);
     try{
-      const body=await request("quotes",{method:"POST",
-        body:JSON.stringify({planId,interval})});
+      const isTopup=productKind==="topup";
+      const body=await request(isTopup?"topups/quotes":"quotes",{method:"POST",
+        body:JSON.stringify(isTopup?{packId}:{planId,interval})});
       setQuote(body.quote as Quote);
     }catch(e){setError(e instanceof Error?e.message:t("checkout.requestFailed"));}
     finally{setBusy(false);}
@@ -105,7 +116,7 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
     if(!quote)return;
     setBusy(true);setError("");setNotice("");
     try{
-      const body=await request("orders",{method:"POST",
+      const body=await request(quote.product.kind==="topup"?"topups/orders":"orders",{method:"POST",
         body:JSON.stringify({quoteId:quote.id,network})});
       setOrder(body.order as Order);
       setNotice(t("checkout.invoiceCreated"));
@@ -119,6 +130,7 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
   }
 
   const selected=catalog?.plans.find(p=>p.id===planId);
+  const selectedPack=catalog?.packs.find(p=>p.id===packId);
   const ended=order && ["expired","cancelled","failed"].includes(order.paymentStatus);
   return <div className="space-y-5 sm:space-y-6">
     <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -140,10 +152,42 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
       <h2 className="text-lg font-bold text-amber-950">{t("checkout.unavailableTitle")}</h2>
       <p className="mt-2 text-sm leading-6 text-amber-900">{t("checkout.unavailableDescription")}</p>
     </section>:null}
+    {catalog && !catalog.enabled && !order && <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
+      <h2 className="text-lg font-bold text-slate-950">{t("checkout.previewPlans")}</h2>
+      <p className="mt-2 text-sm text-slate-500">{t("checkout.previewNote")}</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {catalog.plans.map(plan=><article key={plan.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="font-bold text-slate-900">{plan.name}</h3>
+          <p className="mt-2 text-sm text-slate-700">{formatEuro.format(plan.monthlyEurCents/100)} / {t("checkout.monthly")}</p>
+          <p className="text-sm text-slate-600">{formatEuro.format(plan.annualEurCents/100)} / {t("checkout.annual")}</p>
+        </article>)}
+      </div>
+      <h3 className="mt-6 text-base font-bold text-slate-900">{t("checkout.previewTopups")}</h3>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        {catalog.packs.map(pack=><article key={pack.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h4 className="font-bold text-slate-900">{pack.name}</h4>
+          <p className="mt-2 text-sm text-slate-600">{pack.aiUnits} {t("checkout.aiUnits")}</p>
+          <p className="text-sm font-semibold text-slate-800">{formatEuro.format(pack.priceEurCents/100)}</p>
+        </article>)}
+      </div>
+      {!catalog.plans.length&&!catalog.packs.length && <p className="mt-3 text-sm text-slate-500">{t("checkout.catalogUnavailable")}</p>}
+    </section>}
     {catalog?.enabled && !order ? <>
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs sm:p-6">
-        <h2 className="text-lg font-bold text-slate-900">{t("checkout.choosePlan")}</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <h2 className="text-lg font-bold text-slate-900">{t("checkout.chooseProduct")}</h2>
+        <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label={t("checkout.chooseProduct")}>
+          <button type="button" disabled={busy} aria-pressed={productKind==="subscription"}
+            onClick={()=>{setProductKind("subscription");setQuote(null);}}
+            className={productKind==="subscription"?"min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white":"min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700"}>
+            {t("checkout.subscriptionProduct")}
+          </button>
+          {catalog.topupsEnabled && <button type="button" disabled={busy} aria-pressed={productKind==="topup"}
+            onClick={()=>{setProductKind("topup");setQuote(null);}}
+            className={productKind==="topup"?"min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white":"min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700"}>
+            {t("checkout.topupProduct")}
+          </button>}
+        </div>
+        {productKind==="subscription" ? <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="space-y-2 text-sm font-semibold text-slate-700">{t("checkout.plan")}
             <select value={planId} disabled={busy} onChange={e=>{setPlanId(e.target.value);setQuote(null);}}
               className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-slate-900">
@@ -161,7 +205,20 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
         {selected && <p className="mt-4 text-sm text-slate-600">
           {t("checkout.catalogPrice")}: <strong>{formatEuro.format((interval==="annual"?selected.annualEurCents:selected.monthlyEurCents)/100)}</strong>
         </p>}
-        <button type="button" onClick={()=>void getQuote()} disabled={!selected||busy}
+        </div> : <div className="mt-4">
+          <label className="block space-y-2 text-sm font-semibold text-slate-700">{t("checkout.choosePack")}
+            <select value={packId} disabled={busy} onChange={e=>{setPackId(e.target.value);setQuote(null);}}
+              className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-slate-900">
+              {catalog.packs.map(pack=><option key={pack.id} value={pack.id}>
+                {pack.name} · {pack.aiUnits} {t("checkout.aiUnits")}
+              </option>)}
+            </select>
+          </label>
+          {selectedPack && <p className="mt-3 text-sm text-slate-600">
+            {t("checkout.catalogPrice")}: <strong>{formatEuro.format(selectedPack.priceEurCents/100)}</strong>
+          </p>}
+        </div>}
+        <button type="button" onClick={()=>void getQuote()} disabled={busy||(productKind==="subscription"?!selected:!selectedPack)}
           className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-50">
           {busy?<LoaderCircle className="h-4 w-4 animate-spin"/>:<CreditCard className="h-4 w-4"/>}
           {t("checkout.getQuote")}
@@ -192,6 +249,11 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
           <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4"/>{t("checkout.fulfilled")}</span>:
           <span className="text-sm font-semibold text-slate-600">{t("checkout.paymentStatus")}: {order.paymentStatus}</span>}
       </div>
+      <p className="mt-3 text-sm font-medium text-slate-700">
+        {order.kind==="topup"
+          ? t("checkout.purchasedUnits",{count:Number(order.aiUnits??0)})
+          : t("checkout.subscriptionProduct")}
+      </p>
       <p className="mt-3 text-sm text-slate-600">{t("checkout.network")}: <strong>{order.network.toUpperCase()}</strong></p>
       <p className="mt-3 text-sm text-slate-600">{t("checkout.sendExactAmount")}</p>
       <div className="mt-2 flex items-center gap-2">
