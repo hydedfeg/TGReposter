@@ -17,12 +17,12 @@ export function isCustomerCheckoutEnabled(env: Environment = process.env): boole
     env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED === "true" &&
     env.CRYPTO_PAYMENTS_ENABLED === "true" &&
     env.TGREPOSTER_BILLING_WORKER_ENABLED === "true";
+}
 
 export function isTopupCheckoutEnabled(env:Environment=process.env):boolean {
   return isCustomerCheckoutEnabled(env) &&
     env.TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED === "true" &&
     env.TGREPOSTER_COMMERCIAL_AI_ENABLED === "true";
-}
 }
 
 export class CustomerCheckoutError extends Error {
