@@ -1,19 +1,28 @@
 import { getPostgresPool } from "../utils/postgresPool";
 import { createCheckoutQuote } from "./checkoutQuoteService";
 import { createSubscriptionCheckoutInvoice } from "./subscriptionInvoiceCheckout";
+import { createTopupCheckoutInvoice } from "./topupInvoiceCheckout";
 import { loadCryptoPaymentNetworkConfigs } from "../payments/paymentConfig";
 import { normalizeBillingOwner } from "./billingOverviewService";
 import type { CryptoPaymentNetwork } from "../payments/types";
 
 type Environment = Record<string, string | undefined>;
 const PURCHASABLE_PLANS = ["creator", "professional", "business", "agency"] as const;
+const PURCHASABLE_TOPUPS = ["ai_mini","ai_plus","ai_pro","ai_max"] as const;
 
 export type CustomerCheckoutNetwork = CryptoPaymentNetwork;
 
 export function isCustomerCheckoutEnabled(env: Environment = process.env): boolean {
   return env.TGREPOSTER_CUSTOMER_CHECKOUT_ENABLED === "true" &&
     env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED === "true" &&
-    env.CRYPTO_PAYMENTS_ENABLED === "true";
+    env.CRYPTO_PAYMENTS_ENABLED === "true" &&
+    env.TGREPOSTER_BILLING_WORKER_ENABLED === "true";
+
+export function isTopupCheckoutEnabled(env:Environment=process.env):boolean {
+  return isCustomerCheckoutEnabled(env) &&
+    env.TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED === "true" &&
+    env.TGREPOSTER_COMMERCIAL_AI_ENABLED === "true";
+}
 }
 
 export class CustomerCheckoutError extends Error {
@@ -26,8 +35,11 @@ export class CustomerCheckoutError extends Error {
 export interface CheckoutOrderView {
   orderId: string;
   invoiceId: string;
-  planId: string;
-  interval: string;
+  kind: "subscription"|"topup";
+  planId: string|null;
+  packId: string|null;
+  aiUnits: string|null;
+  interval: string|null;
   orderStatus: string;
   paymentStatus: string;
   listedEurCents: number;
@@ -50,31 +62,42 @@ function iso(value: unknown): string | null {
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
-/** No unpublished plans or merchant/payment identity in the discovery endpoint. */
-export async function getCustomerCheckoutCatalog(): Promise<{
-  enabled: boolean;
-  plans: Array<{ id: string; name: string; monthlyEurCents: number; annualEurCents: number }>;
-  networks: CryptoPaymentNetwork[];
+/** Disabled commerce can expose catalog pricing as a read-only preview.
+ * No merchant addresses, invoices, secrets or payable rates are exposed.
+ */
+export async function getCustomerCheckoutCatalog():Promise<{
+  enabled:boolean;
+  topupsEnabled:boolean;
+  plans:Array<{id:string;name:string;monthlyEurCents:number;annualEurCents:number}>;
+  packs:Array<{id:string;name:string;aiUnits:string;priceEurCents:number}>;
+  networks:CryptoPaymentNetwork[];
 }> {
-  if (!isCustomerCheckoutEnabled()) return { enabled: false, plans: [], networks: [] };
-  const networks = loadCryptoPaymentNetworkConfigs().map(config => config.id);
-  if (!networks.length) return { enabled: false, plans: [], networks: [] };
-  const { rows } = await getPostgresPool().query(
-    `select id,display_name,monthly_eur_cents,annual_eur_cents
-     from public.billing_plans
-     where is_published=true and id=any($1::text[])
-     order by array_position($1::text[],id)`,
-    [PURCHASABLE_PLANS]
-  );
-  return {
-    enabled: rows.length > 0,
-    plans: rows.map(row => ({
-      id: String(row.id), name: String(row.display_name),
-      monthlyEurCents: Number(row.monthly_eur_cents),
-      annualEurCents: Number(row.annual_eur_cents),
-    })),
-    networks,
-  };
+  const active=isCustomerCheckoutEnabled();
+  const topups=isTopupCheckoutEnabled();
+  const networks=active?loadCryptoPaymentNetworkConfigs().map(c=>c.id):[];
+  const [p,k]=await Promise.all([
+    getPostgresPool().query(
+      `select id,display_name,monthly_eur_cents,annual_eur_cents
+       from public.billing_plans
+       where id=any($1::text[]) and ($2::boolean=false or is_published=true)
+       order by array_position($1::text[],id)`,[PURCHASABLE_PLANS,active]),
+    getPostgresPool().query(
+      `select id,label,ai_units::text as ai_units,price_eur_cents
+       from public.billing_ai_topup_packs
+       where id=any($1::text[]) and ($2::boolean=false or is_published=true)
+       order by array_position($1::text[],id)`,[PURCHASABLE_TOPUPS,topups])
+  ]);
+  const plans=p.rows.map(row=>({
+    id:String(row.id),name:String(row.display_name),
+    monthlyEurCents:Number(row.monthly_eur_cents),annualEurCents:Number(row.annual_eur_cents)
+  }));
+  const packs=k.rows.map(row=>({
+    id:String(row.id),name:String(row.label),
+    aiUnits:String(row.ai_units),priceEurCents:Number(row.price_eur_cents)
+  }));
+  const enabled=active&&networks.length>0&&plans.length>0;
+  return {enabled,topupsEnabled:enabled&&topups&&packs.length>0,
+    plans,packs,networks:enabled?networks:[]};
 }
 
 export async function createCustomerSubscriptionQuote(
@@ -89,6 +112,12 @@ export async function createCustomerSubscriptionQuote(
   });
 }
 
+export async function createCustomerTopupQuote(ownerPrincipal:string,packId:string){
+  if(!isTopupCheckoutEnabled())throw new CustomerCheckoutError("TOPUPS_DISABLED");
+  if(!PURCHASABLE_TOPUPS.some(id=>id===packId))throw new CustomerCheckoutError("INVALID_PRODUCT");
+  return createCheckoutQuote(normalizeBillingOwner(ownerPrincipal),{kind:"topup",packId});
+}
+
 /**
  * All payment instructions are loaded from the stored, owner-scoped invoice.
  * User-supplied amounts, fiat rates, merchant wallets and owner IDs are ignored.
@@ -98,30 +127,43 @@ export async function getCustomerCheckoutOrder(
   orderId: string
 ): Promise<CheckoutOrderView | null> {
   const owner = normalizeBillingOwner(ownerPrincipal);
-  const { rows } = await getPostgresPool().query(
-    `select o.id as order_id,o.plan_id,o.billing_interval,o.status as order_status,
+  // Each half is explicitly owner-filtered; another account's order is a 404.
+  const {rows}=await getPostgresPool().query(
+    `select o.id as order_id,'subscription'::text as kind,o.plan_id,
+            null::text as pack_id,null::text as ai_units,
+            o.billing_interval,o.status as order_status,
             o.listed_eur_cents,i.id as invoice_id,i.status as payment_status,
-            i.asset_code,i.network,i.expected_amount::text as amount,
+            i.network,i.expected_amount::text as amount,
             i.receiving_address,i.token_identifier,i.expires_at,i.confirmed_at
        from public.billing_subscription_orders o
        join public.crypto_payment_invoices i
          on i.owner_principal=o.owner_principal and i.id=o.invoice_id
       where o.owner_principal=$1 and o.id=$2::uuid
-      limit 1`,
-    [owner,orderId]
+      union all
+      select o.id as order_id,'topup'::text as kind,null::text as plan_id,
+            o.pack_id,o.ai_units::text as ai_units,
+            null::text as billing_interval,o.status as order_status,
+            o.listed_eur_cents,i.id as invoice_id,i.status as payment_status,
+            i.network,i.expected_amount::text as amount,
+            i.receiving_address,i.token_identifier,i.expires_at,i.confirmed_at
+       from public.billing_ai_topup_orders o
+       join public.crypto_payment_invoices i
+         on i.owner_principal=o.owner_principal and i.id=o.invoice_id
+      where o.owner_principal=$1 and o.id=$2::uuid
+      limit 1`,[owner,orderId]
   );
-  const record = rows[0];
-  if (!record) return null;
+  const record=rows[0];
+  if(!record)return null;
   return {
-    orderId: record.order_id, invoiceId: record.invoice_id,
-    planId:record.plan_id, interval:record.billing_interval,
-    orderStatus:record.order_status, paymentStatus:record.payment_status,
+    orderId:record.order_id,invoiceId:record.invoice_id,
+    kind:record.kind,planId:record.plan_id,packId:record.pack_id,
+    aiUnits:record.ai_units,interval:record.billing_interval,
+    orderStatus:record.order_status,paymentStatus:record.payment_status,
     listedEurCents:Number(record.listed_eur_cents),
-    network:record.network, asset:"USDT", amount:String(record.amount),
+    network:record.network,asset:"USDT",amount:String(record.amount),
     receivingAddress:record.receiving_address,
     tokenIdentifier:record.token_identifier,
-    expiresAt:iso(record.expires_at) ?? "",
-    confirmedAt:iso(record.confirmed_at)
+    expiresAt:iso(record.expires_at)??"",confirmedAt:iso(record.confirmed_at)
   };
 }
 
@@ -139,4 +181,17 @@ export async function createCustomerSubscriptionOrder(
   const details = await getCustomerCheckoutOrder(owner,order.orderId);
   if (!details) throw new CustomerCheckoutError("ORDER_UNAVAILABLE");
   return details;
+}
+
+export async function createCustomerTopupOrder(
+  ownerPrincipal:string,quoteId:string,network:CryptoPaymentNetwork
+):Promise<CheckoutOrderView>{
+  if(!isTopupCheckoutEnabled())throw new CustomerCheckoutError("TOPUPS_DISABLED");
+  if(!loadCryptoPaymentNetworkConfigs().some(c=>c.id===network))
+    throw new CustomerCheckoutError("NETWORK_UNAVAILABLE");
+  const owner=normalizeBillingOwner(ownerPrincipal);
+  const {order}=await createTopupCheckoutInvoice(owner,quoteId,network);
+  const result=await getCustomerCheckoutOrder(owner,order.orderId);
+  if(!result||result.kind!=="topup")throw new CustomerCheckoutError("ORDER_UNAVAILABLE");
+  return result;
 }
