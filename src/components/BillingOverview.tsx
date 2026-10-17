@@ -304,9 +304,7 @@ export default function BillingOverview({
                     {state.overview.orders.map(order => (
                       <tr key={order.id}>
                         <td className="px-3 py-4 font-semibold text-slate-900">
-                          {order.type === "subscription" ? (
-                            <button type="button" onClick={() => openCheckout(order.id)} className="text-sky-700 hover:underline">{order.description}</button>
-                          ) : order.description}
+                          <button type="button" onClick={() => openCheckout(order.id)} className="text-sky-700 hover:underline">{order.description}</button>
                         </td>
                         <td className="px-3 py-4 text-slate-600">{formatDate(order.createdAt)}</td>
                         <td className="px-3 py-4 text-slate-600">{order.paymentStatus}</td>

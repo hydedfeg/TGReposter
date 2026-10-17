@@ -201,8 +201,7 @@ export default function BillingCheckout({authToken,onBack,initialOrderId}:{
               <option value="annual">{t("checkout.annual")}</option>
             </select>
           </label>
-        </div>
-        {selected && <p className="mt-4 text-sm text-slate-600">
+        {selected && <p className="mt-4 text-sm text-slate-600 sm:col-span-2">
           {t("checkout.catalogPrice")}: <strong>{formatEuro.format((interval==="annual"?selected.annualEurCents:selected.monthlyEurCents)/100)}</strong>
         </p>}
         </div> : <div className="mt-4">
