@@ -44,3 +44,35 @@ owner, EUR/USDT exchange rate, payable amount or receiving address.
   remain future launch blockers.
 - **Do not activate these flags or publish plans** without separate approval
   of merchant compliance, financial policies and authorized staging live tests.
+
+
+## AI Unit top-up checkout (subsequent staging increment)
+
+- Active top-up purchase uses `POST /api/billing/checkout/topups/quotes`
+  with strictly `{packId}`; the server reads the published pack and its
+  listed EUR price, not browser-supplied amounts.
+- `POST /api/billing/checkout/topups/orders` accepts only
+  `{quoteId,network}` and reserves a unique USDT amount by calling the
+  same on-chain invoice service used for subscriptions. An owner-scoped
+  five-minute quote becomes a 45-minute USDT invoice.
+- `GET /api/billing/checkout/orders/:id` returns the authenticated owner's
+  *subscription or top-up order*, never another owner's records. Neither
+  this endpoint nor the checkout page may post credits or trust a supplied
+  blockchain transaction hash. The already-implemented billing worker must
+  verify the transfer and issue purchased AI Units idempotently.
+- Subscription checkout now also requires
+  `TGREPOSTER_BILLING_WORKER_ENABLED=true`. The additional top-up action
+  requires `TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED=true` and
+  `TGREPOSTER_COMMERCIAL_AI_ENABLED=true`. All are disabled in staging.
+- When charging is disabled, authenticated customers can still view
+  **read-only planned EUR subscription prices and AI top-up packs** from the
+  database. No wallet, QR code, live amount, invoice or payment action is
+  rendered for prelaunch pricing.
+- The prelaunch catalog is informational only and must be accompanied by a
+  clear no-payment notice. Publication of plans/packs and launch approval
+  are independent requirements; do not use fixture overrides in runtime.
+
+Remaining launch blockers include merchant payment/tax/refund terms, FX
+confirmation, limits and abuse prevention, QR-code verification, a staging
+live-identity test, authorization for any on-chain purchase, reconciliation
+exceptions and an explicit production go/no-go.
