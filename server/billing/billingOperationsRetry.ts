@@ -1,8 +1,8 @@
 import { getPostgresPool } from "../utils/postgresPool";
 import type { BillingStage, BillingCandidate } from "./billingOperationsWorker";
 
-function checkCandidate(stage: BillingStage, candidate: BillingCandidate): void {
-  if (!["subscriptions","topups","renewals","allowances"].includes(stage)
+export function checkBillingRetryCandidate(stage: BillingStage, candidate: BillingCandidate): void {
+  if (!["subscriptions","topups","renewals","expirations","allowances"].includes(stage)
     || !candidate.owner_principal?.trim()
     || !/^[a-f0-9-]{36}$/i.test(candidate.id)) {
     throw new Error("Invalid internal billing retry identity.");
@@ -19,7 +19,7 @@ export async function noteBillingOperationFailure(
   candidate: BillingCandidate,
   code: string
 ): Promise<void> {
-  checkCandidate(stage,candidate);
+  checkBillingRetryCandidate(stage,candidate);
   const safeCode = /^[A-Z][A-Z0-9_]{0,63}$/.test(code)
     ? code : "UNEXPECTED_ERROR";
   await getPostgresPool().query(
@@ -41,7 +41,7 @@ export async function clearBillingOperationFailure(
   stage: BillingStage,
   candidate: BillingCandidate
 ): Promise<void> {
-  checkCandidate(stage,candidate);
+  checkBillingRetryCandidate(stage,candidate);
   await getPostgresPool().query(
     `delete from public.billing_operation_attempts
      where stage=$1 and owner_principal=$2 and item_id=$3::uuid`,

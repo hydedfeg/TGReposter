@@ -6,10 +6,13 @@ import type {
   CryptoPaymentTransferObservation,
 } from "./types";
 import { assertCanonicalUsdtTokenIdentifier } from "./usdtAssetRegistry";
+import { classifyCryptoPaymentFailure } from "./paymentFailureDiagnostics";
 
 const ERC20_TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const ERC20_DECIMALS_SELECTOR = "0x313ce567";
+// At most 64 leaf ranges for eth_getLogs provider range limits.
+const MAX_EVM_LOG_SPLIT_DEPTH = 6;
 
 const EXPECTED_EVM_CHAIN_IDS = {
   bsc: 56n,
@@ -201,18 +204,11 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
     const requestedTo = fromBlock + maxBlocks - 1n;
     const toBlock = requestedTo < latestBlock ? requestedTo : latestBlock;
     const decimals = await this.getAssetDecimals();
-    const logs = await this.rpc<EvmLog[]>("eth_getLogs", [
-      {
-        fromBlock: toRpcHex(fromBlock),
-        toBlock: toRpcHex(toBlock),
-        address: tokenIdentifier,
-        topics: [
-          ERC20_TRANSFER_TOPIC,
-          null,
-          addressToTopic(receivingAddress),
-        ],
-      },
-    ]);
+    // On provider range-size rejection, scan exact subranges. Any failure
+    // aborts the entire scan before the watcher can advance the cursor.
+    const logs = await this.fetchTransferLogs(
+      fromBlock, toBlock, tokenIdentifier, receivingAddress
+    );
 
     const blockTimestampCache = new Map<string, string>();
     const observations: CryptoPaymentTransferObservation[] = [];
@@ -304,6 +300,44 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
       scannedFrom: fromBlock.toString(),
       scannedTo: toBlock.toString(),
     };
+  }
+
+  /**
+   * Split only a provider's range-size error, never a rate limit or timeout.
+   * All intervals are disjoint and the entire scan must succeed to return.
+   */
+  private async fetchTransferLogs(
+    fromBlock: bigint,
+    toBlock: bigint,
+    tokenIdentifier: string,
+    receivingAddress: string,
+    depth = 0
+  ): Promise<EvmLog[]> {
+    try {
+      const logs = await this.rpc<EvmLog[]>("eth_getLogs", [{
+        fromBlock: toRpcHex(fromBlock),
+        toBlock: toRpcHex(toBlock),
+        address: tokenIdentifier,
+        topics: [ERC20_TRANSFER_TOPIC, null, addressToTopic(receivingAddress)],
+      }]);
+      if (!Array.isArray(logs)) {
+        throw new Error("EVM eth_getLogs returned an invalid response.");
+      }
+      return logs;
+    } catch (error) {
+      if (classifyCryptoPaymentFailure(error) !== "RPC_RANGE_TOO_LARGE" ||
+          fromBlock >= toBlock || depth >= MAX_EVM_LOG_SPLIT_DEPTH) {
+        throw error;
+      }
+      const midpoint = fromBlock + (toBlock - fromBlock) / 2n;
+      const left = await this.fetchTransferLogs(
+        fromBlock, midpoint, tokenIdentifier, receivingAddress, depth + 1
+      );
+      const right = await this.fetchTransferLogs(
+        midpoint + 1n, toBlock, tokenIdentifier, receivingAddress, depth + 1
+      );
+      return [...left, ...right];
+    }
   }
 
   private async verifyChain(): Promise<void> {
