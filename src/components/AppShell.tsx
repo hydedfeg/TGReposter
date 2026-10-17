@@ -1,9 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Bot,
+  CreditCard,
   CheckCircle2,
   Database,
-  CreditCard,
   Filter,
   History,
   Home,
@@ -35,6 +35,7 @@ export type WorkspaceView =
   | "filters"
   | "destination"
   | "ai"
+  | "billing"
   | "team"
   | "database"
   | "payments";
@@ -70,6 +71,7 @@ const personalItems: NavItem[] = [
   { view: "filters", labelKey: "items.filters", icon: Filter },
   { view: "destination", labelKey: "items.destinations", icon: Bot },
   { view: "ai", labelKey: "items.aiConfiguration", icon: Sparkles },
+  { view: "billing", labelKey: "items.billing", icon: CreditCard },
 ];
 
 const systemItems: NavItem[] = [
@@ -87,6 +89,7 @@ const titleKeys: Record<WorkspaceView, string> = {
   filters: "titles.filters",
   destination: "titles.destination",
   ai: "titles.ai",
+  billing: "titles.billing",
   team: "titles.team",
   database: "titles.database",
   payments: "titles.payments",
@@ -164,7 +167,7 @@ export default function AppShell({
   const [moreOpen, setMoreOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("tgreposter-sidebar-open") !== "false");
   const activeTargets = targets?.filter((target) => target.enabled).length || 0;
-  const isMoreView = ["history", "channels", "filters", "destination", "ai", "team", "database", "payments"].includes(activeView);
+  const isMoreView = ["history", "channels", "filters", "destination", "ai", "billing", "team", "database", "payments"].includes(activeView);
 
   useEffect(() => {
     setMoreOpen(false);

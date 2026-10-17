@@ -6,12 +6,16 @@ import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
+import { createBillingOverviewRouter } from "./server/routes/billingOverview";
+import { createCustomerCheckoutRouter } from "./server/routes/customerCheckout";
 import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
+import { startBillingOperationsScheduler } from "./server/billing/billingOperationsScheduler";
 import { runCryptoPaymentStartupPreflight } from "./server/payments/paymentRuntime";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { API_ERROR_CODES } from "./shared/apiErrorCodes";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
+import { openRouterModelCatalog } from "./server/ai/openRouterModelCatalog";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
@@ -521,6 +525,10 @@ app.use("/api/promotion", createPromotionRouter({
 
 // Crypto payment operations are super-admin-only infrastructure endpoints.
 // They remain inert until CRYPTO_PAYMENTS_ENABLED and at least one network are enabled.
+// Customer Billing & Usage is strictly read-only and owner-scoped.
+app.use("/api/billing", createBillingOverviewRouter({ authMiddleware }));
+app.use("/api/billing/checkout", createCustomerCheckoutRouter({ authMiddleware }));
+
 app.use("/api/crypto-payments", createCryptoPaymentRouter({
   authMiddleware,
   requireSuperAdmin,
@@ -1225,6 +1233,18 @@ app.delete("/api/ai/credentials/:provider", authMiddleware, async (req: any, res
     return res.status(500).json({
       error: "Unable to remove your AI API key.",
     });
+  }
+});
+
+// Read-only, authenticated OpenRouter model discovery. This endpoint returns
+// public model metadata only; neither OpenRouter keys nor private billing data.
+app.get("/api/ai/openrouter/models", authMiddleware, async (_req, res) => {
+  try {
+    const models = await openRouterModelCatalog.listModels();
+    return res.json({ models });
+  } catch (error) {
+    console.error("OpenRouter model discovery failed:", error);
+    return res.status(503).json({ error: "AI model catalog is temporarily unavailable." });
   }
 });
 
@@ -2262,6 +2282,8 @@ async function startServer() {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
     void runCryptoPaymentStartupPreflight();
     startCryptoPaymentScheduler();
+    // Commercial processing remains OFF unless explicitly enabled at deployment.
+    startBillingOperationsScheduler();
   });
 }
 
