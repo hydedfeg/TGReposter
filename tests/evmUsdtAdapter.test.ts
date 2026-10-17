@@ -279,3 +279,90 @@ test("EVM preflight rejects malformed merchant receiving addresses", async () =>
     /Invalid EVM configured receiving address/
   );
 });
+
+test("EVM range-size rejection recovers all blocks with no overlap or skipped transfer",async()=>{
+  const queried:Array<[number,number]>=[];
+  const rpc:typeof fetch=async (_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string;params:any[]};
+    const reply=(result:unknown)=>new Response(JSON.stringify({jsonrpc:"2.0",id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x64");
+    if(body.method==="eth_getCode")return reply("0x60016000");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getBlockByNumber")return reply({timestamp:"0x65000000"});
+    if(body.method==="eth_getLogs"){
+      const filter=body.params[0];
+      const from=Number(BigInt(filter.fromBlock)),to=Number(BigInt(filter.toBlock));
+      queried.push([from,to]);
+      if(to-from+1>2)return new Response(JSON.stringify({
+        jsonrpc:"2.0",id:body.id,error:{code:-32005,message:"query returned more than 2 results"}
+      }),{status:200});
+      return reply(Array.from({length:to-from+1},(_,i)=>{
+        const block=from+i;
+        return {address:token,topics:[TRANSFER_TOPIC,topic(sender),topic(merchant)],
+          data:"0xf4240",blockNumber:"0x"+block.toString(16),
+          transactionHash:"0x"+block.toString(16).padStart(64,"0"),
+          logIndex:"0x0",removed:false};
+      }));
+    }
+    throw Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter({...config(),maxBlocksPerScan:8},rpc);
+  const result=await adapter.scanTransfers({
+    receivingAddress:merchant,tokenIdentifier:token,cursor:"93",maxBlocks:8
+  });
+  assert.deepEqual(queried,[[93,100],[93,96],[93,94],[95,96],[97,100],[97,98],[99,100]]);
+  assert.equal(result.scannedFrom,"93");
+  assert.equal(result.scannedTo,"100");
+  assert.equal(result.nextCursor,"98");
+  assert.deepEqual(result.observations.map(x=>Number(x.blockReference)),[93,94,95,96,97,98,99,100]);
+  assert.equal(new Set(result.observations.map(x=>x.txHash)).size,8);
+});
+
+test("EVM range splitting stops at child rate limits without partial scan success",async()=>{
+  const queried:Array<[number,number]>=[];
+  const rpc:typeof fetch=async (_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string;params:any[]};
+    const reply=(result:unknown)=>new Response(JSON.stringify({jsonrpc:"2.0",id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x64");
+    if(body.method==="eth_getCode")return reply("0x60016000");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getLogs"){
+      const f=body.params[0],from=Number(BigInt(f.fromBlock)),to=Number(BigInt(f.toBlock));
+      queried.push([from,to]);
+      return new Response(JSON.stringify({id:body.id,error:{
+        code:-32005,message:from===93&&to===93?"HTTP 429 too many requests":"query returned more than 2 results"
+      }}),{status:200});
+    }
+    throw Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter({...config(),maxBlocksPerScan:2},rpc);
+  await assert.rejects(()=>adapter.scanTransfers({
+    receivingAddress:merchant,tokenIdentifier:token,cursor:"93",maxBlocks:2
+  }),/too many requests/);
+  assert.deepEqual(queried,[[93,94],[93,93]]);
+});
+
+test("EVM single-block log-range rejection fails closed and is not retried",async()=>{
+  let attempts=0;
+  const rpc:typeof fetch=async (_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string};
+    const reply=(result:unknown)=>new Response(JSON.stringify({id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x64");
+    if(body.method==="eth_getCode")return reply("0x60016000");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getLogs"){
+      attempts++;
+      return new Response(JSON.stringify({error:{code:-32005,
+        message:"log response size exceeded"}}),{status:200});
+    }
+    throw Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter(config(),rpc);
+  await assert.rejects(()=>adapter.scanTransfers({
+    receivingAddress:merchant,tokenIdentifier:token,cursor:"100",maxBlocks:1
+  }),/log response size exceeded/);
+  assert.equal(attempts,1);
+});
