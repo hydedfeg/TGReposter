@@ -198,7 +198,7 @@ export function startCryptoPaymentScheduler(
       }
 
       const failures =
-        execution.result?.networks.filter((network) => !network.ok) ?? [];
+        execution.result?.networks.filter((network) => !network.ok && !network.skipped) ?? [];
       if (failures.length > 0) {
         logger.warn("Crypto payment scan completed with network failures:", {
           networks: failures.map((failure) => failure.network),

@@ -38,6 +38,40 @@ interface TonJettonTransfersResponse {
 const TON_BOOTSTRAP_LOOKBACK_SECONDS = 60 * 60;
 const TON_CURSOR_OVERLAP_SECONDS = 30;
 const TON_MAX_TRANSFER_BATCH = 1000;
+export const TON_MAX_RETRY_AFTER_MS = 15 * 60_000;
+
+/**
+ * Provider-specified cooling-off period. Only accept a positive integer
+ * number of seconds or a valid HTTP date; clamp to fifteen minutes.
+ * The raw header is never passed to logs or error responses.
+ */
+export function parseTonRetryAfter(
+  value: string | null,
+  nowMs: number = Date.now()
+): number | null {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed || trimmed.length > 80) return null;
+  if (/^[0-9]{1,10}$/.test(trimmed)) {
+    const secs = Number(trimmed);
+    if (!Number.isSafeInteger(secs) || secs <= 0) return null;
+    return Math.min(TON_MAX_RETRY_AFTER_MS, secs * 1000);
+  }
+  // HTTP-date is the only other Retry-After form.
+  if (!/^[A-Za-z]{3},\s/.test(trimmed)) return null;
+  const endMs = Date.parse(trimmed);
+  if (!Number.isFinite(endMs) || !Number.isFinite(nowMs) || endMs <= nowMs)
+    return null;
+  return Math.min(TON_MAX_RETRY_AFTER_MS, Math.ceil(endMs - nowMs));
+}
+
+/** Sanitized 429 error: never embeds URL, key, response body or header text. */
+export class TonCenterRateLimitError extends Error {
+  readonly name = "TonCenterRateLimitError";
+  readonly status = 429;
+  constructor(readonly retryAfterMs: number | null) {
+    super("TON Center request failed with HTTP 429.");
+  }
+}
 
 function parsePositiveInteger(value: unknown, label: string): number {
   const raw =
@@ -364,6 +398,11 @@ export class TonCenterUsdtAdapter implements CryptoPaymentNetworkAdapter {
       signal: AbortSignal.timeout(this.config.requestTimeoutMs),
     });
 
+    if (response.status === 429) {
+      throw new TonCenterRateLimitError(
+        parseTonRetryAfter(response.headers.get("retry-after"), this.now())
+      );
+    }
     if (!response.ok) {
       throw new Error(
         `TON Center request failed with HTTP ${response.status}.`
