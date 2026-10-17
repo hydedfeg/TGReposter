@@ -2,10 +2,12 @@ import { Router, type RequestHandler } from "express";
 import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { CheckoutQuoteError } from "../billing/checkoutQuoteService";
 import { SubscriptionCheckoutError } from "../billing/subscriptionCheckoutService";
+import { AITopupError } from "../billing/aiTopupService";
 import {
-  CustomerCheckoutError, isCustomerCheckoutEnabled,
+  CustomerCheckoutError, isCustomerCheckoutEnabled, isTopupCheckoutEnabled,
   getCustomerCheckoutCatalog, createCustomerSubscriptionQuote,
-  createCustomerSubscriptionOrder, getCustomerCheckoutOrder
+  createCustomerSubscriptionOrder, getCustomerCheckoutOrder,
+  createCustomerTopupQuote, createCustomerTopupOrder
 } from "../billing/customerCheckoutService";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,6 +19,9 @@ type Dependencies = {
   catalog?: typeof getCustomerCheckoutCatalog;
   quote?: typeof createCustomerSubscriptionQuote;
   createOrder?: typeof createCustomerSubscriptionOrder;
+  topupsEnabled?: () => boolean;
+  topupQuote?: typeof createCustomerTopupQuote;
+  topupOrder?: typeof createCustomerTopupOrder;
   readOrder?: typeof getCustomerCheckoutOrder;
 };
 
@@ -29,7 +34,8 @@ function exactBody(value: unknown, keys: string[]): value is Record<string, unkn
 function knownError(error: unknown): {status:number;code:string;message:string} {
   if (error instanceof CustomerCheckoutError ||
       error instanceof CheckoutQuoteError ||
-      error instanceof SubscriptionCheckoutError) {
+      error instanceof SubscriptionCheckoutError ||
+      error instanceof AITopupError) {
     const code = error.code;
     const status = /DISABLED|UNAVAILABLE|NOT_LAUNCHED|NOT_READY/.test(code) ? 503
       : /INVALID_PRODUCT|INVALID_OWNER/.test(code) ? 400 : 409;
@@ -51,6 +57,9 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
   const quote = deps.quote ?? createCustomerSubscriptionQuote;
   const createOrder = deps.createOrder ?? createCustomerSubscriptionOrder;
   const readOrder = deps.readOrder ?? getCustomerCheckoutOrder;
+  const topupsEnabled = deps.topupsEnabled ?? isTopupCheckoutEnabled;
+  const topupQuote = deps.topupQuote ?? createCustomerTopupQuote;
+  const topupOrder = deps.topupOrder ?? createCustomerTopupOrder;
 
   router.use(deps.authMiddleware);
   router.use((req:any,res,next) => {
@@ -61,7 +70,7 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
   });
 
   router.get("/status",async (_req,res) => {
-    if (!enabled() || !hasDatabase()) return res.json({enabled:false,plans:[],networks:[]});
+    if (!hasDatabase())return res.json({enabled:false,topupsEnabled:false,plans:[],packs:[],networks:[]});
     try { return res.json(await catalog()); }
     catch (_error) { return res.status(503).json({code:"CHECKOUT_UNAVAILABLE",error:"Checkout is temporarily unavailable."}); }
   });
@@ -92,6 +101,36 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
     }
     try {
       const order = await createOrder(ownerPrincipalForUser(req.user),req.body.quoteId,req.body.network);
+      return res.status(201).json({order});
+    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+  });
+
+  router.post("/topups/quotes",async (req:any,res) => {
+    if (!enabled()||!topupsEnabled()||!hasDatabase())
+      return res.status(503).json({code:"TOPUPS_DISABLED",error:"AI Unit top-ups are not available yet."});
+    if (!exactBody(req.body,["packId"])||
+        typeof req.body.packId!=="string"||req.body.packId.length>40) {
+      return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid AI pack."});
+    }
+    try {
+      const result=await topupQuote(ownerPrincipalForUser(req.user),req.body.packId);
+      return res.status(201).json({quote:{
+        id:result.id,product:result.product,eurCents:result.eurCents,
+        usdtAmount:result.usdtAmount,expiresAt:result.expiresAt,rateSource:result.rateSource
+      }});
+    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+  });
+
+  router.post("/topups/orders",async (req:any,res) => {
+    if (!enabled()||!topupsEnabled()||!hasDatabase())
+      return res.status(503).json({code:"TOPUPS_DISABLED",error:"AI Unit top-ups are not available yet."});
+    if (!exactBody(req.body,["quoteId","network"])||
+        typeof req.body.quoteId!=="string"||!UUID.test(req.body.quoteId)||
+        !["bsc","ethereum","ton"].includes(req.body.network)) {
+      return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid quote and network."});
+    }
+    try {
+      const order=await topupOrder(ownerPrincipalForUser(req.user),req.body.quoteId,req.body.network);
       return res.status(201).json({order});
     }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
   });
