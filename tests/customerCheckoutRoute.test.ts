@@ -5,12 +5,13 @@ import { createServer } from "node:http";
 import { createCustomerCheckoutRouter } from "../server/routes/customerCheckout";
 import { isCustomerCheckoutEnabled, isTopupCheckoutEnabled } from "../server/billing/customerCheckoutService";
 import { assertCheckoutInvoiceMatches, CHECKOUT_INVOICE_TTL_MS } from "../server/billing/subscriptionInvoiceCheckout";
+import {CheckoutRateLimitError} from "../server/billing/checkoutRateLimit";
 
 const quoteId="01234567-89ab-4cde-8123-0123456789ab";
 const orderId="11234567-89ab-4cde-8123-0123456789ab";
 
 async function withCheckout(
-  opts: { authenticated?: boolean; enabled?: boolean; topupsEnabled?:boolean; database?: boolean } = {},
+  opts: { authenticated?: boolean; enabled?: boolean; topupsEnabled?:boolean; database?: boolean; blockedAction?:"quote"|"invoice" } = {},
   cb: (base:string, spies:{quote:string[];orders:string[];reads:string[];topupQuotes:string[];topupOrders:string[]})=>Promise<void>
 ) {
   const spies={quote:[] as string[],orders:[] as string[],reads:[] as string[],topupQuotes:[] as string[],topupOrders:[] as string[]};
@@ -20,6 +21,7 @@ async function withCheckout(
     authMiddleware:(req:any,_res,next)=>{ if(opts.authenticated!==false)req.user={username:"Alice",authProvider:"legacy"};next(); },
     enabled:()=>opts.enabled===true,
     hasDatabase:()=>opts.database!==false,
+    checkBudget:async(_owner,action)=>{if(opts.blockedAction===action)throw new CheckoutRateLimitError(120);},
     topupsEnabled:()=>opts.topupsEnabled===true,
     catalog:async()=>({enabled:opts.enabled===true,topupsEnabled:opts.topupsEnabled===true,
       networks:opts.enabled===true?["bsc"]:[],
@@ -180,5 +182,51 @@ test("top-up mutations stay closed when only subscription checkout is ready",asy
     assert.equal(res.status,503);
     assert.equal((await res.json()).code,"TOPUPS_DISABLED");
     assert.deepEqual(spies.topupQuotes,[]);
+  });
+});
+
+test("both subscription and top-up quotes receive 429 with Retry-After before issuing price",async()=>{
+  await withCheckout({enabled:true,topupsEnabled:true,blockedAction:"quote"},async(base,spies)=>{
+    for(const [route,body] of [
+      ["quotes",{planId:"creator",interval:"monthly"}],
+      ["topups/quotes",{packId:"ai_mini"}]
+    ] as const){
+      const result=await fetch(base+"/api/billing/checkout/"+route,{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)
+      });
+      assert.equal(result.status,429);
+      assert.equal(result.headers.get("retry-after"),"120");
+      assert.equal(result.headers.get("cache-control"),"private, no-store");
+      assert.equal((await result.json()).code,"CHECKOUT_RATE_LIMITED");
+    }
+    assert.deepEqual(spies.quote,[]);
+    assert.deepEqual(spies.topupQuotes,[]);
+  });
+});
+
+test("subscription and top-up invoice paths use same budget and never issue when blocked",async()=>{
+  await withCheckout({enabled:true,topupsEnabled:true,blockedAction:"invoice"},async(base,spies)=>{
+    for(const route of ["orders","topups/orders"]){
+      const result=await fetch(base+"/api/billing/checkout/"+route,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({quoteId,network:"bsc"})
+      });
+      assert.equal(result.status,429);
+      assert.equal((await result.json()).code,"CHECKOUT_RATE_LIMITED");
+    }
+    assert.deepEqual(spies.orders,[]);
+    assert.deepEqual(spies.topupOrders,[]);
+  });
+});
+
+test("disabled checkout does not invoke throttles or issue invoices",async()=>{
+  await withCheckout({enabled:false,blockedAction:"quote"},async(base,spies)=>{
+    const result=await fetch(base+"/api/billing/checkout/quotes",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({planId:"creator",interval:"monthly"})
+    });
+    assert.equal(result.status,503);
+    assert.equal((await result.json()).code,"CHECKOUT_DISABLED");
+    assert.deepEqual(spies.quote,[]);
   });
 });

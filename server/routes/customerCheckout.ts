@@ -3,6 +3,8 @@ import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { CheckoutQuoteError } from "../billing/checkoutQuoteService";
 import { SubscriptionCheckoutError } from "../billing/subscriptionCheckoutService";
 import { AITopupError } from "../billing/aiTopupService";
+import { checkCustomerCheckoutRate,CheckoutRateLimitError,
+  type CheckoutRateAction } from "../billing/checkoutRateLimit";
 import {
   CustomerCheckoutError, isCustomerCheckoutEnabled, isTopupCheckoutEnabled,
   getCustomerCheckoutCatalog, createCustomerSubscriptionQuote,
@@ -23,6 +25,7 @@ type Dependencies = {
   topupQuote?: typeof createCustomerTopupQuote;
   topupOrder?: typeof createCustomerTopupOrder;
   readOrder?: typeof getCustomerCheckoutOrder;
+  checkBudget?: (ownerPrincipal:string,action:CheckoutRateAction)=>Promise<void>;
 };
 
 function exactBody(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -32,6 +35,9 @@ function exactBody(value: unknown, keys: string[]): value is Record<string, unkn
 }
 
 function knownError(error: unknown): {status:number;code:string;message:string} {
+  if (error instanceof CheckoutRateLimitError) {
+    return {status:429,code:error.code,message:error.message};
+  }
   if (error instanceof CustomerCheckoutError ||
       error instanceof CheckoutQuoteError ||
       error instanceof SubscriptionCheckoutError ||
@@ -60,6 +66,7 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
   const topupsEnabled = deps.topupsEnabled ?? isTopupCheckoutEnabled;
   const topupQuote = deps.topupQuote ?? createCustomerTopupQuote;
   const topupOrder = deps.topupOrder ?? createCustomerTopupOrder;
+  const checkBudget = deps.checkBudget ?? checkCustomerCheckoutRate;
 
   router.use(deps.authMiddleware);
   router.use((req:any,res,next) => {
@@ -68,6 +75,13 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
     if (!req.user) return res.status(401).json({code:"BILLING_AUTH_REQUIRED",error:"Sign in required."});
     return next();
   });
+
+  function respondMutationFailure(error:unknown,res:any){
+    const fail=knownError(error);
+    if(error instanceof CheckoutRateLimitError)
+      res.set("Retry-After",String(error.retryAfterSeconds));
+    return res.status(fail.status).json({code:fail.code,error:fail.message});
+  }
 
   router.get("/status",async (_req,res) => {
     if (!hasDatabase())return res.json({enabled:false,topupsEnabled:false,plans:[],packs:[],networks:[]});
@@ -83,13 +97,15 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
       return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid plan and interval."});
     }
     try {
-      const result = await quote(ownerPrincipalForUser(req.user),req.body.planId,req.body.interval);
+      const owner=ownerPrincipalForUser(req.user);
+      await checkBudget(owner,"quote");
+      const result = await quote(owner,req.body.planId,req.body.interval);
       return res.status(201).json({quote:{
         id:result.id,product:result.product,eurCents:result.eurCents,
         usdtAmount:result.usdtAmount,expiresAt:result.expiresAt,
         rateSource:result.rateSource
       }});
-    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+    }catch(error){return respondMutationFailure(error,res);}
   });
 
   router.post("/orders",async (req:any,res) => {
@@ -100,9 +116,11 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
       return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid quote and network."});
     }
     try {
-      const order = await createOrder(ownerPrincipalForUser(req.user),req.body.quoteId,req.body.network);
+      const owner=ownerPrincipalForUser(req.user);
+      await checkBudget(owner,"invoice");
+      const order = await createOrder(owner,req.body.quoteId,req.body.network);
       return res.status(201).json({order});
-    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+    }catch(error){return respondMutationFailure(error,res);}
   });
 
   router.post("/topups/quotes",async (req:any,res) => {
@@ -113,12 +131,14 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
       return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid AI pack."});
     }
     try {
-      const result=await topupQuote(ownerPrincipalForUser(req.user),req.body.packId);
+      const owner=ownerPrincipalForUser(req.user);
+      await checkBudget(owner,"quote");
+      const result=await topupQuote(owner,req.body.packId);
       return res.status(201).json({quote:{
         id:result.id,product:result.product,eurCents:result.eurCents,
         usdtAmount:result.usdtAmount,expiresAt:result.expiresAt,rateSource:result.rateSource
       }});
-    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+    }catch(error){return respondMutationFailure(error,res);}
   });
 
   router.post("/topups/orders",async (req:any,res) => {
@@ -130,9 +150,11 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
       return res.status(400).json({code:"INVALID_CHECKOUT_INPUT",error:"Choose a valid quote and network."});
     }
     try {
-      const order=await topupOrder(ownerPrincipalForUser(req.user),req.body.quoteId,req.body.network);
+      const owner=ownerPrincipalForUser(req.user);
+      await checkBudget(owner,"invoice");
+      const order=await topupOrder(owner,req.body.quoteId,req.body.network);
       return res.status(201).json({order});
-    }catch(error){const fail=knownError(error);return res.status(fail.status).json({code:fail.code,error:fail.message});}
+    }catch(error){return respondMutationFailure(error,res);}
   });
 
   // Read-only status continues to work for existing orders after checkout is disabled.
