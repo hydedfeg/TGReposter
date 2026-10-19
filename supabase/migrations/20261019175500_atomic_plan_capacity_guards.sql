@@ -42,21 +42,35 @@ begin
       message='Billing resource owner is unavailable.';
   end if;
 
+  -- OLD is not populated for INSERT triggers. Never evaluate OLD fields on
+  -- the INSERT branch, including within an OR expression.
   if tg_table_name='promotion_campaigns' then
     resource:='active_campaigns';
-    changed_to_active:=new.status in ('ready','running') and
-      (tg_op='INSERT' or old.status not in ('ready','running') or
-       old.owner_principal is distinct from new.owner_principal);
+    if tg_op='INSERT' then
+      changed_to_active:=new.status in ('ready','running');
+    else
+      changed_to_active:=new.status in ('ready','running') and
+        (old.status not in ('ready','running') or
+         old.owner_principal is distinct from new.owner_principal);
+    end if;
   elsif tg_table_name='source_channels' then
     resource:='sources';
-    changed_to_active:=new.enabled is true and
-      (tg_op='INSERT' or old.enabled is distinct from true or
-       old.owner_principal is distinct from new.owner_principal);
+    if tg_op='INSERT' then
+      changed_to_active:=new.enabled is true;
+    else
+      changed_to_active:=new.enabled is true and
+        (old.enabled is distinct from true or
+         old.owner_principal is distinct from new.owner_principal);
+    end if;
   elsif tg_table_name in ('destination_targets','promotion_targets') then
     resource:='destinations';
-    changed_to_active:=new.enabled is true and
-      (tg_op='INSERT' or old.enabled is distinct from true or
-       old.owner_principal is distinct from new.owner_principal);
+    if tg_op='INSERT' then
+      changed_to_active:=new.enabled is true;
+    else
+      changed_to_active:=new.enabled is true and
+        (old.enabled is distinct from true or
+         old.owner_principal is distinct from new.owner_principal);
+    end if;
   else
     raise exception using errcode='PZ500',message='Unknown billing resource.';
   end if;
