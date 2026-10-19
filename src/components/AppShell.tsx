@@ -16,6 +16,7 @@ import {
   Radio,
   Send,
   Settings,
+  ClipboardList,
   Sparkles,
   Users,
   X,
@@ -38,7 +39,8 @@ export type WorkspaceView =
   | "billing"
   | "team"
   | "database"
-  | "payments";
+  | "payments"
+  | "salesPlans";
 
 type UserRole = "super-admin" | "admin" | null;
 
@@ -78,6 +80,7 @@ const systemItems: NavItem[] = [
   { view: "team", labelKey: "items.teamAccess", icon: Users },
   { view: "database", labelKey: "items.systemSettings", icon: Database },
   { view: "payments", labelKey: "items.payments", icon: CreditCard },
+  { view: "salesPlans", labelKey: "items.salesPlans", icon: ClipboardList },
 ];
 
 const titleKeys: Record<WorkspaceView, string> = {
@@ -93,6 +96,7 @@ const titleKeys: Record<WorkspaceView, string> = {
   team: "titles.team",
   database: "titles.database",
   payments: "titles.payments",
+  salesPlans: "titles.salesPlans",
 };
 
 function SidebarButton({
@@ -167,7 +171,7 @@ export default function AppShell({
   const [moreOpen, setMoreOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem("tgreposter-sidebar-open") !== "false");
   const activeTargets = targets?.filter((target) => target.enabled).length || 0;
-  const isMoreView = ["history", "channels", "filters", "destination", "ai", "billing", "team", "database", "payments"].includes(activeView);
+  const isMoreView = ["history", "channels", "filters", "destination", "ai", "billing", "team", "database", "payments", "salesPlans"].includes(activeView);
 
   useEffect(() => {
     setMoreOpen(false);
