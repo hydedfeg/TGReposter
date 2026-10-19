@@ -138,9 +138,9 @@ export async function createCheckoutQuote(
       throw new CheckoutQuoteError("INVALID_PRODUCT", "Not a purchasable subscription.");
     }
     const { rows } = await getPostgresPool().query(
-      `select monthly_eur_cents,annual_eur_cents,is_published
+      `select monthly_eur_cents,annual_eur_cents,is_published,is_enabled
        from public.billing_plans where id=$1`, [product.planId]);
-    if (!rows[0]?.is_published) throw new CheckoutQuoteError("PRODUCT_UNAVAILABLE", "Plan is not for sale.");
+    if (!rows[0]?.is_published || !rows[0]?.is_enabled) throw new CheckoutQuoteError("PRODUCT_UNAVAILABLE", "Plan is not for sale.");
     eurCents = product.interval === "monthly"
       ? rows[0].monthly_eur_cents : rows[0].annual_eur_cents;
   } else if (product.kind === "topup") {
