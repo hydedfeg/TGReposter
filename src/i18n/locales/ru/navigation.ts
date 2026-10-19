@@ -16,6 +16,7 @@ const navigation = {
     billing: "Оплата и использование",
     teamAccess: "Команда и доступ",
     systemSettings: "Системные настройки",
+    salesPlans: "Тарифные планы",
     payments: "Платежи",
   },
   titles: {
@@ -30,6 +31,7 @@ const navigation = {
     billing: "Подписка и использование",
     team: "Команда и доступ",
     database: "Системные настройки",
+    salesPlans: "Управление тарифами",
     payments: "Платёжные операции",
   },
   mobile: {
