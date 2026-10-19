@@ -16,6 +16,7 @@ const navigation = {
     billing: "الفوترة والاستخدام",
     teamAccess: "الفريق والصلاحيات",
     systemSettings: "إعدادات النظام",
+    salesPlans: "خطط المبيعات",
     payments: "المدفوعات",
   },
   titles: {
@@ -30,6 +31,7 @@ const navigation = {
     billing: "الفوترة والاستخدام",
     team: "الفريق والصلاحيات",
     database: "إعدادات النظام",
+    salesPlans: "إدارة خطط المبيعات",
     payments: "عمليات الدفع",
   },
   mobile: {
