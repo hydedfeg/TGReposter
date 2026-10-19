@@ -79,7 +79,7 @@ export async function getCustomerCheckoutCatalog():Promise<{
     getPostgresPool().query(
       `select id,display_name,monthly_eur_cents,annual_eur_cents
        from public.billing_plans
-       where id=any($1::text[]) and ($2::boolean=false or is_published=true)
+       where id=any($1::text[]) and is_enabled=true and ($2::boolean=false or is_published=true)
        order by array_position($1::text[],id)`,[PURCHASABLE_PLANS,active]),
     getPostgresPool().query(
       `select id,label,ai_units::text as ai_units,price_eur_cents

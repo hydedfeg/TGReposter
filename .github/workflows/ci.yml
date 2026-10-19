@@ -6,6 +6,7 @@ on:
       - main
       - feat/multilingual-step-1-i18n-foundation
       - feat/commercial-staging-integration
+      - feat/sales-plan-management-foundation
       - feat/customer-usdt-checkout
   pull_request:
     branches:
