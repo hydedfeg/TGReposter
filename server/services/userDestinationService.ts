@@ -38,7 +38,7 @@ export async function saveUserDestinationTargets(
   targets: unknown
 ) {
   const ownerPrincipal = destinationOwnerPrincipalForUser(user);
-  if(Array.isArray(targets)){
+  if(process.env.TGREPOSTER_BACKEND_ENTITLEMENTS_ENFORCED==="true" && Array.isArray(targets)){
     const existing=await userDestinationRepository.listTargets(ownerPrincipal);
     const before=existing.filter(x=>x.enabled).length;
     const after=targets.filter(x=>x && typeof x==="object" &&

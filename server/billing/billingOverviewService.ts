@@ -80,8 +80,10 @@ export const BILLING_USAGE_QUERY = `
   select
     (select count(*)::int from public.source_channels
       where owner_principal=$1 and enabled=true) as sources,
-    (select count(*)::int from public.destination_targets
-      where owner_principal=$1 and enabled=true) as destinations,
+    ((select count(*)::int from public.destination_targets
+      where owner_principal=$1 and enabled=true)
+     + (select count(*)::int from public.promotion_targets
+        where owner_principal=$1 and enabled=true)) as destinations,
     (select count(*)::int from public.promotion_campaigns
       where owner_principal=$1 and status in ('ready','running')) as active_campaigns
 `;
