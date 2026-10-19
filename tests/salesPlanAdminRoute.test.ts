@@ -46,7 +46,7 @@ test("content administrators cannot access global plan catalog even with a valid
     assert.equal((await fetch(base)).status,403);
     assert.equal((await fetch(base+"/creator",opts)).status,403);
     assert.equal((await fetch(base,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:"custom_regional"})})).status,403);
-    assert.deepEqual(calls,{list:0,save:0});
+    assert.deepEqual(calls,{list:0,save:0,create:0});
   });
 });
 test("super-admin can list and access protected draft edit API",async()=>{
@@ -70,12 +70,12 @@ test("missing schema remains a hard 503 and never calls billing services",async(
     assert.equal((await fetch(base)).status,503);
     assert.equal((await fetch(base+"/creator",opts)).status,503);
     assert.equal((await fetch(base,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:"custom_regional"})})).status,503);
-    assert.deepEqual(calls,{list:0,save:0});
+    assert.deepEqual(calls,{list:0,save:0,create:0});
   },false);
 });
 test("malformed plan path is refused before a write",async()=>{
   await serverFor("super-admin",async(base,calls)=>{
     assert.equal((await fetch(base+"/INVALIDPLAN",opts)).status,400);
-    assert.deepEqual(calls,{list:0,save:0});
+    assert.deepEqual(calls,{list:0,save:0,create:0});
   });
 });
