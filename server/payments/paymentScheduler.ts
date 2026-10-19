@@ -95,9 +95,18 @@ export async function runCryptoPaymentScanWithAdvisoryLock(
         await reconcileCryptoPaymentAlertJournal(env);
         await deliverCryptoPaymentAlerts(env);
       } catch (error: any) {
+        // Never log raw database errors: they can contain customer
+        // identifiers, SQL fragments or sensitive provider configuration.
+        const knownStages = [
+          "network_state", "invoice_reconciliation", "unassigned_transfers",
+          "journal_connect", "journal_begin", "journal_upsert",
+          "journal_resolve", "journal_commit",
+        ];
+        const stage = knownStages.includes(error?.stage) ? error.stage : "unknown";
+        const code = typeof error?.code === "string" &&
+          /^[A-Z0-9]{5}$/.test(error.code) ? error.code : "UNKNOWN";
         console.error("Crypto payment background alert processing failed:", {
-          name: error?.name,
-          code: error?.code,
+          stage, code,
         });
       }
     }

@@ -1,5 +1,8 @@
 import { getPostgresPool } from "../utils/postgresPool";
-import { loadCryptoPaymentOverview } from "./paymentOverview";
+import {
+  loadCryptoPaymentAlertSources, PaymentAlertMonitoringError,
+  type AlertSourceOverview, type CryptoPaymentOverviewQuery,
+} from "./paymentAlertSources";
 import { CRYPTO_PAYMENT_NETWORKS, type CryptoPaymentNetwork } from "./types";
 
 type Env = Record<string, string | undefined>;
@@ -34,7 +37,7 @@ function asNetwork(input: string): CryptoPaymentNetwork {
   return input as CryptoPaymentNetwork;
 }
 
-function buildCandidates(overview: Awaited<ReturnType<typeof loadCryptoPaymentOverview>>): Candidate[] {
+function buildCandidates(overview: AlertSourceOverview): Candidate[] {
   const entries: Candidate[] = [];
   for (const alert of overview.reconciliation.alerts) {
     const network = asNetwork(alert.network);
@@ -77,7 +80,7 @@ function buildCandidates(overview: Awaited<ReturnType<typeof loadCryptoPaymentOv
  */
 export async function reconcileCryptoPaymentAlertJournal(
   env: Env = process.env,
-  loadOverview: typeof loadCryptoPaymentOverview = loadCryptoPaymentOverview,
+  loadOverview: (query:CryptoPaymentOverviewQuery,env:Env)=>Promise<AlertSourceOverview> = loadCryptoPaymentAlertSources,
   pool = getPostgresPool()
 ): Promise<{ openedOrUpdated: number; resolved: number; truncated: boolean }> {
   if (!isCryptoPaymentAlertJournalEnabled(env)) {
@@ -87,10 +90,14 @@ export async function reconcileCryptoPaymentAlertJournal(
   const candidates = buildCandidates(overview);
   const notificationState: NotificationState = isPaymentAlertTelegramConfigured(env) ? "pending" : "skipped";
   const fingerprints = [...new Set(candidates.map(item => item.fingerprint))];
-  const client = await pool.connect();
+  let client;
+  try {client=await pool.connect();}
+  catch(error){throw new PaymentAlertMonitoringError("journal_connect",error);}
   let resolved = 0;
+  let stage:"journal_begin"|"journal_upsert"|"journal_resolve"|"journal_commit"="journal_begin";
   try {
     await client.query("begin");
+    stage="journal_upsert";
     for (const candidate of candidates) {
       await client.query(`
         insert into public.crypto_payment_operational_alerts
@@ -121,6 +128,7 @@ export async function reconcileCryptoPaymentAlertJournal(
         notificationState,
       ]);
     }
+    stage="journal_resolve";
     const truncatedCategories = [
       ...(overview.reconciliation.truncated ? ["invoice"] : []),
       ...(overview.unassignedTransfers.truncated ? ["unassigned"] : []),
@@ -133,10 +141,12 @@ export async function reconcileCryptoPaymentAlertJournal(
         and not (category=any($2::text[]))
     `,[fingerprints,truncatedCategories]);
     resolved = rowCount ?? 0;
+    stage="journal_commit";
     await client.query("commit");
   } catch (error) {
-    await client.query("rollback");
-    throw error;
+    // The original failure is authoritative even if rollback itself fails.
+    try {await client.query("rollback");} catch {}
+    throw new PaymentAlertMonitoringError(stage,error);
   } finally {
     client.release();
   }
