@@ -57,6 +57,9 @@ jobs:
           }
           NODE
 
+      - name: Block moderate, high and critical dependency advisories
+        run: npm audit --audit-level=moderate
+
       - name: TypeScript check
         run: npm run lint
 
