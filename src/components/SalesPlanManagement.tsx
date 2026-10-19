@@ -30,6 +30,8 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
   const {t}=useTranslation("billing");
   const [catalog,setCatalog]=useState<Catalog|null>(null);
   const [selected,setSelected]=useState<string>("creator");
+  const [creating,setCreating]=useState(false);
+  const [newPlanId,setNewPlanId]=useState("custom_");
   const [draft,setDraft]=useState<Draft|null>(null);
   const [loading,setLoading]=useState(true);
   const [saving,setSaving]=useState(false);
@@ -55,33 +57,38 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
     return ()=>controller.abort();
   },[load]);
 
-  const chosen=catalog?.plans.find(p=>p.id===selected)??catalog?.plans[0]??null;
+  const existing=catalog?.plans.find(p=>p.id===selected)??catalog?.plans[0]??null;
+  const template=catalog?.plans.find(p=>p.id==="creator")??existing;
+  const chosen=creating && template ? {...template,id:"custom_new",revision:1,
+    displayName:"New Sales Plan",isEnabled:false,isPublished:false,featureCodes:[]} : existing;
   useEffect(()=>{
     if(chosen) {
       const {id:_id,sortOrder:_sort,isPublished:_published,...fields}=chosen;
       setDraft(fields);
     }
-  },[chosen?.id,chosen?.revision,catalog]);
+  },[creating,chosen?.id,chosen?.revision,catalog]);
   function edit<K extends keyof Draft>(field:K,value:Draft[K]){
     setDraft(prev=>prev?{...prev,[field]:value}:prev);
     setMessage("");setError("");
   }
-  const locked=!catalog?.editorEnabled || chosen?.isPublished || saving;
+  const locked=!catalog?.editorEnabled || (chosen?.isPublished && !creating) || saving;
   async function save(e:FormEvent){
     e.preventDefault();
     if(!chosen || !draft || locked)return;
     setSaving(true);setMessage("");setError("");
     try{
-      const response=await fetch(`/api/admin/sales-plans/${encodeURIComponent(chosen.id)}`,{
-        method:"PUT",
+      const response=await fetch(creating?"/api/admin/sales-plans":
+        `/api/admin/sales-plans/${encodeURIComponent(chosen.id)}`,{
+        method:creating?"POST":"PUT",
         headers:{"Content-Type":"application/json",Authorization:`Bearer ${authToken??""}`},
-        body:JSON.stringify(draft)
+        body:JSON.stringify(creating?{id:newPlanId,...draft}:draft)
       });
       const result=await response.json() as {plan?:Plan;code?:string};
       if(!response.ok){
         if(result.code==="PLAN_EDIT_CONFLICT")await load();
         throw new Error(result.code??"SAVE_FAILED");
       }
+      if(creating){setSelected(newPlanId);setCreating(false);}
       await load();
       setMessage(t("salesPlans.saved"));
     }catch(e){
@@ -115,8 +122,13 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
     {loading&&!catalog?<p className="flex items-center gap-2 text-sm text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin"/>{t("salesPlans.loading")}</p>:null}
     {catalog&&chosen&&draft?<div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
+        <button type="button" disabled={!catalog.newTierCreationEnabled} 
+          onClick={()=>{setCreating(true);setNewPlanId("custom_");setError("");setMessage("");}}
+          className="mb-3 min-h-11 w-full rounded-xl border border-sky-200 bg-sky-50 px-3 text-start text-sm font-bold text-sky-800 disabled:opacity-45">
+          + {t("salesPlans.newTier")}
+        </button>
         {catalog.plans.map(p=><button type="button" key={p.id}
-          onClick={()=>{setSelected(p.id);setMessage("");setError("");}}
+          onClick={()=>{setSelected(p.id);setCreating(false);setMessage("");setError("");}}
           aria-current={chosen.id===p.id?"page":undefined}
           className={`flex min-h-12 w-full flex-col rounded-xl px-3 py-2 text-start text-sm transition ${chosen.id===p.id?"bg-sky-50 font-bold text-sky-900 ring-1 ring-sky-200":"hover:bg-slate-50 text-slate-700"}`}>
           <span>{p.displayName}</span>
@@ -130,6 +142,12 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
         </div>
         {!catalog.editorEnabled&&<p className="rounded-lg bg-slate-100 p-3 text-sm text-slate-700">{t("salesPlans.editorDisabled")}</p>}
         {chosen.isPublished&&<p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{t("salesPlans.publishedLocked")}</p>}
+        {creating&&<label className="block text-sm font-medium text-slate-700">{t("salesPlans.tierId")}
+          <input className={inputClass+" mt-1"} value={newPlanId} maxLength={40} disabled={locked}
+            spellCheck={false} onChange={e=>setNewPlanId(e.target.value.toLowerCase())}
+            aria-describedby="new-tier-hint"/>
+          <span id="new-tier-hint" className="mt-1 block text-xs text-slate-500">custom_[a-z][a-z0-9_]…</span>
+        </label>}
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-medium text-slate-700 sm:col-span-2">{t("salesPlans.name")}
             <input className={inputClass+" mt-1"} value={draft.displayName} maxLength={70}
@@ -191,10 +209,10 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
         </fieldset>
         <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
           <p className="text-xs text-slate-500">{t("salesPlans.noPublication")}</p>
-          <button type="submit" disabled={locked}
+          <button type="submit" disabled={locked||(creating&&!/^custom_[a-z][a-z0-9_]{2,29}$/.test(newPlanId))}
             className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-sky-600 px-5 text-sm font-bold text-white disabled:opacity-45">
             {saving?<LoaderCircle className="h-4 w-4 animate-spin"/>:<Save className="h-4 w-4"/>}
-            {t("salesPlans.save")}
+            {t(creating?"salesPlans.createTier":"salesPlans.save")}
           </button>
         </div>
       </form>
