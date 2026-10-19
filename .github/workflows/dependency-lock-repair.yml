@@ -1,0 +1,47 @@
+name: One-time staging lockfile remediation
+
+on:
+  push:
+    branches:
+      - feat/dependency-security-audit
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile-fix:
+    # Only human-authored commits can start the one-time updater.
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install current pinned dependencies
+        run: npm ci
+      - name: Apply compatible lockfile-only vulnerability fixes
+        run: npm audit fix --package-lock-only --ignore-scripts --audit=false
+      - name: Verify reproducible clean install
+        run: npm ci
+      - name: Reject any remaining moderate-or-worse advisory
+        run: npm audit --audit-level=moderate
+      - name: Run TypeScript and complete regression suite
+        run: |
+          npm run lint
+          npm run build
+      - name: Commit verified lockfile only
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            echo "Lockfile unchanged; no security updates needed."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package-lock.json
+          git commit -m 'fix(security): upgrade audited compatible lockfile dependencies'
+          git push origin HEAD:feat/dependency-security-audit
