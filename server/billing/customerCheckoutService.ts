@@ -8,6 +8,11 @@ import {isPaidPlanCandidate,CUSTOM_PLAN_CHECKOUT_SWITCH} from "./customPlanEligi
 import type { CryptoPaymentNetwork } from "../payments/types";
 
 type Environment = Record<string, string | undefined>;
+export const CUSTOMER_PLAN_CATALOG_SQL = `select id,display_name,monthly_eur_cents,annual_eur_cents
+       from public.billing_plans
+       where (id=any($1::text[]) or ($3::boolean=true and id ~ '^custom_[a-z][a-z0-9_]{2,29}$'))
+         and is_enabled=true and ($2::boolean=false or is_published=true)
+       order by sort_order`;
 const PURCHASABLE_PLANS = ["creator", "professional", "business", "agency"] as const;
 const PURCHASABLE_TOPUPS = ["ai_mini","ai_plus","ai_pro","ai_max"] as const;
 
@@ -78,11 +83,7 @@ export async function getCustomerCheckoutCatalog():Promise<{
   const networks=active?loadCryptoPaymentNetworkConfigs().map(c=>c.id):[];
   const [p,k]=await Promise.all([
     getPostgresPool().query(
-      `select id,display_name,monthly_eur_cents,annual_eur_cents
-       from public.billing_plans
-       where (id=any($1::text[]) or ($3::boolean=true and id ~ '^custom_[a-z][a-z0-9_]{2,29}$'))
-         and is_enabled=true and ($2::boolean=false or is_published=true)
-       order by sort_order`,[PURCHASABLE_PLANS,active,active&&process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]==="true"]),
+      CUSTOMER_PLAN_CATALOG_SQL,[PURCHASABLE_PLANS,active,active&&process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]==="true"]),
     getPostgresPool().query(
       `select id,label,ai_units::text as ai_units,price_eur_cents
        from public.billing_ai_topup_packs
