@@ -22,7 +22,7 @@ async function serverFor(
     },
     hasDatabase:()=>enabled,
     list:async()=>{calls.list++;return{plans:[],features:[],editorEnabled:false,publicationEnabled:false,newTierCreationEnabled:false};},
-    save:async()=>{calls.save++;return{id:"creator",revision:2};}
+    save:async()=>{calls.save++;return{id:"creator",revision:2} as any;}
   }));
   const server=createServer(app);
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
