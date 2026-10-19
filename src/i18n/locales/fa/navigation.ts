@@ -16,6 +16,7 @@ const navigation = {
     billing: "صورتحساب و استفاده",
     teamAccess: "تیم و دسترسی",
     systemSettings: "تنظیمات سیستم",
+    salesPlans: "طرح‌های فروش",
     payments: "پرداخت‌ها",
   },
   titles: {
@@ -30,6 +31,7 @@ const navigation = {
     billing: "صورتحساب و میزان استفاده",
     team: "تیم و دسترسی",
     database: "تنظیمات سیستم",
+    salesPlans: "مدیریت طرح‌های فروش",
     payments: "عملیات پرداخت",
   },
   mobile: {
