@@ -9,7 +9,7 @@ import type { PoolClient } from "pg";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const baseline=fs.readFileSync(path.join(root,"supabase/migrations/20261012144506_create_commercial_foundation.sql"),"utf8");
-const migration=fs.readFileSync(path.join(root,"supabase/migrations/20261019180000_sales_plan_management.sql"),"utf8");
+const migration=fs.readFileSync(path.join(root,"supabase/migrations/20261019140859_sales_plan_management.sql"),"utf8");
 
 async function dbFixture() {
   const db=new PGlite();
