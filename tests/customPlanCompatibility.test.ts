@@ -10,6 +10,7 @@ import {
   ELIGIBLE_CUSTOM_PLAN_SQL
 } from "../server/billing/customPlanEligibility";
 import {getEffectivePlanId} from "../server/billing/planCatalog";
+import {CUSTOMER_PLAN_CATALOG_SQL} from "../server/billing/customerCheckoutService";
 
 const now=new Date("2026-10-19T15:00:00.000Z");
 const active={
@@ -95,9 +96,18 @@ test("real draft-only PostgreSQL check makes custom entitlement impossible even 
         'custom_regional_tier','Regional',99,1200,12000,1,5,2,1,
         30,100,'standard','community',false,false
       )`);
+    const quotePlans=["creator","professional","business","agency"];
+    const preview=await db.query<{id:string}>(CUSTOMER_PLAN_CATALOG_SQL,[quotePlans,false,false]);
+    assert.deepEqual(preview.rows.map(x=>x.id),quotePlans);
+    const inactive=await db.query<{id:string}>(CUSTOMER_PLAN_CATALOG_SQL,[quotePlans,true,true]);
+    assert.deepEqual(inactive.rows,[],"Unpublished plans must not appear in an active sales catalog");
     const query=(sql:string,params:unknown[])=>db.query(sql,params as any[]);
     assert.equal(await resolveEffectiveCatalogPlan(active,query,now,gates),"free");
     await db.exec("update public.billing_plans set is_enabled=true where id='custom_regional_tier'");
+    const onlyBuiltin=await db.query<{id:string}>(CUSTOMER_PLAN_CATALOG_SQL,[quotePlans,false,false]);
+    assert.deepEqual(onlyBuiltin.rows.map(x=>x.id),quotePlans);
+    const blockedCustom=await db.query<{id:string}>(CUSTOMER_PLAN_CATALOG_SQL,[quotePlans,true,true]);
+    assert.deepEqual(blockedCustom.rows,[],"Custom drafts must remain unavailable to active checkout");
     assert.equal(await resolveEffectiveCatalogPlan(active,query,now,gates),"free");
     await assert.rejects(db.exec(
       "update public.billing_plans set is_published=true where id='custom_regional_tier'"
