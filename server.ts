@@ -22,6 +22,7 @@ import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
 import { deleteUserAIApiKey, getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, normalizeUserAIApiKey, saveUserAIApiKey } from "./server/services/aiCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
+import { PlanCapacityError,isPlanCapacityDbError } from "./server/billing/backendEntitlementGuard";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, isAppUiLocale, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, updateSupabaseAppUserUiLocale, validateSupabaseAccessToken } from "./server/services/appAuthService";
@@ -1057,9 +1058,14 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
           incoming.destination.targets ?? []
         );
       } catch (error: any) {
-        console.error("Failed saving user-scoped destinations:", error);
-        return res.status(400).json({
-          error: error?.message || "Your Telegram destinations could not be saved.",
+        const limited=error instanceof PlanCapacityError||isPlanCapacityDbError(error);
+        if(!limited)console.error("Failed saving user-scoped destinations:", {
+          code:typeof error?.code==="string"?error.code:"UNKNOWN"
+        });
+        return res.status(limited?409:400).json({
+          ...(limited?{code:"PLAN_LIMIT_REACHED"}:{}),
+          error:limited?"Current subscription plan capacity reached.":
+            "Your Telegram destinations could not be saved.",
         });
       }
     } else {
