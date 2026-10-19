@@ -15,7 +15,7 @@ IDs must match `^custom_[a-z][a-z0-9_]{2,29}$` and cannot reuse reserved identif
 
 ## Database
 
-Migration: `supabase/migrations/20261019160000_custom_sales_plan_drafts.sql`.
+Migration: `supabase/migrations/20261019173245_custom_sales_plan_drafts.sql`.
 
 - Expands `billing_plans_id_check` to accept safe custom IDs in addition to the built-in six.
 - Adds `billing_plans_custom_draft_only_check`, refusing `is_published=true` for **every custom tier**.
