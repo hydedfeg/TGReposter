@@ -1,6 +1,7 @@
 import { getPostgresPool } from "../utils/postgresPool";
 import type { PoolClient } from "pg";
 import { addUtcMonths } from "./monthlyAIAllowance";
+import { requiredBillingConfirmations } from "./confirmedPaymentPolicy";
 
 export class SubscriptionCheckoutError extends Error {
   constructor(public code: string, message: string) {
@@ -177,7 +178,8 @@ export function confirmedTransferQuery(): string {
         on t.owner_principal=i.owner_principal and t.invoice_id=i.id
       where t.owner_principal=$1 and t.invoice_id=$2::uuid
         and i.status='paid' and i.confirmed_at is not null
-        and t.status='confirmed' and t.confirmed_at is not null and t.confirmations > 0
+        and t.status='confirmed' and t.confirmed_at is not null
+        and t.confirmations >= $3::integer
         and t.network=i.network and t.amount=i.expected_amount
         and ((t.network in ('bsc','ethereum')
               and lower(t.to_address)=lower(i.receiving_address)
@@ -191,7 +193,12 @@ export function confirmedTransferQuery(): string {
 export async function fulfillVerifiedSubscription(
   ownerPrincipal: string,
   orderId: string,
-  options: { enabled?: boolean; clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">> } = {}
+  options: {
+    enabled?: boolean;
+    clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">>;
+    /** Server-owned network configuration; injection is used by isolated tests only. */
+    confirmationEnv?: Record<string,string|undefined>;
+  } = {}
 ): Promise<SubscriptionFulfillment> {
   checkEnabled(options.enabled);
   const owner=normalizeOwner(ownerPrincipal);
@@ -204,7 +211,7 @@ export async function fulfillVerifiedSubscription(
     const {rows: orders}=await client.query(
       `select o.id,o.plan_id,o.billing_interval,o.status,o.quoted_usdt_amount::text,
           i.id as invoice_id,i.status as invoice_status,i.confirmed_at,
-          i.requested_amount::text as invoice_amount
+          i.network as invoice_network,i.requested_amount::text as invoice_amount
        from public.billing_subscription_orders o
        join public.crypto_payment_invoices i
          on i.owner_principal=o.owner_principal and i.id=o.invoice_id
@@ -228,7 +235,12 @@ export async function fulfillVerifiedSubscription(
     if (order.invoice_status!=="paid" || !order.confirmed_at) {
       throw new SubscriptionCheckoutError("PAYMENT_NOT_CONFIRMED","Payment is not confirmed.");
     }
-    const {rows: payment}=await client.query(confirmedTransferQuery(),[owner,order.invoice_id]);
+    const minimumConfirmations=requiredBillingConfirmations(
+      order.invoice_network,options.confirmationEnv
+    );
+    const {rows: payment}=await client.query(
+      confirmedTransferQuery(),[owner,order.invoice_id,minimumConfirmations]
+    );
     const {rows: quoteMatch}=await client.query(
       "select ($1::numeric=$2::numeric) as matched",
       [order.quoted_usdt_amount,order.invoice_amount]);

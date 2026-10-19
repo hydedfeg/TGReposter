@@ -1,4 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
+import { requiredBillingConfirmations } from "./confirmedPaymentPolicy";
 import type { PoolClient } from "pg";
 
 /**
@@ -175,7 +176,12 @@ export async function prepareTopupOrder(
 export async function fulfillVerifiedTopup(
   ownerPrincipal: string,
   orderId: string,
-  options: { enabled?: boolean; clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">> } = {}
+  options: {
+    enabled?: boolean;
+    clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">>;
+    /** Server-owned network configuration; injection is used by isolated tests only. */
+    confirmationEnv?: Record<string,string|undefined>;
+  } = {}
 ): Promise<TopupOrderResult> {
   requireTopupsEnabled(options.enabled);
   const owner = normalizeOwner(ownerPrincipal);
@@ -188,7 +194,7 @@ export async function fulfillVerifiedTopup(
     const { rows } = await client.query(
       `select o.id,o.ai_units::text,o.status,o.quoted_usdt_amount::text,
               i.status as invoice_status, i.requested_amount::text as invoice_amount,
-              i.confirmed_at,i.id as invoice_id
+              i.confirmed_at,i.id as invoice_id,i.network as invoice_network
        from public.billing_ai_topup_orders o
        join public.crypto_payment_invoices i
          on i.owner_principal=o.owner_principal and i.id=o.invoice_id
@@ -209,6 +215,9 @@ export async function fulfillVerifiedTopup(
       throw new AITopupError("PAYMENT_NOT_CONFIRMED", "Invoice payment is not confirmed.");
     }
 
+    const minimumConfirmations=requiredBillingConfirmations(
+      order.invoice_network,options.confirmationEnv
+    );
     const { rows: matches } = await client.query(
       `select ($1::numeric = $2::numeric) as amount_matches,
          exists (
@@ -219,7 +228,7 @@ export async function fulfillVerifiedTopup(
            where t.owner_principal=$3 and t.invoice_id=$4::uuid
              and invoice.status='paid' and invoice.confirmed_at is not null
              and t.status='confirmed' and t.confirmed_at is not null
-             and t.confirmations > 0
+             and t.confirmations >= $5::integer
              and t.network=invoice.network
              and t.amount=invoice.expected_amount
              and (
@@ -232,7 +241,7 @@ export async function fulfillVerifiedTopup(
                  and t.token_identifier=invoice.token_identifier)
              )
          ) as confirmed_transaction`,
-      [order.quoted_usdt_amount,order.invoice_amount,owner,order.invoice_id]
+      [order.quoted_usdt_amount,order.invoice_amount,owner,order.invoice_id,minimumConfirmations]
     );
     if (!matches[0]?.amount_matches || !matches[0]?.confirmed_transaction) {
       throw new AITopupError("PAYMENT_NOT_VERIFIED", "Invoice lacks a matching confirmed transfer.");
