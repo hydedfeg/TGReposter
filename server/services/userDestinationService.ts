@@ -3,6 +3,7 @@ import userDestinationRepository, {
   type UserDestinationTarget,
 } from "../repositories/userDestinationRepository";
 import { isUserTelegramBotTokenConfigured } from "./telegramCredentialService";
+import { requirePlanCapacity } from "../billing/backendEntitlementGuard";
 
 import {
   ownerPrincipalForUser,
@@ -37,6 +38,13 @@ export async function saveUserDestinationTargets(
   targets: unknown
 ) {
   const ownerPrincipal = destinationOwnerPrincipalForUser(user);
+  if(Array.isArray(targets)){
+    const existing=await userDestinationRepository.listTargets(ownerPrincipal);
+    const before=existing.filter(x=>x.enabled).length;
+    const after=targets.filter(x=>x && typeof x==="object" &&
+      (x as {enabled?:unknown}).enabled!==false).length;
+    await requirePlanCapacity(ownerPrincipal,"destinations",Math.max(0,after-before));
+  }
   const savedTargets = await userDestinationRepository.replaceTargets(
     ownerPrincipal,
     targets

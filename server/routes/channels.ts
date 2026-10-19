@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ChannelService } from "../services/channelService";
+import { PlanCapacityError } from "../billing/backendEntitlementGuard";
 
 const router = Router();
 const channelService = new ChannelService();
@@ -28,8 +29,9 @@ router.post("/", async (req: any, res) => {
   } catch (err: any) {
     console.error(err);
 
-    res.status(400).json({
+    res.status(err instanceof PlanCapacityError ? 409 : 400).json({
       error: err.message,
+      ...(err instanceof PlanCapacityError ? {code:err.code}:{}),
     });
   }
 });

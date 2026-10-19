@@ -1,3 +1,4 @@
+import { requirePlanCapacity } from "../billing/backendEntitlementGuard";
 import promotionRepository, {
   type PromotionRepository,
   type PromotionTargetChatType,
@@ -208,6 +209,7 @@ export class PromotionAdminService {
       throw new PromotionAdminError(400, "VALIDATION_ERROR", "chatType must be channel, group, or supergroup.");
     }
 
+    await requirePlanCapacity(ownerPrincipal,"destinations",body?.enabled===false?0:1);
     try {
       return await this.repository.createTarget(ownerPrincipal, {
         botAccountId,
@@ -236,6 +238,8 @@ export class PromotionAdminService {
     }
 
     const chatId = body?.chatId === undefined ? undefined : requiredText(body.chatId, "chatId");
+    if(!existing.enabled && body?.enabled===true)
+      await requirePlanCapacity(ownerPrincipal,"destinations",1);
     const connectionChanged =
       (botAccountId !== undefined && botAccountId !== existing.botAccountId) ||
       (chatId !== undefined && chatId !== existing.chatId) ||

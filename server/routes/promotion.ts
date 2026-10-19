@@ -5,6 +5,7 @@ import { PromotionCampaignError, PromotionCampaignService } from "../services/pr
 import type { LegacySettingsReader } from "../services/telegramCredentialService";
 import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { PostgresConnectionConfigError } from "../utils/postgresConnection";
+import { PlanCapacityError } from "../billing/backendEntitlementGuard";
 
 interface PromotionRouterDependencies {
   authMiddleware: RequestHandler;
@@ -12,6 +13,8 @@ interface PromotionRouterDependencies {
 }
 
 function sendError(res: any, error: any) {
+  if(error instanceof PlanCapacityError)
+    return res.status(error.status).json({code:error.code,error:error.message});
   if (error instanceof PostgresConnectionConfigError) {
     return res.status(503).json({
       error: "Promotion database connection is not configured correctly. Check DATABASE_URL.",
