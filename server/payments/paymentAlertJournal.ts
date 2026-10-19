@@ -1,8 +1,9 @@
 import { getPostgresPool } from "../utils/postgresPool";
 import {
   loadCryptoPaymentAlertSources, PaymentAlertMonitoringError,
-  type AlertSourceOverview, type CryptoPaymentOverviewQuery,
+  type AlertSourceOverview,
 } from "./paymentAlertSources";
+import type { CryptoPaymentOverviewQuery } from "./paymentOverview";
 import { CRYPTO_PAYMENT_NETWORKS, type CryptoPaymentNetwork } from "./types";
 
 type Env = Record<string, string | undefined>;
