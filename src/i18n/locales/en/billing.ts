@@ -89,6 +89,9 @@ const billing = {
     "copyManually": "Copy unavailable; select the value manually.",
   },
   salesPlans: {
+    newTier: "New draft tier",
+    tierId: "Tier identifier",
+    createTier: "Create draft tier",
     "title": "Sales Plan Management",
     "eyebrow": "System administration",
     "description": "Manage draft subscription pricing, limits, and entitlements. Publication and customer charging remain locked.",
