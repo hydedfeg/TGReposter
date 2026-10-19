@@ -3,6 +3,12 @@ import { normalizeBillingOwner } from "./billingOverviewService";
 import { getEffectivePlanId, type SubscriptionSnapshot } from "./planCatalog";
 
 export type CapacityKind = "sources" | "destinations" | "activeCampaigns";
+
+/** PostgreSQL raises a controlled SQLSTATE when a serialized write is over cap. */
+export function isPlanCapacityDbError(error:unknown):boolean {
+  return error!==null&&typeof error==="object"&&
+    "code" in error&&(error as {code?:unknown}).code==="PZ409";
+}
 export const ENTITLEMENT_SWITCH = "TGREPOSTER_BACKEND_ENTITLEMENTS_ENFORCED";
 
 export class PlanCapacityError extends Error {
