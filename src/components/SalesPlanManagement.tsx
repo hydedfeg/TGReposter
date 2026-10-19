@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { AlertCircle, CheckCircle2, LoaderCircle, RefreshCw, ShieldCheck, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -67,7 +67,7 @@ export default function SalesPlanManagement({authToken}:{authToken:string|null})
     setMessage("");setError("");
   }
   const locked=!catalog?.editorEnabled || chosen?.isPublished || saving;
-  async function save(e:React.FormEvent){
+  async function save(e:FormEvent){
     e.preventDefault();
     if(!chosen || !draft || locked)return;
     setSaving(true);setMessage("");setError("");
