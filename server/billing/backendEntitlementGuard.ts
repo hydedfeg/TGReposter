@@ -1,6 +1,7 @@
 import { getPostgresPool } from "../utils/postgresPool";
 import { normalizeBillingOwner } from "./billingOverviewService";
-import { getEffectivePlanId, type SubscriptionSnapshot } from "./planCatalog";
+import { type SubscriptionSnapshot } from "./planCatalog";
+import {resolveEffectiveCatalogPlan} from "./customPlanEligibility";
 
 export type CapacityKind = "sources" | "destinations" | "activeCampaigns";
 export const ENTITLEMENT_SWITCH = "TGREPOSTER_BACKEND_ENTITLEMENTS_ENFORCED";
@@ -72,7 +73,7 @@ export async function requirePlanCapacity(
     currentPeriodStart:dateString(row.current_period_start),
     currentPeriodEnd:dateString(row.current_period_end)
   }:null;
-  const planId=getEffectivePlanId(snapshot,options.at??new Date());
+  const planId=await resolveEffectiveCatalogPlan(snapshot,query,options.at??new Date(),options.env??process.env);
   const plans=await query(LIMIT_SQL,[planId]);
   if(plans.rows.length!==1)throw new Error("Billing plan unavailable.");
   const cap=plans.rows[0];
