@@ -80,7 +80,9 @@ export async function getCustomerCheckoutCatalog():Promise<{
     getPostgresPool().query(
       `select id,display_name,monthly_eur_cents,annual_eur_cents
        from public.billing_plans
-       where (id=any($1::text[]) or ($3::boolean=true and id ~ '^custom_[a-z][a-z0-9_]{2,29},
+       where (id=any($1::text[]) or ($3::boolean=true and id ~ '^custom_[a-z][a-z0-9_]{2,29}$'))
+         and is_enabled=true and ($2::boolean=false or is_published=true)
+       order by sort_order`,[PURCHASABLE_PLANS,active,active&&process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]==="true"]),
     getPostgresPool().query(
       `select id,label,ai_units::text as ai_units,price_eur_cents
        from public.billing_ai_topup_packs
