@@ -2,6 +2,7 @@ import { getPostgresPool } from "../utils/postgresPool";
 import type { PoolClient } from "pg";
 import { addUtcMonths } from "./monthlyAIAllowance";
 import { requiredBillingConfirmations } from "./confirmedPaymentPolicy";
+import {isCustomPlanId,CUSTOM_PLAN_CHECKOUT_SWITCH,ELIGIBLE_CUSTOM_PLAN_SQL} from "./customPlanEligibility";
 
 export class SubscriptionCheckoutError extends Error {
   constructor(public code: string, message: string) {
@@ -62,6 +63,16 @@ export async function prepareSubscriptionOrder(
     const quote = quotes[0];
     if (!quote || quote.product_kind !== "subscription") {
       throw new SubscriptionCheckoutError("QUOTE_NOT_FOUND", "Subscription quote not found.");
+    }
+    if (isCustomPlanId(quote.plan_id)) {
+      if (process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]!=="true") {
+        throw new SubscriptionCheckoutError("CUSTOM_PLAN_NOT_LAUNCHED","Custom plan checkout is not enabled.");
+      }
+      const {rows:custom}=await client.query(ELIGIBLE_CUSTOM_PLAN_SQL,[quote.plan_id]);
+      if(custom.length!==1 || custom[0].is_published!==true ||
+         custom[0].is_enabled!==true) {
+        throw new SubscriptionCheckoutError("PRODUCT_UNAVAILABLE","Custom tier is not an eligible published product.");
+      }
     }
 
     const {rows: existing} = await client.query(

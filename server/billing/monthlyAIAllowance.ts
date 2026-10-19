@@ -6,7 +6,8 @@
  */
 import { getPostgresPool } from "../utils/postgresPool";
 import type { PoolClient } from "pg";
-import { getEffectivePlanId, type SubscriptionSnapshot } from "./planCatalog";
+import { type SubscriptionSnapshot } from "./planCatalog";
+import {resolveEffectiveCatalogPlan} from "./customPlanEligibility";
 
 export class AIGrantError extends Error {
   constructor(public code: string, message: string) {
@@ -139,10 +140,10 @@ export async function ensureMonthlyAIAllowance(
         currentPeriodStart: asIso(subscription.current_period_start),
         currentPeriodEnd: asIso(subscription.current_period_end) }
       : null;
-    const planId = getEffectivePlanId(snapshot, now);
-    const { rows: plans } = await client.query<{ monthly_ai_units: string | null; is_published: boolean }>(
-      `select monthly_ai_units::text,is_published from public.billing_plans where id=$1`,[planId]);
-    if (!plans[0]?.is_published || plans[0].monthly_ai_units === null) {
+    const planId = await resolveEffectiveCatalogPlan(snapshot, (sql,params)=>client.query(sql,params), now);
+    const { rows: plans } = await client.query<{ monthly_ai_units: string | null; is_published: boolean; is_enabled: boolean }>(
+      `select monthly_ai_units::text,is_published,is_enabled from public.billing_plans where id=$1`,[planId]);
+    if (!plans[0]?.is_published || plans[0].is_enabled===false || plans[0].monthly_ai_units === null) {
       throw new AIGrantError("PLAN_NOT_AVAILABLE", "This plan has no launched AI allowance.");
     }
 

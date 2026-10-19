@@ -33,7 +33,9 @@ const migrations=[
  "20261012144536_add_ai_topup_orders.sql",
  "20261012144539_subscription_checkout_foundation.sql",
  "20261012144544_billing_operation_retries.sql",
- "20261012144548_subscription_lifecycle_events.sql"
+ "20261012144548_subscription_lifecycle_events.sql",
+ "20261019140859_sales_plan_management.sql",
+ "20261019173245_custom_sales_plan_drafts.sql"
 ];
 
 async function createDb() {

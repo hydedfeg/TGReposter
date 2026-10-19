@@ -1,5 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
-import { isPlanId } from "./planCatalog";
+import { isPaidPlanCandidate } from "./customPlanEligibility";
 
 /**
  * Server-owned quote generation. No live checkout route uses this yet.
@@ -133,7 +133,7 @@ export async function createCheckoutQuote(
   }
   let eurCents: number;
   if (product.kind === "subscription") {
-    if (!isPlanId(product.planId) || ["free","enterprise"].includes(product.planId)
+    if (!isPaidPlanCandidate(product.planId)
         || !["monthly","annual"].includes(product.interval)) {
       throw new CheckoutQuoteError("INVALID_PRODUCT", "Not a purchasable subscription.");
     }
