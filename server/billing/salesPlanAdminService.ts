@@ -7,6 +7,7 @@ import { ownerPrincipalForUser, type AuthenticatedUserIdentity } from "../servic
 // arbitrary new IDs; do not offer an unsafe Create Plan button before those
 // dependent services are migrated to dynamic plan identities.
 const EXISTING_IDS = new Set(["free","creator","professional","business","agency","enterprise"]);
+const CUSTOM_DRAFT_ID=/^custom_[a-z][a-z0-9_]{2,29}$/;
 type Client = Pick<PoolClient,"query"|"release">;
 export type PlanAdminQuery = (sql:string,params?:unknown[]) => Promise<{rows:any[];rowCount?:number|null}>;
 
@@ -89,7 +90,7 @@ export async function listSalesPlanCatalog(options:SalesPlanAdminOptions={}) {
     features:Array.from(featureRows.values()),
     editorEnabled:process.env.TGREPOSTER_SALES_PLAN_EDITOR_ENABLED==="true",
     publicationEnabled:false,
-    newTierCreationEnabled:false
+    newTierCreationEnabled:process.env.TGREPOSTER_SALES_PLAN_EDITOR_ENABLED==="true"
   };
 }
 
@@ -109,7 +110,7 @@ function intBound(value:unknown, max:number, nullable:boolean):number|null {
   return value as number;
 }
 function validate(planId:string,raw:unknown):SalesPlanEdit {
-  if(!EXISTING_IDS.has(planId))throw new SalesPlanAdminError("UNKNOWN_PLAN","Unknown subscription plan.");
+  if(!EXISTING_IDS.has(planId)&&!CUSTOM_DRAFT_ID.test(planId))throw new SalesPlanAdminError("UNKNOWN_PLAN","Unknown subscription plan.");
   if(!raw || typeof raw!=="object" || Array.isArray(raw))invalid("Invalid plan edit.");
   const obj=raw as Record<string,unknown>;
   if(Object.keys(obj).length!==EDIT_KEYS.length ||
@@ -215,4 +216,77 @@ export async function saveDraftSalesPlan(
     await client.query("ROLLBACK");
     throw error;
   }finally{client.release();}
+}
+
+/**
+ * Create *unpublished*, *disabled* custom tiers only. No existing subscription
+ * can point to a custom tier until the separate effective-plan/checkout
+ * compatibility migration is approved. The database enforces unpublished.
+ */
+export async function createDraftSalesPlan(
+  planId:string, edit:unknown, actor:AuthenticatedUserIdentity,
+  options:SalesPlanAdminOptions={}
+) {
+  if(process.env.TGREPOSTER_SALES_PLAN_EDITOR_ENABLED!=="true")
+    throw new SalesPlanAdminError("PLAN_EDITOR_DISABLED","Sales Plan editing is disabled.");
+  if(!CUSTOM_DRAFT_ID.test(planId))
+    throw new SalesPlanAdminError("INVALID_PLAN_ID","New plans need a custom_ prefix and a safe unique ID.");
+  const input=validate(planId,edit);
+  if(input.revision!==1 || input.isEnabled)
+    throw new SalesPlanAdminError("INVALID_PLAN_INPUT","New tiers must start as disabled draft revision 1.");
+  const principal=ownerPrincipalForUser(actor);
+  const client=await (options.clientFactory??(()=>getPostgresPool().connect()))();
+  try {
+    await client.query("BEGIN");
+    await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
+      ["tgreposter:sales-plan-draft-catalog"]);
+    const count=await client.query(
+      "select count(*)::int as n,coalesce(max(sort_order),0)::int as last from public.billing_plans"
+    );
+    if(Number(count.rows[0].n)>=60)
+      throw new SalesPlanAdminError("PLAN_LIMIT_REACHED","Maximum draft tier count reached.");
+    const known=await client.query(
+      "select code from public.billing_features where code=any($1::text[])",
+      [input.featureCodes]
+    );
+    if(known.rows.length!==input.featureCodes.length)
+      throw new SalesPlanAdminError("UNKNOWN_FEATURE","One or more feature codes are not registered.");
+    const nextOrder=Number(count.rows[0].last)+1;
+    const result=await client.query(
+      `insert into public.billing_plans(
+         id,display_name,sort_order,monthly_eur_cents,annual_eur_cents,
+         max_users,max_sources,max_destinations,max_active_campaigns,history_days,
+         monthly_ai_units,monitoring_priority,support_tier,is_enabled,
+         is_published,catalog_revision
+       ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::numeric,$12,$13,false,false,1)
+       on conflict (id) do nothing
+       returning *`,
+      [planId,input.displayName,nextOrder,input.monthlyEurCents,
+       input.annualEurCents,input.maxUsers,input.maxSources,input.maxDestinations,
+       input.maxActiveCampaigns,input.historyDays,input.monthlyAiUnits,
+       input.monitoringPriority,input.supportTier]
+    );
+    if(result.rows.length!==1)
+      throw new SalesPlanAdminError("PLAN_ALREADY_EXISTS","The plan ID is already used.");
+    if(input.featureCodes.length)await client.query(
+      `insert into public.billing_plan_features(plan_id,feature_code)
+       select $1,unnest($2::text[])`,[planId,input.featureCodes]);
+    const created=asPlan(result.rows[0]);
+    await client.query(
+      `insert into public.billing_plan_change_events
+        (plan_id,actor_principal,previous_revision,new_revision,previous_state,new_state)
+       values($1,$2,0,1,'{}'::jsonb,$3::jsonb)`,
+      [planId,principal,JSON.stringify({...created,featureCodes:input.featureCodes})]
+    );
+    await client.query("COMMIT");
+    return {...created,featureCodes:input.featureCodes};
+  } catch(error) {
+    await client.query("ROLLBACK");
+    // Postgres unique constraint protects sort-order races even if a
+    // nonconforming caller bypasses the advisory-lock owner. No retry.
+    if(error && typeof error==="object" && "code" in error &&
+      String(error.code)==="23505")
+      throw new SalesPlanAdminError("PLAN_ALREADY_EXISTS","A plan with this ID already exists.");
+    throw error;
+  } finally {client.release();}
 }
