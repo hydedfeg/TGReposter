@@ -24,7 +24,7 @@ This stage intentionally **does not** bypass those guards. A follow-up migration
 
 ## Database migration
 
-`supabase/migrations/20261019180000_sales_plan_management.sql`
+`supabase/migrations/20261019140859_sales_plan_management.sql`
 
 Adds:
 - `billing_plans.is_enabled boolean not null default true` (existing drafts retain their current selectable status);
