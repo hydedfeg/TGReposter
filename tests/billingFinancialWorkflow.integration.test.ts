@@ -9,6 +9,7 @@ import {fulfillVerifiedSubscription} from "../server/billing/subscriptionCheckou
 import {ensureMonthlyAIAllowance} from "../server/billing/monthlyAIAllowance";
 import {fulfillVerifiedTopup} from "../server/billing/aiTopupService";
 import {requiredBillingConfirmations} from "../server/billing/confirmedPaymentPolicy";
+import {BILLING_CANDIDATE_QUERIES,runBillingOperationsBatch} from "../server/billing/billingOperationsWorker";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const confirmationEnv={
@@ -303,4 +304,101 @@ test("synthetic AI top-up blocks underfinalized and mismatched transfers without
       "select count(*)::int as n from public.ai_unit_ledger where owner_principal='legacy:bob'");
     assert.equal(other.rows[0].n,0);
   } finally {await db.close();}
+});
+
+test("paid orders and included AI allowance survive product delisting without duplicate grants",async()=>{
+  const db=await createDb();
+  try {
+    const owner="legacy:alice";
+    const subscriptionInvoice=await invoice(db,owner,"16.500000","16.500001");
+    const quote=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,plan_id,billing_interval,eur_cents,
+         eur_per_usdt,usdt_amount,rate_source,expires_at)
+      values($1,'subscription','creator','monthly',1500,0.925,16.5,
+        'kraken:USDTEUR:ask',now()+interval '5 minutes')
+      returning id`,[owner]);
+    const subscriptionOrder=await db.query<{id:string}>(`
+      insert into public.billing_subscription_orders
+        (owner_principal,quote_id,invoice_id,plan_id,billing_interval,
+         listed_eur_cents,quoted_usdt_amount)
+      values($1,$2::uuid,$3::uuid,'creator','monthly',1500,16.5)
+      returning id`,[owner,quote.rows[0].id,subscriptionInvoice]);
+    const topupInvoice=await invoice(db,owner,"7.100000","7.100001");
+    const topupOrder=await db.query<{id:string}>(`
+      insert into public.billing_ai_topup_orders
+        (owner_principal,invoice_id,pack_id,ai_units,listed_eur_cents,
+         quoted_usdt_amount,quote_reference)
+      values($1,$2::uuid,'ai_mini',500,700,7.1,'test-retired-pack')
+      returning id`,[owner,topupInvoice]);
+
+    // Simulate real, previously validated chain records only in this
+    // ephemeral local database. No blockchain requests or live credits.
+    await confirmedTransaction(db,owner,subscriptionInvoice,"16.500001");
+    await confirmedTransaction(db,owner,topupInvoice,"7.100001");
+    await db.exec(`
+      update public.billing_plans set is_published=false where id='creator';
+      update public.billing_ai_topup_packs set is_published=false where id='ai_mini';
+    `);
+
+    const options={enabled:true,clientFactory:clientFactory(db),confirmationEnv};
+    const flags={
+      TGREPOSTER_BILLING_WORKER_ENABLED:"true",
+      TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED:"true",
+      TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED:"true",
+      TGREPOSTER_COMMERCIAL_AI_ENABLED:"true",
+      TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED:"true"
+    };
+    const run=()=>runBillingOperationsBatch({
+      env:flags,
+      listCandidates:async(stage,limit)=>{
+        const {rows}=await db.query<{owner_principal:string;id:string}>(
+          BILLING_CANDIDATE_QUERIES[stage],[limit]);
+        return rows;
+      },
+      fulfillSubscription:async(principal,id)=>fulfillVerifiedSubscription(principal,id,options),
+      fulfillTopup:async(principal,id)=>fulfillVerifiedTopup(principal,id,options),
+      activateRenewal:async()=>false,
+      expireSubscription:async()=>false,
+      grantAllowance:async(principal)=>ensureMonthlyAIAllowance(principal,options),
+      noteFailure:async()=>{throw Error("Unexpected synthetic billing failure");},
+      clearFailure:async()=>{}
+    });
+    const first=await run();
+    assert.deepEqual(first.failureCodes,[]);
+    assert.equal(first.stages.subscriptions.completed,1);
+    assert.equal(first.stages.topups.completed,1);
+    assert.equal(first.stages.allowances.completed,1);
+    const second=await run();
+    assert.deepEqual(second.failureCodes,[]);
+    assert.equal(second.stages.subscriptions.attempted,0);
+    assert.equal(second.stages.topups.attempted,0);
+    assert.equal(second.stages.allowances.attempted,0);
+
+    const sub=await db.query<{status:string}>(`
+      select status from public.billing_subscription_orders where id=$1::uuid
+    `,[subscriptionOrder.rows[0].id]);
+    const top=await db.query<{status:string}>(`
+      select status from public.billing_ai_topup_orders where id=$1::uuid
+    `,[topupOrder.rows[0].id]);
+    assert.equal(sub.rows[0].status,"fulfilled");
+    assert.equal(top.rows[0].status,"fulfilled");
+
+    const {rows:grants}=await db.query<{balance_type:string;count:number;units:string}>(`
+      select balance_type,count(*)::int as count,sum(units_delta)::text as units
+      from public.ai_unit_ledger where owner_principal=$1 and event_kind='grant'
+      group by balance_type order by balance_type
+    `,[owner]);
+    assert.deepEqual(grants,[
+      {balance_type:"included",count:1,units:"100.000000"},
+      {balance_type:"purchased",count:1,units:"500.000000"}
+    ]);
+    const other=await db.query<{count:number}>(`
+      select count(*)::int as count from public.ai_unit_ledger
+      where owner_principal='legacy:bob'
+    `);
+    assert.equal(other.rows[0].count,0);
+  } finally {
+    await db.close();
+  }
 });

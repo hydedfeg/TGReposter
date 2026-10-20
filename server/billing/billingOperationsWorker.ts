@@ -84,6 +84,8 @@ export function parseBillingBatchSize(raw?: string): number {
   return batchSize;
 }
 
+// Publication controls NEW sales only. Accepted paid orders, scheduled renewals,
+// and already-active subscriptions must remain fulfillable if a product is retired.
 export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
   subscriptions: `
     select o.owner_principal, o.id::text as id
@@ -92,7 +94,7 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
       on i.owner_principal=o.owner_principal and i.id=o.invoice_id
     join public.billing_plans p on p.id=o.plan_id
     where o.status='pending' and i.status='paid'
-      and i.confirmed_at is not null and p.is_published
+      and i.confirmed_at is not null
       and not exists (
         select 1 from public.billing_operation_attempts a
         where a.stage='subscriptions' and a.owner_principal=o.owner_principal
@@ -107,7 +109,7 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
       on i.owner_principal=o.owner_principal and i.id=o.invoice_id
     join public.billing_ai_topup_packs p on p.id=o.pack_id
     where o.status='pending' and i.status='paid'
-      and i.confirmed_at is not null and p.is_published
+      and i.confirmed_at is not null
       and not exists (
         select 1 from public.billing_operation_attempts a
         where a.stage='topups' and a.owner_principal=o.owner_principal
@@ -121,7 +123,6 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
     join public.billing_plans p on p.id=t.plan_id
     where t.status='scheduled'
       and t.term_start <= now() and t.term_end > now()
-      and p.is_published
       and not exists (
         select 1 from public.billing_operation_attempts a
         where a.stage='renewals' and a.owner_principal=t.owner_principal
@@ -149,7 +150,7 @@ export const BILLING_CANDIDATE_QUERIES: Record<BillingStage, string> = {
     select s.owner_principal, s.id::text as id
     from public.billing_subscriptions s
     join public.billing_plans p on p.id=s.plan_id
-    where s.status='active' and p.is_published
+    where s.status='active'
       and s.plan_id <> 'free'
       and s.current_period_start <= now() and s.current_period_end > now()
       and not exists (
