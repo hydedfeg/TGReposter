@@ -13,6 +13,9 @@ export async function createTopupCheckoutInvoice(
   deps:{
     invoiceService?:Pick<CryptoPaymentInvoiceService,"createInvoice">;
     prepare?:typeof prepareTopupOrder;
+    /** Isolated synthetic tests inject an ephemeral database query. */
+    query?: (sql:string,params:unknown[])=>Promise<{rows:any[]}>;
+
   }={}
 ):Promise<{order:{orderId:string;units:string;fulfilled:boolean;created:boolean};invoiceId:string}> {
   if(process.env.TGREPOSTER_CUSTOMER_CHECKOUT_ENABLED!=="true" ||
@@ -25,10 +28,9 @@ export async function createTopupCheckoutInvoice(
   }
   const owner=ownerPrincipal.trim().toLowerCase();
   if(!owner||owner.length>255)throw new AITopupError("INVALID_OWNER","Invalid owner.");
-  const {rows}=await getPostgresPool().query<{
-    product_kind:string;pack_id:string;expires_at:Date|string;usdt_amount:string;
-  }>(
-    `select product_kind,pack_id,expires_at,usdt_amount::text
+  const query=deps.query ?? ((sql:string,params:unknown[])=>getPostgresPool().query(sql,params));
+  const {rows}=await query(
+    `select product_kind,pack_id,eur_cents,expires_at,usdt_amount::text
      from public.billing_fx_quotes
      where owner_principal=$1 and id=$2::uuid`,[owner,quoteId]);
   const quote=rows[0];
@@ -36,6 +38,29 @@ export async function createTopupCheckoutInvoice(
   if(quote?.product_kind!=="topup"||!quote.pack_id||
      !Number.isFinite(expiry)||expiry-Date.now()<60_000)
     throw new AITopupError("INVALID_QUOTE","Create a fresh top-up quote.");
+  // A published price may change after a quote was issued. Reject a
+  // withdrawn/repriced pack before reserving a payable invoice. The existing
+  // order path is idempotent and must survive a later catalog withdrawal.
+  const {rows:prepared}=await query(
+    `select id from public.billing_ai_topup_orders
+     where owner_principal=$1 and quote_reference=$2 limit 1`,
+    [owner,quoteId]
+  );
+  if(!prepared.length) {
+    const {rows:packs}=await query(
+      `select is_published,price_eur_cents
+       from public.billing_ai_topup_packs where id=$1`,[quote.pack_id]
+    );
+    const pack=packs[0];
+    if(!pack?.is_published) {
+      throw new AITopupError("PACK_NOT_AVAILABLE","AI top-up pack is not for sale.");
+    }
+    if(!Number.isSafeInteger(quote.eur_cents) ||
+       quote.eur_cents!==pack.price_eur_cents) {
+      throw new AITopupError("QUOTE_PRICE_CHANGED",
+        "Pack price changed; request a fresh quote.");
+    }
+  }
   const invoice=await (deps.invoiceService??new CryptoPaymentInvoiceService()).createInvoice(
     owner,{
       network,baseAmount:quote.usdt_amount,

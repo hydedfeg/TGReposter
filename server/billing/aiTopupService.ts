@@ -57,25 +57,19 @@ export interface TopupOrderResult {
  */
 export async function prepareTopupOrder(
   input: PrepareTopupOrderInput,
-  options: { enabled?: boolean } = {}
+  options: {
+    enabled?: boolean;
+    clientFactory?: () => Promise<Pick<PoolClient,"query"|"release">>;
+  } = {}
 ): Promise<TopupOrderResult> {
   requireTopupsEnabled(options.enabled);
   const owner = normalizeOwner(input.ownerPrincipal);
   validQuote(input.quotedUsdtAmount, input.quoteReference);
-  const client = await getPostgresPool().connect();
+  const client = await (options.clientFactory ?? (() => getPostgresPool().connect()))();
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
       [`tgreposter:ai-balance:${owner}`]);
-
-    const { rows: packs } = await client.query(
-      `select id, ai_units::text, price_eur_cents, is_published
-       from public.billing_ai_topup_packs where id=$1`,
-      [input.packId]
-    );
-    if (!packs[0]?.is_published) {
-      throw new AITopupError("PACK_NOT_AVAILABLE", "AI top-up product is not launched.");
-    }
 
     // Quote references must resolve to a genuine, unexpired server-issued
     // FX snapshot for THIS owner, product and listed EUR price.
@@ -103,8 +97,9 @@ export async function prepareTopupOrder(
     // product, quote, or owner must never reuse the same invoice.
     const { rows: existing } = await client.query(
       `select id,pack_id,ai_units::text,quoted_usdt_amount::text,status,quote_reference
-       from public.billing_ai_topup_orders where invoice_id=$1::uuid`,
-      [input.invoiceId]
+       from public.billing_ai_topup_orders
+       where invoice_id=$1::uuid and owner_principal=$2`,
+      [input.invoiceId,owner]
     );
     if (existing.length) {
       const order = existing[0];
@@ -118,6 +113,17 @@ export async function prepareTopupOrder(
       }
       await client.query("COMMIT");
       return { orderId:order.id,units:order.ai_units,fulfilled:order.status==="fulfilled",created:false };
+    }
+
+    // Publication controls NEW sales only. A pre-existing owner-matched
+    // order must remain safely retryable when the pack is unpublished.
+    const { rows: packs } = await client.query(
+      `select id, ai_units::text, price_eur_cents, is_published
+       from public.billing_ai_topup_packs where id=$1`,
+      [input.packId]
+    );
+    if (!packs[0]?.is_published) {
+      throw new AITopupError("PACK_NOT_AVAILABLE", "AI top-up product is not launched.");
     }
 
     if (invoice.status !== "pending" || new Date(invoice.expires_at) <= new Date()) {
