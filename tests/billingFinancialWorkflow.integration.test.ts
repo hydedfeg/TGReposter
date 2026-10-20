@@ -8,7 +8,8 @@ import type {PoolClient} from "pg";
 import {fulfillVerifiedSubscription,prepareSubscriptionOrder} from "../server/billing/subscriptionCheckoutService";
 import {createSubscriptionCheckoutInvoice} from "../server/billing/subscriptionInvoiceCheckout";
 import {ensureMonthlyAIAllowance} from "../server/billing/monthlyAIAllowance";
-import {fulfillVerifiedTopup} from "../server/billing/aiTopupService";
+import {fulfillVerifiedTopup,prepareTopupOrder} from "../server/billing/aiTopupService";
+import {createTopupCheckoutInvoice} from "../server/billing/topupInvoiceCheckout";
 import {requiredBillingConfirmations} from "../server/billing/confirmedPaymentPolicy";
 import {BILLING_CANDIDATE_QUERIES,runBillingOperationsBatch} from "../server/billing/billingOperationsWorker";
 
@@ -518,6 +519,92 @@ test("subscription invoice preflight blocks invalid payable invoices and the tra
   }finally{
     if(previous===undefined)delete process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
     else process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED=previous;
+    await db.close();
+  }
+});
+
+test("top-up checkout cannot issue invoices for withdrawn/repriced packs, but existing orders remain retryable",async()=>{
+  const db=await createDb();
+  const names=[
+    "TGREPOSTER_CUSTOMER_CHECKOUT_ENABLED",
+    "TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED",
+    "TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED",
+    "TGREPOSTER_COMMERCIAL_AI_ENABLED",
+    "TGREPOSTER_BILLING_WORKER_ENABLED",
+    "CRYPTO_PAYMENTS_ENABLED"
+  ];
+  const previous=names.map(name=>process.env[name]);
+  for(const name of names)process.env[name]="true";
+  try {
+    const owner="legacy:alice";
+    const quote=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+      (owner_principal,product_kind,pack_id,eur_cents,eur_per_usdt,
+       usdt_amount,rate_source,expires_at)
+      values($1,'topup','ai_mini',700,0.925,7.1,'kraken:USDTEUR:ask',
+        now()+interval '5 minutes') returning id`,[owner]);
+    const quoteId=quote.rows[0].id;
+    const invoiceId=await invoice(db,owner,"7.100000","7.100001");
+    const query=(sql:string,params:unknown[])=>db.query(sql,params as any[]);
+    let invoiceCalls=0;
+    const tryIssue=()=>createTopupCheckoutInvoice(owner,quoteId,"bsc",{
+      query,
+      invoiceService:{createInvoice:async()=>{
+        invoiceCalls++;
+        throw new Error("INVOICE_STUB_CALLED");
+      }}
+    });
+
+    // Zero payments are requested while the pack is unpublished.
+    await assert.rejects(tryIssue(),{code:"PACK_NOT_AVAILABLE"});
+    assert.equal(invoiceCalls,0);
+    await db.query("update public.billing_ai_topup_packs set is_published=true,price_eur_cents=750 where id='ai_mini'");
+    await assert.rejects(tryIssue(),{code:"QUOTE_PRICE_CHANGED"});
+    assert.equal(invoiceCalls,0);
+
+    await db.query("update public.billing_ai_topup_packs set price_eur_cents=700 where id='ai_mini'");
+    await assert.rejects(tryIssue(),/INVOICE_STUB_CALLED/);
+    assert.equal(invoiceCalls,1);
+
+    const input={
+      ownerPrincipal:owner,invoiceId,packId:"ai_mini",
+      quotedUsdtAmount:"7.100000",quoteReference:quoteId
+    };
+    const opts={enabled:true,clientFactory:clientFactory(db)};
+    const prepared=await prepareTopupOrder(input,opts);
+    assert.equal(prepared.created,true);
+    await db.query("update public.billing_ai_topup_packs set is_published=false,price_eur_cents=900 where id='ai_mini'");
+
+    // Existing owner-verified order is still safe to fetch, even though the
+    // pack has been removed from new sales and its price was changed.
+    const retry=await prepareTopupOrder(input,opts);
+    assert.equal(retry.created,false);
+    assert.equal(retry.orderId,prepared.orderId);
+    await assert.rejects(prepareTopupOrder({...input,ownerPrincipal:"legacy:bob"},opts),
+      {code:"INVALID_INVOICE"});
+
+    const {rows:existingInvoices}=await db.query<{
+      network:string;requested_amount:string;status:string;expires_at:string
+    }>(`select id,network,requested_amount::text as requested_amount,status,expires_at
+      from public.crypto_payment_invoices where id=$1::uuid`,[invoiceId]);
+    let retryInvoiceCalls=0;
+    const resumed=await createTopupCheckoutInvoice(owner,quoteId,"bsc",{
+      query,
+      invoiceService:{createInvoice:async()=>{
+        retryInvoiceCalls++;
+        return existingInvoices[0] as any;
+      }},
+      prepare:async nextInput=>prepareTopupOrder(nextInput,opts)
+    });
+    assert.equal(resumed.invoiceId,invoiceId);
+    assert.equal(resumed.order.orderId,prepared.orderId);
+    assert.equal(resumed.order.created,false);
+    assert.equal(retryInvoiceCalls,1);
+  }finally {
+    for(let i=0;i<names.length;i++) {
+      if(previous[i]===undefined)delete process.env[names[i]];
+      else process.env[names[i]]=previous[i];
+    }
     await db.close();
   }
 });
