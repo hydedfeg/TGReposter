@@ -28,6 +28,72 @@ function iso(value: Date | string): string {
   return (value instanceof Date ? value : new Date(value)).toISOString();
 }
 
+/** Validate new orders BEFORE issuing a payable invoice.
+ *
+ * This preflight is advisory: prepareSubscriptionOrder repeats the critical
+ * checks under the owner's transaction-scoped advisory lock to guard changes
+ * made after the preflight. Existing orders for this quote remain retryable.
+ */
+type CheckoutQuery = (sql:string, params:unknown[])=>Promise<{rows:any[]}>;
+export async function checkSubscriptionInvoiceEligibility(
+  ownerPrincipal:string,
+  quoteId:string,
+  planId:string,
+  interval:string,
+  options:{query?:CheckoutQuery;at?:Date}={}
+):Promise<void> {
+  const owner=normalizeOwner(ownerPrincipal);
+  const query:CheckoutQuery=options.query ??
+    ((sql,params)=>getPostgresPool().query(sql,params));
+  const at=options.at ?? new Date();
+  if(!Number.isFinite(at.getTime())) {
+    throw new SubscriptionCheckoutError("INVALID_TIME","Invalid billing clock.");
+  }
+  const {rows:prepared}=await query(
+    `select id from public.billing_subscription_orders
+     where owner_principal=$1 and quote_id=$2::uuid limit 1`,
+    [owner,quoteId]);
+  if(prepared.length) return; // Existing quote/invoice, not a new purchase.
+
+  const [planResult,subscriptionResult,conflictsResult]=await Promise.all([
+    query(`select is_published,is_enabled from public.billing_plans where id=$1`,[planId]),
+    query(`select plan_id,billing_interval,status,current_period_end,cancel_at_period_end
+            from public.billing_subscriptions where owner_principal=$1`,[owner]),
+    query(`select
+      exists(select 1 from public.billing_subscription_terms
+        where owner_principal=$1 and status='scheduled') as prepaid_term,
+      exists(select 1 from public.billing_subscription_orders o
+        join public.crypto_payment_invoices i
+          on i.owner_principal=o.owner_principal and i.id=o.invoice_id
+        where o.owner_principal=$1 and o.status='pending'
+          and o.quote_id<>$2::uuid and i.status not in ('expired','canceled')) as pending_payment`,
+      [owner,quoteId])
+  ]);
+  if(!planResult.rows[0]?.is_published || !planResult.rows[0]?.is_enabled) {
+    throw new SubscriptionCheckoutError("PLAN_NOT_AVAILABLE","This plan is not for sale.");
+  }
+  const subscription=subscriptionResult.rows[0];
+  if(subscription?.status==="active" && subscription.cancel_at_period_end) {
+    throw new SubscriptionCheckoutError("CANCELLATION_SCHEDULED",
+      "Reverse end-of-term cancellation before buying a renewal.");
+  }
+  const currentEnd=subscription?.current_period_end
+    ? new Date(subscription.current_period_end).getTime() : 0;
+  if(subscription?.status==="active" && currentEnd>at.getTime()
+      && (subscription.plan_id!==planId || subscription.billing_interval!==interval)) {
+    throw new SubscriptionCheckoutError("PLAN_CHANGE_NOT_READY",
+      "Mid-cycle plan changes require an approved proration workflow.");
+  }
+  if(conflictsResult.rows[0]?.prepaid_term) {
+    throw new SubscriptionCheckoutError("RENEWAL_ALREADY_SCHEDULED",
+      "A prepaid subscription term is already scheduled.");
+  }
+  if(conflictsResult.rows[0]?.pending_payment) {
+    throw new SubscriptionCheckoutError("PAYMENT_ALREADY_PENDING",
+      "Complete or cancel the existing pending subscription payment first.");
+  }
+}
+
 export interface SubscriptionOrderRecord {
   orderId: string;
   planId: string;
@@ -107,6 +173,21 @@ export async function prepareSubscriptionOrder(
     if (scheduled.length) {
       throw new SubscriptionCheckoutError("RENEWAL_ALREADY_SCHEDULED",
         "This subscription already has a paid future term.");
+    }
+
+    // Final gate under the owner's advisory lock. A preflight made before
+    // invoice creation cannot rule out a competing checkout transaction.
+    const {rows:otherPayments}=await client.query(
+      `select o.id from public.billing_subscription_orders o
+       join public.crypto_payment_invoices i
+         on i.owner_principal=o.owner_principal and i.id=o.invoice_id
+       where o.owner_principal=$1 and o.status='pending'
+         and o.quote_id<>$2::uuid
+         and i.status not in ('expired','canceled')
+       limit 1`,[owner,quoteId]);
+    if(otherPayments.length) {
+      throw new SubscriptionCheckoutError("PAYMENT_ALREADY_PENDING",
+        "Complete or cancel the existing pending subscription payment first.");
     }
 
     const {rows: invoices} = await client.query(
