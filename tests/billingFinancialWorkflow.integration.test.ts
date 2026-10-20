@@ -555,6 +555,9 @@ test("top-up checkout cannot issue invoices for withdrawn/repriced packs, but ex
       }}
     });
 
+    // The shared synthetic fixture publishes AI Mini for other billing
+    // tests. Withdraw it explicitly before testing this prelaunch case.
+    await db.query("update public.billing_ai_topup_packs set is_published=false where id='ai_mini'");
     // Zero payments are requested while the pack is unpublished.
     await assert.rejects(tryIssue(),{code:"PACK_NOT_AVAILABLE"});
     assert.equal(invoiceCalls,0);
