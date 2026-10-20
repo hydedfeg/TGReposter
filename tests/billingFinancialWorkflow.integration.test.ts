@@ -5,7 +5,8 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 import {PGlite} from "@electric-sql/pglite";
 import type {PoolClient} from "pg";
-import {fulfillVerifiedSubscription} from "../server/billing/subscriptionCheckoutService";
+import {fulfillVerifiedSubscription,prepareSubscriptionOrder} from "../server/billing/subscriptionCheckoutService";
+import {createSubscriptionCheckoutInvoice} from "../server/billing/subscriptionInvoiceCheckout";
 import {ensureMonthlyAIAllowance} from "../server/billing/monthlyAIAllowance";
 import {fulfillVerifiedTopup} from "../server/billing/aiTopupService";
 import {requiredBillingConfirmations} from "../server/billing/confirmedPaymentPolicy";
@@ -399,6 +400,124 @@ test("paid orders and included AI allowance survive product delisting without du
     `);
     assert.equal(other.rows[0].count,0);
   } finally {
+    await db.close();
+  }
+});
+
+test("subscription invoice preflight blocks invalid payable invoices and the transactional order gate blocks duplicate pending payments",async()=>{
+  const db=await createDb();
+  // The core billing fixture predates sales-plan editing; staging's later
+  // catalog migration also adds the is_enabled plan availability switch.
+  await db.exec("alter table public.billing_plans add column if not exists is_enabled boolean not null default true;");
+  const previous=process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
+  process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED="true";
+  try {
+    const owner="legacy:alice";
+    const quote=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,plan_id,billing_interval,eur_cents,
+         eur_per_usdt,usdt_amount,rate_source,expires_at)
+      values($1,'subscription','creator','monthly',1500,0.925,16.5,
+        'kraken:USDTEUR:ask',now()+interval '5 minutes')
+      returning id`,[owner]);
+    const invoiceId=await invoice(db,owner,"16.500000","16.500001");
+    const quoteId=quote.rows[0].id;
+    let invoiceCalls=0;
+    const issue=()=>createSubscriptionCheckoutInvoice(owner,quoteId,"bsc",{
+      query:(sql,params)=>db.query(sql,params as any[]),
+      invoiceService:{createInvoice:async()=>{
+        invoiceCalls++;
+        throw new Error("INVOICE_SERVICE_CALLED");
+      }}
+    });
+    const countInvoices=async()=>{
+      const {rows}=await db.query<{n:number}>(`
+        select count(*)::int as n from public.crypto_payment_invoices`);
+      return rows[0].n;
+    };
+
+    await db.exec("update public.billing_plans set is_published=false where id='creator'");
+    await assert.rejects(issue(),{code:"PLAN_NOT_AVAILABLE"});
+    await db.exec("update public.billing_plans set is_published=true where id='creator'");
+
+    await db.query(`
+      insert into public.billing_subscriptions(owner_principal,plan_id,billing_interval,
+        status,current_period_start,current_period_end)
+      values($1,'professional','monthly','active',
+        now()-interval '1 day',now()+interval '30 days')`,[owner]);
+    await assert.rejects(issue(),{code:"PLAN_CHANGE_NOT_READY"});
+    await db.query(`
+      update public.billing_subscriptions set plan_id='creator',
+        cancel_at_period_end=true where owner_principal=$1`,[owner]);
+    await assert.rejects(issue(),{code:"CANCELLATION_SCHEDULED"});
+    await db.query(`
+      update public.billing_subscriptions set cancel_at_period_end=false
+      where owner_principal=$1`,[owner]);
+
+    const otherQuote=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,plan_id,billing_interval,eur_cents,
+         eur_per_usdt,usdt_amount,rate_source,expires_at)
+      values($1,'subscription','creator','monthly',1500,0.925,16.5,
+        'kraken:USDTEUR:ask',now()+interval '5 minutes')
+      returning id`,[owner]);
+    const otherInvoice=await invoice(db,owner,"16.500000","16.500002");
+    const otherOrder=await db.query<{id:string}>(`
+      insert into public.billing_subscription_orders
+        (owner_principal,quote_id,invoice_id,plan_id,billing_interval,
+         listed_eur_cents,quoted_usdt_amount)
+      values($1,$2::uuid,$3::uuid,'creator','monthly',1500,16.5)
+      returning id`,[owner,otherQuote.rows[0].id,otherInvoice]);
+
+    await assert.rejects(issue(),{code:"PAYMENT_ALREADY_PENDING"});
+    await assert.rejects(
+      prepareSubscriptionOrder(owner,quoteId,invoiceId,{
+        enabled:true,clientFactory:clientFactory(db)
+      }),
+      {code:"PAYMENT_ALREADY_PENDING"}
+    );
+    const noOrder=await db.query<{n:number}>(`
+      select count(*)::int as n from public.billing_subscription_orders
+      where quote_id=$1::uuid`,[quoteId]);
+    assert.equal(noOrder.rows[0].n,0);
+
+    await db.query(`
+      insert into public.billing_subscription_terms
+        (owner_principal,order_id,plan_id,billing_interval,term_start,term_end,status)
+      values($1,$2::uuid,'creator','monthly',
+        now()+interval '30 days',now()+interval '60 days','scheduled')`,
+      [owner,otherOrder.rows[0].id]);
+    await assert.rejects(issue(),{code:"RENEWAL_ALREADY_SCHEDULED"});
+    await db.query("delete from public.billing_subscription_terms where owner_principal=$1",[owner]);
+
+    // Expired payment instructions are not outstanding, so the valid new
+    // checkout can reach invoice creation. It still cannot process payments
+    // in this synthetic test because the invoice service is a throwing stub.
+    await db.query(`
+      update public.crypto_payment_invoices set status='expired'
+      where owner_principal=$1 and id=$2::uuid`,[owner,otherInvoice]);
+    const initialInvoices=await countInvoices();
+    await assert.rejects(issue(),/INVOICE_SERVICE_CALLED/);
+    assert.equal(invoiceCalls,1);
+    assert.equal(await countInvoices(),initialInvoices);
+
+    // An already issued, matching invoice and quote can be attached exactly
+    // once; repeated preparation is idempotent and belongs only to Alice.
+    const prepared=await prepareSubscriptionOrder(owner,quoteId,invoiceId,{
+      enabled:true,clientFactory:clientFactory(db)
+    });
+    assert.equal(prepared.created,true);
+    const retried=await prepareSubscriptionOrder(owner,quoteId,invoiceId,{
+      enabled:true,clientFactory:clientFactory(db)
+    });
+    assert.equal(retried.created,false);
+    await assert.rejects(
+      prepareSubscriptionOrder("legacy:bob",quoteId,invoiceId,{
+        enabled:true,clientFactory:clientFactory(db)
+      }),{code:"QUOTE_NOT_FOUND"});
+  }finally{
+    if(previous===undefined)delete process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
+    else process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED=previous;
     await db.close();
   }
 });

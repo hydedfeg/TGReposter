@@ -3,7 +3,8 @@ import {parseFixedDecimal} from "./checkoutQuoteService";
 import type {CryptoPaymentInvoiceRecord} from "../repositories/cryptoPaymentRepository";
 import {CryptoPaymentInvoiceService} from "../payments/invoiceService";
 import type {CryptoPaymentNetwork} from "../payments/types";
-import {prepareSubscriptionOrder, type SubscriptionOrderRecord,SubscriptionCheckoutError} from "./subscriptionCheckoutService";
+import {prepareSubscriptionOrder, checkSubscriptionInvoiceEligibility,
+  type SubscriptionOrderRecord,SubscriptionCheckoutError} from "./subscriptionCheckoutService";
 
 /**
  * Trusted composition. Price always comes from a live, owner-scoped server quote.
@@ -35,6 +36,9 @@ export async function createSubscriptionCheckoutInvoice(
   deps:{
     invoiceService?:Pick<CryptoPaymentInvoiceService,"createInvoice">;
     prepare?:typeof prepareSubscriptionOrder;
+    preflight?:typeof checkSubscriptionInvoiceEligibility;
+    /** Dependency injection for local synthetic tests only. */
+    query?: (sql:string,params:unknown[])=>Promise<{rows:any[]}>;
   }={}
 ):Promise<{order:SubscriptionOrderRecord; invoiceId:string; expectedAmount:string}> {
   if(process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED!=="true") {
@@ -42,10 +46,9 @@ export async function createSubscriptionCheckoutInvoice(
   }
   const owner=ownerPrincipal.trim().toLowerCase();
   if(!owner || owner.length>255) throw new SubscriptionCheckoutError("INVALID_OWNER","Invalid owner.");
-  const {rows}=await getPostgresPool().query<{
-    product_kind:string;expires_at:Date|string;usdt_amount:string;
-  }>(
-    `select product_kind,expires_at,usdt_amount::text
+  const query=deps.query ?? ((sql:string,params:unknown[])=>getPostgresPool().query(sql,params));
+  const {rows}=await query(
+    `select product_kind,plan_id,billing_interval,expires_at,usdt_amount::text
      from public.billing_fx_quotes
      where owner_principal=$1 and id=$2::uuid`,[owner,quoteId]);
   const quote=rows[0];
@@ -55,6 +58,12 @@ export async function createSubscriptionCheckoutInvoice(
     throw new SubscriptionCheckoutError("QUOTE_EXPIRED",
       "Create a fresh subscription quote before requesting a payment invoice.");
   }
+
+  // Reject invalid changes and unresolved prior payments before creating
+  // a payable invoice. The order preparation transaction also rechecks.
+  await (deps.preflight ?? checkSubscriptionInvoiceEligibility)(
+    owner,quoteId,quote.plan_id,quote.billing_interval,{query}
+  );
 
   // Idempotent for the quote; existing invoice service enforces uniqueness
   // of (owner_principal, request_key) and reserves unique chain amounts.
