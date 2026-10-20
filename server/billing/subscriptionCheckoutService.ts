@@ -110,11 +110,15 @@ export interface SubscriptionOrderRecord {
 export async function prepareSubscriptionOrder(
   ownerPrincipal: string,
   quoteId: string,
-  invoiceId: string
+  invoiceId: string,
+  options: {
+    enabled?:boolean;
+    clientFactory?:()=>Promise<Pick<PoolClient,"query"|"release">>;
+  }={}
 ): Promise<SubscriptionOrderRecord> {
-  checkEnabled();
+  checkEnabled(options.enabled);
   const owner = normalizeOwner(ownerPrincipal);
-  const client = await getPostgresPool().connect();
+  const client = await (options.clientFactory ?? (()=>getPostgresPool().connect()))();
   try {
     await client.query("BEGIN");
     await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))",
