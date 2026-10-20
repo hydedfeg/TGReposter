@@ -406,6 +406,9 @@ test("paid orders and included AI allowance survive product delisting without du
 
 test("subscription invoice preflight blocks invalid payable invoices and the transactional order gate blocks duplicate pending payments",async()=>{
   const db=await createDb();
+  // The core billing fixture predates sales-plan editing; staging's later
+  // catalog migration also adds the is_enabled plan availability switch.
+  await db.exec("alter table public.billing_plans add column if not exists is_enabled boolean not null default true;");
   const previous=process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
   process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED="true";
   try {
