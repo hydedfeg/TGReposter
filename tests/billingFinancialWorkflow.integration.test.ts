@@ -435,7 +435,6 @@ test("subscription invoice preflight blocks invalid payable invoices and the tra
         select count(*)::int as n from public.crypto_payment_invoices`);
       return rows[0].n;
     };
-    const initialInvoices=await countInvoices();
 
     await db.exec("update public.billing_plans set is_published=false where id='creator'");
     await assert.rejects(issue(),{code:"PLAN_NOT_AVAILABLE"});
@@ -497,6 +496,7 @@ test("subscription invoice preflight blocks invalid payable invoices and the tra
     await db.query(`
       update public.crypto_payment_invoices set status='expired'
       where owner_principal=$1 and id=$2::uuid`,[owner,otherInvoice]);
+    const initialInvoices=await countInvoices();
     await assert.rejects(issue(),/INVOICE_SERVICE_CALLED/);
     assert.equal(invoiceCalls,1);
     assert.equal(await countInvoices(),initialInvoices);
