@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Sparkles, Cpu, CheckCircle2, AlertTriangle, Play, HelpCircle, ArrowRight, KeyRound, RefreshCw, Trash2, ShieldCheck } from "lucide-react";
 import type { AIConfig as IAIConfig } from "../types";
 import { safeResponseJson } from "../utils/api";
+import { AiBillingModePanel, useAiBillingMode } from "./AiBillingMode";
+import { buildAiBillingRequest } from "../utils/aiBilling";
 
 type AIProvider = "gemini" | "openrouter";
 
@@ -13,6 +15,7 @@ interface AIConfigProps {
   geminiActive: boolean;
   openrouterActive: boolean;
   readOnly?: boolean;
+  authToken?: string | null;
 }
 
 interface TestErrorState {
@@ -26,9 +29,11 @@ export default function AIConfig({
   onCredentialStatusChange,
   geminiActive,
   openrouterActive,
-  readOnly = false
+  readOnly = false,
+  authToken
 }: AIConfigProps) {
   const { t, i18n } = useTranslation("ai");
+  const billing = useAiBillingMode(authToken);
   const [customModel, setCustomModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [isSavingCredential, setIsSavingCredential] = useState(false);
@@ -88,6 +93,7 @@ export default function AIConfig({
   const handleProviderSelect = (provider: AIProvider) => {
     const selectedProv = providers.find(p => p.id === provider);
     const defaultModel = selectedProv ? selectedProv.models[0] : "gemini-3.5-flash";
+    billing.selectMode("byok");
     onUpdateAI({
       provider,
       model: defaultModel
@@ -236,23 +242,29 @@ export default function AIConfig({
     setTestError(null);
 
     try {
-      const savedToken = localStorage.getItem("curator_token");
+      const savedToken = authToken ?? localStorage.getItem("curator_token");
+      const selectedMode = aiConfig.provider === "openrouter" ? billing.mode : "byok";
+      const request = buildAiBillingRequest(selectedMode, billing.availability);
       const res = await fetch("/api/ai/curate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {})
+          ...(savedToken ? { "Authorization": `Bearer ${savedToken}` } : {}),
+          ...request.headers
         },
         body: JSON.stringify({
           action: "rephrase",
           text: testText,
-          context: "creative and viral"
+          context: "creative and viral",
+          ...request.body
         })
       });
 
       const data = await safeResponseJson(res);
+      if (localStorage.getItem("curator_token") !== savedToken) return;
       if (res.ok && data.result) {
         setTestResult(data.result);
+        if (selectedMode === "included") billing.refresh();
       } else if (data.error) {
         setTestError({ message: data.error });
       } else {
@@ -557,7 +569,14 @@ export default function AIConfig({
               {t("playground.description")}
             </p>
 
-            {!selectedProvider.active ? (
+            <div className="mb-3">
+              <AiBillingModePanel mode={billing.mode} selectMode={billing.selectMode}
+                availability={billing.availability} balance={billing.balance}
+                provider={aiConfig.provider} busy={isTesting || readOnly}
+                refresh={billing.refresh}/>
+            </div>
+
+            {!(billing.mode === "included" && aiConfig.provider === "openrouter") && !selectedProvider.active ? (
               <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-[11px] leading-relaxed text-amber-800">
                 {t("playground.credentialRequired", { provider: selectedProvider.name })}
               </div>
@@ -600,7 +619,7 @@ export default function AIConfig({
           <div className="pt-4 border-t border-slate-200/50 mt-4">
             <button
               onClick={handleTestAI}
-              disabled={isTesting || !testText.trim() || !selectedProvider.active}
+              disabled={isTesting || !testText.trim() || (billing.mode !== "included" && !selectedProvider.active)}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold text-xs py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-3xs"
             >
               {isTesting ? (
