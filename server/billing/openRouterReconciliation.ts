@@ -36,8 +36,12 @@ export function parseGenerationCost(body: unknown, expectedId: string): Generati
 export async function fetchGenerationCost(
   generationId: string,
   key: string,
-  fetchImpl: typeof fetch = globalThis.fetch
+  fetchImpl: typeof fetch = globalThis.fetch,
+  timeoutMs = 10_000
 ): Promise<GenerationCost> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000) {
+    throw new Error("Invalid generation lookup timeout.");
+  }
   if (!/^gen-[A-Za-z0-9_-]{5,128}$/.test(generationId)) {
     throw new Error("Invalid OpenRouter generation identifier.");
   }
@@ -64,7 +68,7 @@ export async function fetchGenerationCost(
       timer = setTimeout(() => {
         controller.abort();
         reject(new Error("OpenRouter generation lookup timed out."));
-      },10_000);
+      },timeoutMs);
     });
     return await Promise.race([request,deadline]);
   } finally {
