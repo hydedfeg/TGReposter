@@ -602,7 +602,9 @@ test("top-up checkout cannot issue invoices for withdrawn/repriced packs, but ex
     assert.equal(resumed.invoiceId,invoiceId);
     assert.equal(resumed.order.orderId,prepared.orderId);
     assert.equal(resumed.order.created,false);
-    assert.equal(retryInvoiceCalls,1);
+    // Resuming an accepted order reads the saved invoice and does NOT
+    // request another reservation from the payment invoice service.
+    assert.equal(retryInvoiceCalls,0);
   }finally {
     for(let i=0;i<names.length;i++) {
       if(previous[i]===undefined)delete process.env[names[i]];
