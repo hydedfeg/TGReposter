@@ -750,6 +750,8 @@ export default function App() {
 
         {activeWorkspaceTab === "feed" || activeWorkspaceTab === "history" ? (
           <CurationFeed
+            authToken={authToken}
+            aiProvider={settings.aiConfig?.provider ?? "gemini"}
             initialTab={activeWorkspaceTab === "history" ? "posted" : "pending"}
             mode={activeWorkspaceTab === "history" ? "history" : "review"}
             posts={settings.posts}
@@ -776,6 +778,7 @@ export default function App() {
 
         {activeWorkspaceTab === "ai" ? (
           <AIConfigView
+            authToken={authToken}
             aiConfig={settings.aiConfig}
             onUpdateAI={handleUpdateAI}
             onCredentialStatusChange={(provider, configured) => {
