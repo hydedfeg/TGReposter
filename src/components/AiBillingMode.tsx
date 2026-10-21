@@ -36,7 +36,8 @@ export function useAiBillingMode(authToken?: string | null) {
 
   useEffect(() => {
     const controller = new AbortController();
-    setSnapshot(null);
+    // Retain the same account's last verified status while refreshing. A
+    // token change is hidden synchronously by the owner-token comparison.
     if (!authToken) return () => controller.abort();
     void (async () => {
       try {
