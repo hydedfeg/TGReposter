@@ -73,9 +73,19 @@ test("forged chain evidence never activates a paid plan and verified retry grant
         (owner_principal,invoice_id,network,token_identifier,
          to_address,amount,confirmations,status,confirmed_at)
       values($1,$2::uuid,'bsc','0xwrong-token','0xwrong-receiver',
-        16.500001,15,'confirmed',now())
+        16.500001,120,'confirmed',now())
       returning id`,[owner,invoice.rows[0].id]);
-    const opts={enabled:true,clientFactory:async()=>({
+    // The current payment verifier intentionally fails closed if chain
+    // finality policy is absent. Supply a synthetic BSC network configuration
+    // with the real 120-confirmation requirement, never relax the backend.
+    const confirmationEnv={
+      CRYPTO_PAYMENTS_ENABLED:"true",
+      CRYPTO_USDT_BSC_ENABLED:"true",
+      CRYPTO_USDT_BSC_RPC_URL:"https://example.invalid/bsc",
+      CRYPTO_USDT_BSC_RECEIVING_ADDRESS:"0x2222222222222222222222222222222222222222",
+      CRYPTO_USDT_BSC_CONFIRMATIONS:"120"
+    };
+    const opts={enabled:true,confirmationEnv,clientFactory:async()=>({
       query:(sql:string,params?:unknown[])=>db.query(sql,params as any[]),
       release:()=>{}
     }) as unknown as Pick<PoolClient,"query"|"release">};
@@ -93,7 +103,7 @@ test("forged chain evidence never activates a paid plan and verified retry grant
       where id=$1::uuid`,[transfer.rows[0].id]);
     await assertRefused(); // no network confirmations
     await db.query(`update public.crypto_payment_transactions
-      set confirmations=15,amount=16.500002 where id=$1::uuid`,[transfer.rows[0].id]);
+      set confirmations=120,amount=16.500002 where id=$1::uuid`,[transfer.rows[0].id]);
     await assertRefused(); // mismatched exact amount
     await db.query(`update public.crypto_payment_transactions
       set amount=16.500001,owner_principal=$1 where id=$2::uuid`,
