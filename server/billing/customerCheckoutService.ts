@@ -14,7 +14,11 @@ const PURCHASABLE_TOPUPS = ["ai_mini","ai_plus","ai_pro","ai_max"] as const;
 export const CUSTOMER_PLAN_CATALOG_SQL = `
   select id,display_name,monthly_eur_cents,annual_eur_cents
   from public.billing_plans
-  where (id=any($1::text[]) or ($3::boolean and id ~ '^custom_[a-z][a-z0-9_]{2,29}
+  where (id=any($1::text[]) or ($3::boolean and id ~ '^custom_[a-z][a-z0-9_]{2,29}$'))
+    and is_enabled=true and ($2::boolean=false or is_published=true)
+  order by case when id=any($1::text[]) then 0 else 1 end,
+           array_position($1::text[],id) nulls last,sort_order
+`;
 
 export type CustomerCheckoutNetwork = CryptoPaymentNetwork;
 
