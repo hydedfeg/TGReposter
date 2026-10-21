@@ -21,8 +21,11 @@ export function useAiBillingMode(authToken?: string | null) {
   const refresh = useCallback(() => setRefreshIndex(value => value + 1), []);
 
   useEffect(() => {
-    const controller = new AbortController();
     setMode("byok");
+  }, [authToken]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     setBalance(null);
     if (!authToken) {
       setAvailability("disabled");
