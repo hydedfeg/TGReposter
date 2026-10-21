@@ -602,9 +602,144 @@ test("top-up checkout cannot issue invoices for withdrawn/repriced packs, but ex
     assert.equal(resumed.invoiceId,invoiceId);
     assert.equal(resumed.order.orderId,prepared.orderId);
     assert.equal(resumed.order.created,false);
-    assert.equal(retryInvoiceCalls,1);
+    // Resuming an accepted order reads the saved invoice and does NOT
+    // request another reservation from the payment invoice service.
+    assert.equal(retryInvoiceCalls,0);
   }finally {
     for(let i=0;i<names.length;i++) {
+      if(previous[i]===undefined)delete process.env[names[i]];
+      else process.env[names[i]]=previous[i];
+    }
+    await db.close();
+  }
+});
+
+test("expired subscription FX quote resumes a verified owner-scoped existing order without issuing another invoice",async()=>{
+  const db=await createDb();
+  const previous=process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
+  process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED="true";
+  try {
+    const owner="legacy:alice";
+    const {rows:quotes}=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,plan_id,billing_interval,eur_cents,
+         eur_per_usdt,usdt_amount,rate_source,expires_at)
+      values($1,'subscription','creator','monthly',1500,0.925,16.5,
+        'kraken:USDTEUR:ask',now()-interval '1 minute')
+      returning id`,[owner]);
+    const quoteId=quotes[0].id;
+    const savedInvoice=await invoice(db,owner,"16.500000","16.500001");
+    const {rows:orders}=await db.query<{id:string}>(`
+      insert into public.billing_subscription_orders
+        (owner_principal,quote_id,invoice_id,plan_id,billing_interval,
+         listed_eur_cents,quoted_usdt_amount)
+      values($1,$2::uuid,$3::uuid,'creator','monthly',1500,16.5)
+      returning id`,[owner,quoteId,savedInvoice]);
+    const query=(sql:string,params:unknown[])=>db.query(sql,params as any[]);
+    let invoicesCreated=0;
+    const options={
+      query,
+      invoiceService:{createInvoice:async()=>{
+        invoicesCreated++;
+        throw Error("MUST_NOT_CREATE_INVOICE");
+      }}
+    };
+    const resumed=await createSubscriptionCheckoutInvoice(owner,quoteId,"bsc",options);
+    assert.equal(resumed.order.orderId,orders[0].id);
+    assert.equal(resumed.order.created,false);
+    assert.equal(resumed.invoiceId,savedInvoice);
+    assert.equal(resumed.expectedAmount,"16.500001000000000000");
+    assert.equal(invoicesCreated,0);
+    await assert.rejects(
+      createSubscriptionCheckoutInvoice(owner,quoteId,"ethereum",options),
+      {code:"INVOICE_CONFLICT"});
+    await assert.rejects(
+      createSubscriptionCheckoutInvoice("legacy:bob",quoteId,"bsc",options),
+      {code:"QUOTE_NOT_FOUND"});
+    await db.query(`
+      update public.crypto_payment_invoices set status='paid',confirmed_at=now()
+      where id=$1::uuid`,[savedInvoice]);
+    const paid=await createSubscriptionCheckoutInvoice(owner,quoteId,"bsc",options);
+    assert.equal(paid.order.created,false);
+    assert.equal(invoicesCreated,0);
+    const {rows:fresh}=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,plan_id,billing_interval,eur_cents,
+         eur_per_usdt,usdt_amount,rate_source,expires_at)
+      values($1,'subscription','creator','monthly',1500,0.925,16.5,
+        'kraken:USDTEUR:ask',now()-interval '1 minute')
+      returning id`,[owner]);
+    await assert.rejects(
+      createSubscriptionCheckoutInvoice(owner,fresh[0].id,"bsc",options),
+      {code:"QUOTE_EXPIRED"});
+    assert.equal(invoicesCreated,0);
+  }finally{
+    if(previous===undefined)delete process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED;
+    else process.env.TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED=previous;
+    await db.close();
+  }
+});
+
+test("expired top-up FX quote resumes an existing retired-pack order without new invoice reservation",async()=>{
+  const db=await createDb();
+  const names=["TGREPOSTER_CUSTOMER_CHECKOUT_ENABLED","TGREPOSTER_SUBSCRIPTION_CHECKOUT_ENABLED",
+    "TGREPOSTER_COMMERCIAL_TOPUPS_ENABLED","TGREPOSTER_COMMERCIAL_AI_ENABLED",
+    "TGREPOSTER_BILLING_WORKER_ENABLED","CRYPTO_PAYMENTS_ENABLED"];
+  const previous=names.map(name=>process.env[name]);
+  for(const name of names)process.env[name]="true";
+  try {
+    const owner="legacy:alice";
+    const {rows:quotes}=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,pack_id,eur_cents,eur_per_usdt,
+         usdt_amount,rate_source,expires_at)
+      values($1,'topup','ai_mini',700,0.925,7.1,
+         'kraken:USDTEUR:ask',now()-interval '1 minute')
+      returning id`,[owner]);
+    const quoteId=quotes[0].id;
+    const savedInvoice=await invoice(db,owner,"7.100000","7.100001");
+    const {rows:orders}=await db.query<{id:string}>(`
+      insert into public.billing_ai_topup_orders
+        (owner_principal,invoice_id,pack_id,ai_units,listed_eur_cents,
+         quoted_usdt_amount,quote_reference)
+      values($1,$2::uuid,'ai_mini',500,700,7.1,$3)
+      returning id`,[owner,savedInvoice,quoteId]);
+    await db.exec(`update public.billing_ai_topup_packs
+      set is_published=false,price_eur_cents=900 where id='ai_mini'`);
+    const query=(sql:string,params:unknown[])=>db.query(sql,params as any[]);
+    let invoicesCreated=0;
+    const options={
+      query,
+      invoiceService:{createInvoice:async()=>{
+        invoicesCreated++;
+        throw Error("MUST_NOT_CREATE_INVOICE");
+      }}
+    };
+    const resumed=await createTopupCheckoutInvoice(owner,quoteId,"bsc",options);
+    assert.equal(resumed.order.orderId,orders[0].id);
+    assert.equal(resumed.order.created,false);
+    assert.equal(resumed.order.units,"500.000000");
+    assert.equal(resumed.invoiceId,savedInvoice);
+    assert.equal(invoicesCreated,0);
+    await assert.rejects(
+      createTopupCheckoutInvoice(owner,quoteId,"ethereum",options),
+      {code:"INVOICE_CONFLICT"});
+    await assert.rejects(
+      createTopupCheckoutInvoice("legacy:bob",quoteId,"bsc",options),
+      {code:"INVALID_QUOTE"});
+    const {rows:fresh}=await db.query<{id:string}>(`
+      insert into public.billing_fx_quotes
+        (owner_principal,product_kind,pack_id,eur_cents,eur_per_usdt,
+         usdt_amount,rate_source,expires_at)
+      values($1,'topup','ai_mini',700,0.925,7.1,
+        'kraken:USDTEUR:ask',now()-interval '1 minute')
+      returning id`,[owner]);
+    await assert.rejects(
+      createTopupCheckoutInvoice(owner,fresh[0].id,"bsc",options),
+      {code:"INVALID_QUOTE"});
+    assert.equal(invoicesCreated,0);
+  }finally {
+    for(let i=0;i<names.length;i++){
       if(previous[i]===undefined)delete process.env[names[i]];
       else process.env[names[i]]=previous[i];
     }
