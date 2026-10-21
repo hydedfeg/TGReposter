@@ -52,8 +52,8 @@ export function createBillingOverviewRouter(options: {
       // do not retroactively revoke an already-active subscriber's credits.
       if (!overview?.plan || typeof overview.plan.id !== "string"
           || typeof overview.plan.published !== "boolean" || !overview.ai
-          || !/^-?\\d+(?:\\.\\d+)?$/.test(String(overview.ai.includedAvailable))
-          || !/^-?\\d+(?:\\.\\d+)?$/.test(String(overview.ai.purchasedAvailable))) {
+          || !/^-?[0-9]+(?:[.][0-9]+)?$/.test(String(overview.ai.includedAvailable))
+          || !/^-?[0-9]+(?:[.][0-9]+)?$/.test(String(overview.ai.purchasedAvailable))) {
         throw new Error("AI credit overview is incomplete.");
       }
       if (overview.plan.id === "free" && !overview.plan.published) {
