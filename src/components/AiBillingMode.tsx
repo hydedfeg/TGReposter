@@ -15,10 +15,20 @@ export interface AiCreditBalance {
  */
 export function useAiBillingMode(authToken?: string | null) {
   const [mode, setMode] = useState<AiBillingMode>("byok");
-  const [availability, setAvailability] = useState<AiCreditAvailability>("loading");
-  const [balance, setBalance] = useState<AiCreditBalance | null>(null);
+  // Tag all responses with the session that requested them. A change of
+  // account instantly hides the previous owner's balance during render,
+  // before React effects have run.
+  const [snapshot, setSnapshot] = useState<{
+    token: string;
+    availability: "ready" | "disabled" | "unavailable";
+    balance: AiCreditBalance | null;
+  } | null>(null);
   const [refreshIndex, setRefreshIndex] = useState(0);
   const refresh = useCallback(() => setRefreshIndex(value => value + 1), []);
+  const current = authToken && snapshot?.token === authToken ? snapshot : null;
+  const availability: AiCreditAvailability = !authToken
+    ? "disabled" : current?.availability ?? "loading";
+  const balance = availability === "ready" ? current?.balance ?? null : null;
 
   useEffect(() => {
     setMode("byok");
@@ -26,12 +36,8 @@ export function useAiBillingMode(authToken?: string | null) {
 
   useEffect(() => {
     const controller = new AbortController();
-    setBalance(null);
-    if (!authToken) {
-      setAvailability("disabled");
-      return () => controller.abort();
-    }
-    setAvailability("loading");
+    setSnapshot(null);
+    if (!authToken) return () => controller.abort();
     void (async () => {
       try {
         const response = await fetch("/api/billing/ai-credits/status", {
@@ -48,15 +54,16 @@ export function useAiBillingMode(authToken?: string | null) {
         if (response.ok && result?.enabled === true && result.balance &&
             typeof result.balance.includedAvailable === "string" &&
             typeof result.balance.purchasedAvailable === "string") {
-          setBalance(result.balance);
-          setAvailability("ready");
+          setSnapshot({token:authToken, availability:"ready", balance:result.balance});
         } else if (response.ok && result?.enabled === false) {
-          setAvailability("disabled");
+          setSnapshot({token:authToken, availability:"disabled", balance:null});
         } else {
-          setAvailability("unavailable");
+          setSnapshot({token:authToken, availability:"unavailable", balance:null});
         }
       } catch {
-        if (!controller.signal.aborted) setAvailability("unavailable");
+        if (!controller.signal.aborted && localStorage.getItem("curator_token") === authToken) {
+          setSnapshot({token:authToken, availability:"unavailable", balance:null});
+        }
       }
     })();
     return () => controller.abort();
