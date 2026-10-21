@@ -3,6 +3,7 @@ import { ownerPrincipalForUser } from "../services/userPrincipalService";
 import { getBillingOverview } from "../billing/billingOverviewService";
 import { setEndOfTermCancellation, SubscriptionLifecycleError } from "../billing/subscriptionLifecycleService";
 import { getPlanChangePreview, PlanChangePreviewError } from "../billing/planChangePreview";
+import { isCommercialCurationRouteEnabled } from "../billing/customerCommercialCuration";
 
 /**
  * No checkout or mutation routes. The authenticated session is the ONLY
@@ -17,6 +18,7 @@ export function createBillingOverviewRouter(options: {
   canManage?: () => boolean;
   previewChange?: typeof getPlanChangePreview;
   canPreview?: () => boolean;
+  canUseCommercialAI?: () => boolean;
 }) {
   const router = Router();
   const load = options.loadOverview ?? getBillingOverview;
@@ -25,8 +27,47 @@ export function createBillingOverviewRouter(options: {
   const canManage = options.canManage ?? (() => process.env.TGREPOSTER_SUBSCRIPTION_MANAGEMENT_ENABLED === "true");
   const previewChange = options.previewChange ?? getPlanChangePreview;
   const canPreview = options.canPreview ?? (() => process.env.TGREPOSTER_PLAN_CHANGE_PREVIEW_ENABLED === "true");
+  const canUseCommercialAI = options.canUseCommercialAI ?? isCommercialCurationRouteEnabled;
 
   router.use(options.authMiddleware);
+  // Commercial curation capabilities are per-user and off by default.
+  // The public UI must not infer availability solely from a plan or credits.
+  // No owner data, wallet data or payment methods are exposed while disabled.
+  router.get("/ai-credits/status", async (req: any, res) => {
+    res.set("Cache-Control", "private, no-store");
+    res.set("Vary", "Authorization");
+    if (!req.user) {
+      return res.status(401).json({
+        code: "BILLING_AUTH_REQUIRED", error: "Sign in required."
+      });
+    }
+    if (!hasDatabase() || !canUseCommercialAI()) {
+      return res.json({ enabled: false });
+    }
+    try {
+      const owner = ownerPrincipalForUser(req.user);
+      const overview = await load(owner);
+      return res.json({
+        enabled: true,
+        balance: {
+          includedAvailable: overview.ai.includedAvailable,
+          purchasedAvailable: overview.ai.purchasedAvailable,
+          periodEnd: overview.ai.periodEnd
+        }
+      });
+    } catch (error: any) {
+      console.error("Customer AI credit availability failed:", {
+        code: typeof error?.code === "string" ? error.code : "UNEXPECTED"
+      });
+      // Never show a zero balance or an enabled selector if owner data
+      // could not be verified against the database.
+      return res.status(503).json({
+        code: "AI_CREDITS_UNAVAILABLE",
+        error: "AI credit availability could not be verified."
+      });
+    }
+  });
+
   router.get("/overview", async (req: any, res) => {
     res.set("Cache-Control", "private, no-store");
     res.set("Vary", "Authorization");

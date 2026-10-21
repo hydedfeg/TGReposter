@@ -25,6 +25,8 @@ import { AI_OUTPUT_LANGUAGE_IDS, type AIOutputLanguageId } from "../../shared/ai
 import type { CuratedPost, DestinationTarget } from "../types";
 import { AI_CONNECTION_FALLBACK_ERROR, AI_CURATION_FALLBACK_ERROR } from "../utils/aiErrors";
 import { safeResponseJson } from "../utils/api";
+import { AiBillingModePanel, useAiBillingMode } from "./AiBillingMode";
+import { buildAiBillingRequest } from "../utils/aiBilling";
 import { getInitials } from "../utils/text";
 
 interface CurationFeedProps {
@@ -37,6 +39,8 @@ interface CurationFeedProps {
   onUpdatePost: (postId: string, updatedFields: Partial<CuratedPost>) => void | Promise<void>;
   posts: CuratedPost[];
   targets?: DestinationTarget[];
+  authToken?: string | null;
+  aiProvider?: string;
 }
 
 type TabType = "pending" | "approved" | "posted" | "archived";
@@ -182,8 +186,11 @@ export default function CurationFeed({
   onUpdatePost,
   posts,
   targets,
+  authToken,
+  aiProvider = "gemini",
 }: CurationFeedProps) {
   const { t, i18n } = useTranslation("inbox");
+  const billing = useAiBillingMode(authToken);
   const { t: th } = useTranslation("history");
   const isHistory = mode === "history";
   const locale = normalizeAppLocale(i18n.language);
@@ -331,15 +338,19 @@ export default function CurationFeed({
 
   const runAiAction = async (action: string, context?: string) => {
     if (!selectedPost) return;
+    const requestToken = authToken ?? localStorage.getItem("curator_token");
     setAiLoadingAction(action);
     setFeedback(null);
     try {
-      const token = localStorage.getItem("curator_token");
+      const token = requestToken;
+      const requestMode = aiProvider === "openrouter" ? billing.mode : "byok";
+      const request = buildAiBillingRequest(requestMode, billing.availability);
       const response = await fetch("/api/ai/curate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...request.headers
         },
         body: JSON.stringify({
           action,
@@ -349,13 +360,17 @@ export default function CurationFeed({
             : context
               ? { context }
               : {}),
+          ...request.body
         }),
       });
       const data = await safeResponseJson(response);
+      if (localStorage.getItem("curator_token") !== token) return;
       if (!response.ok || !data.result) throw new Error(data.error || AI_CURATION_FALLBACK_ERROR);
+      if (requestMode === "included") billing.refresh();
       const result = action === "hashtags" ? [draftText.trim(), String(data.result).trim()].filter(Boolean).join("\n\n") : String(data.result).trim();
       setAiSuggestion({ action, original: draftText, result });
     } catch (error: any) {
+      if (localStorage.getItem("curator_token") !== requestToken) return;
       const message = error?.message || AI_CONNECTION_FALLBACK_ERROR;
       if (message === AI_CURATION_FALLBACK_ERROR) {
         setFeedback({ messageKey: "feedback.aiCurationError", type: "error" });
@@ -416,6 +431,12 @@ export default function CurationFeed({
           </div>
         </div>
         {aiLoadingAction ? <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-violet-600"><RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> {t("ai.generating")}</span> : null}
+      </div>
+      <div className="mt-4">
+        <AiBillingModePanel mode={billing.mode} selectMode={billing.selectMode}
+          availability={billing.availability} balance={billing.balance}
+          provider={aiProvider} busy={Boolean(aiLoadingAction)}
+          refresh={billing.refresh}/>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <button type="button" disabled={Boolean(aiLoadingAction)} onClick={() => runAiAction("rephrase", activeTone)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-200 bg-violet-50/40 px-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50">

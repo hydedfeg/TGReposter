@@ -8,13 +8,15 @@ async function withServer(
   auth: express.RequestHandler,
   loadOverview: (owner: string) => Promise<any>,
   check: (base: string) => Promise<void>,
-  hasDatabase = true
+  hasDatabase = true,
+  commercialEnabled = false
 ) {
   const app = express();
   app.use("/api/billing",createBillingOverviewRouter({
     authMiddleware:auth,
     loadOverview:loadOverview as any,
-    hasDatabase:()=>hasDatabase
+    hasDatabase:()=>hasDatabase,
+    canUseCommercialAI:()=>commercialEnabled
   }));
   const server=createServer(app);
   await new Promise<void>((resolve)=>server.listen(0,"127.0.0.1",resolve));
@@ -80,4 +82,75 @@ test("billing endpoint does not consult the database when not configured",async(
     },false
   );
   assert.equal(calls,0);
+});
+
+test("commercial AI credit status is disabled by default without reading any owner balances",async()=>{
+  let calls=0;
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async()=>{calls++;throw Error("must not query")},async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{enabled:false});
+      assert.match(response.headers.get("cache-control")??"",/no-store/);
+      assert.equal(response.headers.get("vary"),"Authorization");
+    }
+  );
+  assert.equal(calls,0);
+});
+
+test("commercial AI credit status uses only the authenticated owner and omits private invoices",async()=>{
+  let ownerSeen="";
+  await withServer(
+    (req:any,_res,next)=>{
+      req.user={id:"b7dfb113-431c-43a5-9573-6c3bbc9ff001",authProvider:"supabase"};
+      next();
+    },
+    async owner=>{
+      ownerSeen=owner;
+      return {
+        ai:{includedAvailable:"12.500000",purchasedAvailable:"3.250000",periodEnd:"2026-11-01T00:00:00Z"},
+        orders:[{id:"sensitive-invoice-should-not-appear"}]
+      };
+    },async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status?owner_principal=legacy:bob",{
+        headers:{"Authorization":"Bearer ignored"}
+      });
+      assert.equal(response.status,200);
+      assert.equal(response.headers.get("vary"),"Authorization");
+      assert.deepEqual(await response.json(),{
+        enabled:true,
+        balance:{
+          includedAvailable:"12.500000",
+          purchasedAvailable:"3.250000",
+          periodEnd:"2026-11-01T00:00:00Z"
+        }
+      });
+    },true,true
+  );
+  assert.equal(ownerSeen,"supabase:b7dfb113-431c-43a5-9573-6c3bbc9ff001");
+});
+
+test("commercial AI status fails closed for anonymous users or unverifiable balances",async()=>{
+  let anonymousCalls=0;
+  await withServer((_req,_res,next)=>next(),async()=>{anonymousCalls++;return null},
+    async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,401);
+      assert.equal((await response.json()).code,"BILLING_AUTH_REQUIRED");
+    },true,true
+  );
+  assert.equal(anonymousCalls,0);
+  await withServer((req:any,_res,next)=>{req.user={username:"alice",authProvider:"legacy"};next()},
+    async()=>{throw Object.assign(Error("DB temporarily unavailable"),{code:"42P01"})},
+    async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,503);
+      const body=await response.json();
+      assert.equal(body.code,"AI_CREDITS_UNAVAILABLE");
+      assert.equal(body.balance,undefined);
+      assert.equal(body.enabled,undefined);
+      assert.ok(!JSON.stringify(body).includes("DB temporarily unavailable"));
+    },true,true
+  );
 });
