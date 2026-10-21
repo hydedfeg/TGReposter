@@ -84,6 +84,7 @@ export async function runAiReconciliationWithAdvisoryLock(
     return {
       acquired:true,
       report:await reconcilePendingOpenRouterUsage({
+        env,
         apiKey:env.TGREPOSTER_OPENROUTER_API_KEY,
         limit:batchSize
       })
@@ -151,9 +152,10 @@ export function startAiReconciliationScheduler(
         });
       }
     } catch (error) {
+      const code = (error as any)?.code;
       logger.error("AI reconciliation iteration failed.", {
-        code:typeof (error as any)?.code === "string"
-          ? (error as any).code : "RECONCILIATION_FAILED"
+        code:typeof code === "string" && /^[A-Z0-9_]{1,64}$/.test(code)
+          ? code : "RECONCILIATION_FAILED"
       });
     } finally {
       running = false;
