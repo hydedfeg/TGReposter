@@ -338,10 +338,11 @@ export default function CurationFeed({
 
   const runAiAction = async (action: string, context?: string) => {
     if (!selectedPost) return;
+    const requestToken = authToken ?? localStorage.getItem("curator_token");
     setAiLoadingAction(action);
     setFeedback(null);
     try {
-      const token = authToken ?? localStorage.getItem("curator_token");
+      const token = requestToken;
       const requestMode = aiProvider === "openrouter" ? billing.mode : "byok";
       const request = buildAiBillingRequest(requestMode, billing.availability);
       const response = await fetch("/api/ai/curate", {
@@ -369,6 +370,7 @@ export default function CurationFeed({
       const result = action === "hashtags" ? [draftText.trim(), String(data.result).trim()].filter(Boolean).join("\n\n") : String(data.result).trim();
       setAiSuggestion({ action, original: draftText, result });
     } catch (error: any) {
+      if (localStorage.getItem("curator_token") !== requestToken) return;
       const message = error?.message || AI_CONNECTION_FALLBACK_ERROR;
       if (message === AI_CURATION_FALLBACK_ERROR) {
         setFeedback({ messageKey: "feedback.aiCurationError", type: "error" });
