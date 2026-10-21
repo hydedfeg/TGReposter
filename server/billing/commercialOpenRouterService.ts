@@ -136,7 +136,8 @@ export async function commercialOpenRouterCuration(
     const result = await Promise.race([providerPromise, timeout]);
     if (!result.ok) {
       // An upstream HTTP error is not reliable evidence of zero charge.
-      throw new CommercialAIError(502, "AI_PROVIDER_ERROR", "error" in result ? String(result.error) : "OpenRouter request failed.");
+      throw new CommercialAIError(502, "AI_PROVIDER_ERROR",
+        "OpenRouter request failed; reserved Units require reconciliation.");
     }
     generationId = result.generationId;
     if (!result.usage) {
