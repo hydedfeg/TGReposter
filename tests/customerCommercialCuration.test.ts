@@ -11,6 +11,7 @@ import { CommercialAIError } from "../server/billing/commercialOpenRouterService
 const enabled = {
   TGREPOSTER_COMMERCIAL_AI_ENABLED: "true",
   TGREPOSTER_COMMERCIAL_AI_ROUTE_ENABLED: "true",
+  TGREPOSTER_OPENROUTER_API_KEY: "synthetic-platform-key",
   DATABASE_URL: "postgresql://synthetic.invalid:5432/testing"
 };
 const input = {
@@ -35,6 +36,12 @@ test("commercial AI route requires separately enabled server switches and a data
     ...enabled,TGREPOSTER_COMMERCIAL_AI_ENABLED:"false"
   }),false);
   assert.equal(isCommercialCurationRouteEnabled({...enabled,DATABASE_URL:""}),false);
+  assert.equal(isCommercialCurationRouteEnabled({
+    ...enabled,TGREPOSTER_OPENROUTER_API_KEY:undefined
+  }),false);
+  assert.equal(isCommercialCurationRouteEnabled({
+    ...enabled,TGREPOSTER_OPENROUTER_API_KEY:"   "
+  }),false);
   assert.equal(isCommercialCurationRouteEnabled(enabled),true);
 });
 

@@ -109,6 +109,7 @@ test("commercial AI credit status uses only the authenticated owner and omits pr
     async owner=>{
       ownerSeen=owner;
       return {
+        plan:{id:"creator",published:true},
         ai:{includedAvailable:"12.500000",purchasedAvailable:"3.250000",periodEnd:"2026-11-01T00:00:00Z"},
         orders:[{id:"sensitive-invoice-should-not-appear"}]
       };
@@ -153,4 +154,69 @@ test("commercial AI status fails closed for anonymous users or unverifiable bala
       assert.ok(!JSON.stringify(body).includes("DB temporarily unavailable"));
     },true,true
   );
+});
+
+test("unpublished Free plan never offers commercial AI despite positive stale balances",async()=>{
+  let ownerSeen="";
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async owner=>{
+      ownerSeen=owner;
+      return {
+        availability:"prelaunch",
+        plan:{id:"free",published:false},
+        ai:{includedAvailable:"80.000000",purchasedAvailable:"20.000000",periodEnd:null}
+      };
+    },async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{enabled:false});
+    },true,true
+  );
+  assert.equal(ownerSeen,"legacy:alice");
+});
+
+test("existing paid subscriber keeps AI credit eligibility when accepted plan is delisted",async()=>{
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"alice",authProvider:"legacy"};next()},
+    async()=>({
+      availability:"prelaunch",
+      plan:{id:"creator",published:false},
+      subscription:{status:"active",periodStart:"2026-10-01T00:00:00Z",
+        periodEnd:"2026-11-01T00:00:00Z"},
+      ai:{includedAvailable:"8.750000",purchasedAvailable:"1.250000",
+        periodEnd:"2026-11-01T00:00:00Z"}
+    }),async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{
+        enabled:true,
+        balance:{
+          includedAvailable:"8.750000",
+          purchasedAvailable:"1.250000",
+          periodEnd:"2026-11-01T00:00:00Z"
+        }
+      });
+    },true,true
+  );
+});
+
+test("missing plan or corrupt balances fail closed without enabling commercial AI",async()=>{
+  for(const overview of [
+    {ai:{includedAvailable:"5.000000",purchasedAvailable:"0",periodEnd:null}},
+    {plan:{id:"free",published:true},ai:{includedAvailable:"invalid",purchasedAvailable:"2",periodEnd:null}},
+    {plan:{id:"creator",published:true},ai:{includedAvailable:"2",purchasedAvailable:null,periodEnd:null}}
+  ]){
+    await withServer(
+      (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+      async()=>overview,async base=>{
+        const response=await fetch(base+"/api/billing/ai-credits/status");
+        assert.equal(response.status,503);
+        const body=await response.json();
+        assert.equal(body.code,"AI_CREDITS_UNAVAILABLE");
+        assert.equal(body.enabled,undefined);
+        assert.equal(body.balance,undefined);
+      },true,true
+    );
+  }
 });

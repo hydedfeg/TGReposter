@@ -47,6 +47,18 @@ export function createBillingOverviewRouter(options: {
     try {
       const owner = ownerPrincipalForUser(req.user);
       const overview = await load(owner);
+      // Free subscriptions are not usable until the Free plan has launched.
+      // A delisted *paid* plan remains eligible for its existing paid term:
+      // do not retroactively revoke an already-active subscriber's credits.
+      if (!overview?.plan || typeof overview.plan.id !== "string"
+          || typeof overview.plan.published !== "boolean" || !overview.ai
+          || !/^-?[0-9]+(?:[.][0-9]+)?$/.test(String(overview.ai.includedAvailable))
+          || !/^-?[0-9]+(?:[.][0-9]+)?$/.test(String(overview.ai.purchasedAvailable))) {
+        throw new Error("AI credit overview is incomplete.");
+      }
+      if (overview.plan.id === "free" && !overview.plan.published) {
+        return res.json({ enabled: false });
+      }
       return res.json({
         enabled: true,
         balance: {
