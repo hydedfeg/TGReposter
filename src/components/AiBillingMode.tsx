@@ -94,6 +94,7 @@ export function AiBillingModePanel({
 }) {
   const {t, i18n} = useTranslation("ai");
   const includedReady = availability === "ready" && provider === "openrouter";
+  const effectiveMode = includedReady ? mode : "byok";
   const numbers = new Intl.NumberFormat(i18n.language, { maximumFractionDigits: 2 });
   const value = (units: string) => {
     const amount = Number(units);
@@ -113,13 +114,13 @@ export function AiBillingModePanel({
         </button>
       </div>
       <div role="group" aria-label={t("billingMode.title")} className="mt-2 grid grid-cols-2 gap-2">
-        <button type="button" aria-pressed={mode === "byok"} disabled={busy} onClick={() => selectMode("byok")}
-          className={`min-h-10 rounded-lg border px-2 text-xs font-bold transition-colors disabled:opacity-60 ${mode === "byok" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-700"}`}>
+        <button type="button" aria-pressed={effectiveMode === "byok"} disabled={busy} onClick={() => selectMode("byok")}
+          className={`min-h-10 rounded-lg border px-2 text-xs font-bold transition-colors disabled:opacity-60 ${effectiveMode === "byok" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-700"}`}>
           {t("billingMode.byok")}
         </button>
-        <button type="button" aria-pressed={mode === "included"} disabled={!includedReady || busy}
+        <button type="button" aria-pressed={effectiveMode === "included"} disabled={!includedReady || busy}
           onClick={() => selectMode("included")}
-          className={`min-h-10 rounded-lg border px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${mode === "included" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-700"}`}>
+          className={`min-h-10 rounded-lg border px-2 text-xs font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${effectiveMode === "included" ? "border-violet-600 bg-violet-600 text-white" : "border-slate-200 bg-white text-slate-700"}`}>
           {t("billingMode.included")}
         </button>
       </div>
@@ -140,7 +141,7 @@ export function AiBillingModePanel({
       {availability === "ready" && provider !== "openrouter" ? (
         <p className="mt-1 text-xs text-amber-700">{t("billingMode.openRouterOnly")}</p>
       ) : null}
-      <p className="mt-1 text-xs text-slate-500">{t(mode === "included" ? "billingMode.usageNotice" : "billingMode.byokNotice")}</p>
+      <p className="mt-1 text-xs text-slate-500">{t(effectiveMode === "included" ? "billingMode.usageNotice" : "billingMode.byokNotice")}</p>
     </div>
   );
 }
