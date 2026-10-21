@@ -11,6 +11,7 @@ import { createSalesPlanAdminRouter } from "./server/routes/salesPlanAdmin";
 import { createCustomerCheckoutRouter } from "./server/routes/customerCheckout";
 import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
 import { startBillingOperationsScheduler } from "./server/billing/billingOperationsScheduler";
+import { startAiReconciliationScheduler } from "./server/billing/openRouterReconciliationScheduler";
 import { runCryptoPaymentStartupPreflight } from "./server/payments/paymentRuntime";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
@@ -2337,6 +2338,8 @@ async function startServer() {
     startCryptoPaymentScheduler();
     // Commercial processing remains OFF unless explicitly enabled at deployment.
     startBillingOperationsScheduler();
+    // Disabled by default even when commercial billing is active.
+    startAiReconciliationScheduler();
   });
 }
 
