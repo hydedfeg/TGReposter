@@ -26,6 +26,10 @@ export interface CommercialCurationOutput {
   chargedUnits: string;
 }
 
+/** Upper bound for platform-funded provider calls after funds are reserved. */
+export const DEFAULT_COMMERCIAL_AI_PROVIDER_TIMEOUT_MS = 30_000;
+export const MAX_COMMERCIAL_AI_PROVIDER_TIMEOUT_MS = 60_000;
+
 export class CommercialAIError extends Error {
   constructor(public status: number, public code: string, message: string) {
     super(message);
@@ -47,11 +51,19 @@ export async function commercialOpenRouterCuration(
     settle?: typeof settleAiUnits;
     reconcile?: typeof flagAiReconciliation;
     apiKey?: string;
+    /** Internal test/ops override; never passed from customer requests. */
+    timeoutMs?: number;
   } = {}
 ): Promise<CommercialCurationOutput> {
   const prompt = input.prompt.trim();
   if (!prompt || Buffer.byteLength(prompt, "utf8") > 64_000) {
     throw new CommercialAIError(400, "INVALID_AI_PROMPT", "AI prompt size is invalid.");
+  }
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_COMMERCIAL_AI_PROVIDER_TIMEOUT_MS;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1
+      || timeoutMs > MAX_COMMERCIAL_AI_PROVIDER_TIMEOUT_MS) {
+    throw new CommercialAIError(500, "INVALID_COMMERCIAL_AI_TIMEOUT",
+      "Commercial AI timeout configuration is invalid.");
   }
   const apiKey = deps.apiKey ?? process.env.TGREPOSTER_OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -100,14 +112,28 @@ export async function commercialOpenRouterCuration(
   }
 
   let generationId: string | undefined;
+  const controller = new AbortController();
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   try {
-    const result = await callProvider({
+    // Abort the underlying HTTP request AND race its promise: third-party
+    // adapters that ignore AbortSignal must not hang a customer request.
+    // Timeout leaves the reserved Units pending, never auto-refunds them.
+    const providerPromise = Promise.resolve().then(() => callProvider({
       apiKey,
       model: model.id,
       prompt,
       includeUsage: true,
-      maxTokens: maxOutputTokens
+      maxTokens: maxOutputTokens,
+      signal: controller.signal
+    }));
+    const timeout = new Promise<never>((_, reject) => {
+      deadline = setTimeout(() => {
+        controller.abort();
+        reject(new CommercialAIError(504, "AI_PROVIDER_TIMEOUT",
+          "AI provider response timed out; reserved Units require reconciliation."));
+      }, timeoutMs);
     });
+    const result = await Promise.race([providerPromise, timeout]);
     if (!result.ok) {
       // An upstream HTTP error is not reliable evidence of zero charge.
       throw new CommercialAIError(502, "AI_PROVIDER_ERROR", "error" in result ? String(result.error) : "OpenRouter request failed.");
@@ -140,13 +166,19 @@ export async function commercialOpenRouterCuration(
     // Failure after reserve is ambiguous until the provider's cost is known.
     // flagAiReconciliation updates only PENDING usage. Already-settled entries
     // remain untouched (e.g. a charged request with empty model output).
+    // Never persist raw provider errors. They can contain user text,
+    // internal URLs, or provider details that do not belong in the ledger.
+    const reason = error instanceof CommercialAIError
+      ? error.code : "AI_PROVIDER_OUTCOME_UNKNOWN";
     await reconcile(
-      input.ownerPrincipal, input.requestKey,
-      error instanceof Error ? error.message : "AI request requires reconciliation",
-      generationId
+      input.ownerPrincipal, input.requestKey, reason, generationId
     ).catch((reconcileError) => {
-      console.error("Failed to flag AI usage reconciliation:", reconcileError);
+      console.error("Failed to flag AI usage reconciliation:", {
+        code: (reconcileError as any)?.code ?? "RECONCILIATION_WRITE_FAILED"
+      });
     });
     throw error;
+  } finally {
+    if (deadline !== undefined) clearTimeout(deadline);
   }
 }
