@@ -116,6 +116,148 @@ const system = {
     title: "Migration-managed, secure-by-default runtime",
     description: "Structural changes are versioned through Supabase migrations. All application configuration and content are member-owned, and sensitive writes are handled by authenticated backend routes rather than direct browser database access.",
   },
+  payments: {
+    telegramSetup: {
+      errors: {
+        "TEST_RATE_LIMITED": "Please wait 60 seconds before testing again.",
+        "TEST_UNAVAILABLE": "The Telegram alert destination is not fully configured.",
+        "TEST_INVALID_BOT_TOKEN": "Telegram rejected the bot token. Verify the dedicated bot token in Railway.",
+        "TEST_CHAT_NOT_FOUND": "Chat not found. Check the numeric Chat ID in Railway; send /start to the bot or add it to your group.",
+        "TEST_CHAT_FORBIDDEN": "The bot has been blocked or removed from the chat. Start or unblock the bot, or re-add it to the group.",
+        "TEST_NO_SEND_PERMISSION": "The bot cannot send messages there. Grant it permission to post in the group or channel.",
+        "TEST_CHAT_MIGRATED": "The group became a supergroup. Update Railway with its new Chat ID starting with -100.",
+        "TEST_TELEGRAM_RATE_LIMITED": "Telegram is rate-limiting the bot. Wait and retry.",
+        "TEST_TELEGRAM_UNAVAILABLE": "Telegram is temporarily unavailable. Try again later.",
+        "TEST_CONNECTION_TIMEOUT": "The request to Telegram timed out. Check Railway network connectivity.",
+        "TEST_NETWORK_ERROR": "Railway could not connect to Telegram. Check outbound networking and DNS.",
+        "TEST_DELIVERY_FAILED": "Telegram rejected the notification for an unrecognized reason."
+      },
+      "title": "Telegram alert destination",
+      "description": "Use a dedicated bot and authorized private administrator chat. Automatic delivery remains separately controlled in Railway.",
+      "autoOn": "Automatic alerts enabled",
+      "autoOff": "Automatic alerts disabled",
+      "journalOn": "Alert history enabled",
+      "journalOff": "Alert history disabled",
+      "botSet": "Bot token configured",
+      "botMissing": "Bot token missing",
+      "chatSet": "Admin chat configured",
+      "chatMissing": "Admin chat missing",
+      "testButton": "Send test notification",
+      "confirm": "Send one test message to the configured administrator chat? This does not affect any payments.",
+      "testSuccess": "Telegram accepted the test notification. Check the administrator chat.",
+      "instructions": "Configure CRYPTO_PAYMENT_ALERT_TELEGRAM_BOT_TOKEN and CRYPTO_PAYMENT_ALERT_TELEGRAM_CHAT_ID privately in Railway. Test delivery can work while automatic alert delivery stays disabled."
+    },
+    alertJournal: {
+      "title": "Background alert history",
+      "count": "{{count}} recent alerts",
+      "description": "Persistent, server-maintained operational alerts. Delivery stays disabled until an authorized administrator destination is configured.",
+      "none": "No background alerts recorded yet.",
+      "lastSeen": "Last observed",
+      "states": {
+        "open": "Open",
+        "resolved": "Resolved"
+      },
+      "delivery": {
+        "pending": "Delivery pending",
+        "skipped": "Delivery disabled",
+        "sent": "Notified"
+      }
+    },
+    unassigned: {
+      "title": "Unassigned transfers",
+      "count": "{{count}} review items",
+      "description": "Observed USDT transfers that could not be safely linked to exactly one invoice.",
+      "none": "No unassigned transfers recorded so far.",
+      "lastSeen": "Last observed",
+      "truncated": "More transfers exist; showing the 30 most recently observed.",
+      "scope": "Platform-only review. No customer identity is inferred and no payment can be credited from this list.",
+      "reasons": {
+        "unmatched": "No invoice match",
+        "ambiguous": "Multiple invoice matches"
+      }
+    },
+    alerts: {
+      "title": "Payment alerts & reconciliation",
+      "count": "{{count}} alerts",
+      "critical": "{{count}} critical reconciliation issues",
+      "description": "Automatically checks scanner freshness and persisted payment ledger consistency while this page is open.",
+      "lastChecked": "Checked",
+      "none": "No active issues detected in the available records.",
+      "truncated": "More reconciliation issues exist; this view shows the first 30 ledger exceptions.",
+      "scope": "Read-only. Unassigned transfers are reviewed separately. Background Telegram alerts require explicit opt-in.",
+      "severity": {
+        "critical": "Critical",
+        "warning": "Review"
+      },
+      "codes": {
+        "scanner_delayed": "Scanner has not completed a recent scan",
+        "scanner_not_started": "Enabled scanner has not recorded a checkpoint",
+        "paid_without_confirmed_transfer": "Paid invoice has no confirmed transfer",
+        "confirmed_transfer_unpaid": "Confirmed transfer but invoice is not paid",
+        "confirmation_delayed": "Invoice has been confirming for more than one hour",
+        "invoice_exception": "Invoice requires manual review"
+      }
+    },
+    scanHealth: {
+      recent: "Recent checkpoint",
+      stale: "Scanner delayed",
+      never_scanned: "No scan checkpoint",
+      disabled: "Scanner disabled",
+    },
+    staleHint: "No recent successful checkpoint (threshold: {{seconds}}s).",
+    healthDisclaimer: "Health reflects scan recency, not blockchain finality or proof of payment.",
+    "adminOnly": "Super-admin only",
+    "title": "Payment Operations",
+    "description": "Monitor USDT payment networks, invoices, confirmed transfers, and ledger events. Pricing and customer checkout are not configured.",
+    "refresh": "Refresh",
+    "preflight": "Run preflight",
+    "scanNow": "Scan now",
+    "requestFailed": "Payment monitoring is unavailable.",
+    "preflightFinished": "Network preflight completed. Check the results below.",
+    "scanPartial": "Scan completed with some network failures. Refresh to review.",
+    "scanFinished": "Network scan finished.",
+    "notYet": "Not yet",
+    "totalInvoices": "Invoices",
+    "paidInvoices": "Paid",
+    "activeInvoices": "Awaiting payment",
+    "needsAttention": "Needs attention",
+    "networkHealth": "Network health",
+    "scanningEnabled": "Scanning enabled",
+    "scanningDisabled": "Scanning disabled",
+    "lastScan": "Last scan",
+    "requiredConfirmations": "Required confirmations",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "preflightPassed": "Preflight passed",
+    "preflightFailed": "Preflight failed",
+    "decimals": "decimals",
+    "readOnlyNote": "Network configuration is server-managed. Credentials and merchant addresses are never exposed here.",
+    "recentInvoices": "Recent invoices",
+    "invoice": "Invoice",
+    "owner": "Owner",
+    "network": "Network",
+    "amount": "Exact amount",
+    "status": "Status",
+    "created": "Created",
+    "noInvoices": "No invoices recorded yet.",
+    "recentTransfers": "Recent transfers",
+    "confirmations": "confirmations",
+    "noTransfers": "No blockchain transfers recorded.",
+    "auditTrail": "Audit trail",
+    "noEvents": "No ledger events recorded.",
+    "loading": "Loading payment operations…",
+    "states": {
+      "pending": "Pending",
+      "detected": "Detected",
+      "confirming": "Confirming",
+      "paid": "Paid",
+      "expired": "Expired",
+      "underpaid": "Underpaid",
+      "overpaid": "Overpaid",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    }
+  },
 } as const;
 
 export default system;

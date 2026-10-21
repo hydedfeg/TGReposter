@@ -19,8 +19,7 @@ import LanguageSelector from "./components/LanguageSelector";
 import MarketingSalesPlan from "./components/MarketingSalesPlan";
 import { getLocaleDirection, normalizeAppLocale } from "./i18n";
 import { safeResponseJson } from "./utils/api";
-
-const dashboardUrl = "https://api.tgreposter.com";
+import { getMarketingDashboardHref } from "./utils/dashboardLink";
 
 const demoUseCases = ["curation", "campaigns", "both", "other"] as const;
 type DemoFormStatus = "idle" | "submitting" | "success" | "error";
@@ -66,6 +65,7 @@ function BrandMark({ inverse = false }: { inverse?: boolean }) {
 
 export default function MarketingHome() {
   const { t, i18n } = useTranslation(["marketing", "common"]);
+  const dashboardUrl = getMarketingDashboardHref(window.location.hostname);
   const [menuOpen, setMenuOpen] = useState(false);
   const [demoFormStatus, setDemoFormStatus] = useState<DemoFormStatus>("idle");
   const locale = normalizeAppLocale(i18n.language);

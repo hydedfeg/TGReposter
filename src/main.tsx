@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import MarketingHome from './MarketingHome.tsx';
 import PromotionPage from './PromotionPage.tsx';
+import { isStagingRailwayHostname } from './utils/dashboardLink';
 import './i18n';
 import './index.css';
 
@@ -14,10 +15,13 @@ function Root() {
     && dashboardPathRequested;
   const isVercelPreviewDashboard = hostname.endsWith('.vercel.app')
     && dashboardPathRequested;
+  const isStagingRailwayDashboard = isStagingRailwayHostname(hostname)
+    && dashboardPathRequested;
   const isDashboardHost =
     hostname === 'api.tgreposter.com'
     || isLocalDashboard
-    || isVercelPreviewDashboard;
+    || isVercelPreviewDashboard
+    || isStagingRailwayDashboard;
 
   useEffect(() => {
     const onHashChange = () => setHash(window.location.hash);
