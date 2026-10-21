@@ -237,12 +237,13 @@ export default function AIConfig({
 
   const handleTestAI = async () => {
     if (!testText.trim()) return;
+    const requestToken = authToken ?? localStorage.getItem("curator_token");
     setIsTesting(true);
     setTestResult("");
     setTestError(null);
 
     try {
-      const savedToken = authToken ?? localStorage.getItem("curator_token");
+      const savedToken = requestToken;
       const selectedMode = aiConfig.provider === "openrouter" ? billing.mode : "byok";
       const request = buildAiBillingRequest(selectedMode, billing.availability);
       const res = await fetch("/api/ai/curate", {
@@ -271,6 +272,7 @@ export default function AIConfig({
         setTestError({ messageKey: "errors.generationFallback" });
       }
     } catch (err) {
+      if (localStorage.getItem("curator_token") !== requestToken) return;
       console.error(err);
       setTestError({ messageKey: "errors.connectionFallback" });
     } finally {
