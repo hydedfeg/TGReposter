@@ -2,6 +2,7 @@ import { getPostgresPool } from "../utils/postgresPool";
 import type { PoolClient } from "pg";
 import { addUtcMonths } from "./monthlyAIAllowance";
 import { requiredBillingConfirmations } from "./confirmedPaymentPolicy";
+import { isCustomPlanId,CUSTOM_PLAN_CHECKOUT_SWITCH,ELIGIBLE_CUSTOM_PLAN_SQL } from "./customPlanEligibility";
 
 export class SubscriptionCheckoutError extends Error {
   constructor(public code: string, message: string) {
@@ -54,6 +55,9 @@ export async function checkSubscriptionInvoiceEligibility(
      where owner_principal=$1 and quote_id=$2::uuid limit 1`,
     [owner,quoteId]);
   if(prepared.length) return; // Existing quote/invoice, not a new purchase.
+  if (isCustomPlanId(planId) && process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]!=="true") {
+    throw new SubscriptionCheckoutError("CUSTOM_PLAN_NOT_LAUNCHED","Custom plan checkout is not enabled.");
+  }
 
   const [planResult,subscriptionResult,conflictsResult]=await Promise.all([
     query(`select is_published,is_enabled from public.billing_plans where id=$1`,[planId]),
@@ -147,6 +151,24 @@ export async function prepareSubscriptionOrder(
       await client.query("COMMIT");
       return {orderId:order.id,planId:order.plan_id,interval:order.billing_interval,
         status:order.status,created:false};
+    }
+
+    // Fresh custom-tier orders must repeat catalog and launch checks under
+    // the owner transaction lock. Never block retries of an accepted order.
+    if (isCustomPlanId(quote.plan_id)) {
+      if (process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]!=="true") {
+        throw new SubscriptionCheckoutError("CUSTOM_PLAN_NOT_LAUNCHED",
+          "Custom plan checkout is not enabled.");
+      }
+      const {rows:custom}=await client.query(ELIGIBLE_CUSTOM_PLAN_SQL,[quote.plan_id]);
+      const plan=custom[0];
+      const amount=(value:unknown)=>Number.isSafeInteger(Number(value)) && Number(value)>0;
+      if (custom.length!==1 || !plan || plan.id!==quote.plan_id ||
+          plan.is_published!==true || plan.is_enabled!==true ||
+          !amount(plan.monthly_eur_cents) || !amount(plan.annual_eur_cents)) {
+        throw new SubscriptionCheckoutError("PRODUCT_UNAVAILABLE",
+          "Custom tier is not an eligible published product.");
+      }
     }
 
     const {rows: clock} = await client.query("select now() as now");

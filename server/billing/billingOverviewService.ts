@@ -1,5 +1,6 @@
 import { getPostgresPool } from "../utils/postgresPool";
-import { getEffectivePlanId, type PlanId, type SubscriptionSnapshot } from "./planCatalog";
+import { type SubscriptionSnapshot } from "./planCatalog";
+import { resolveEffectiveCatalogPlan } from "./customPlanEligibility";
 
 /**
  * Read-only customer billing projection.
@@ -9,7 +10,7 @@ import { getEffectivePlanId, type PlanId, type SubscriptionSnapshot } from "./pl
 export interface BillingOverview {
   availability: "active" | "prelaunch";
   plan: {
-    id: PlanId;
+    id: string;
     name: string;
     published: boolean;
     monthlyEurCents: number | null;
@@ -163,7 +164,7 @@ export async function getBillingOverview(
     currentPeriodStart: asIso(snapshot.current_period_start),
     currentPeriodEnd: asIso(snapshot.current_period_end),
   } : null;
-  const planId = getEffectivePlanId(effective, at);
+  const planId = await resolveEffectiveCatalogPlan(effective,query,at);
   const { rows: plans } = await query(QUERY_PLAN, [planId]);
   const p = plans[0];
   if (!p) throw new Error("Billing plan catalog is not installed.");

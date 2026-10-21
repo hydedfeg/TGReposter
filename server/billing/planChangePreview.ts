@@ -1,5 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
-import { isPlanId, type PlanId } from "./planCatalog";
+import { isPaidPlanCandidate,isCustomPlanId } from "./customPlanEligibility";
 import { normalizeBillingOwner } from "./billingOverviewService";
 
 /**
@@ -21,8 +21,8 @@ type Query = (sql: string, params: unknown[]) => Promise<{ rows: any[] }>;
 export interface PlanChangePreview {
   kind: "non_binding_estimate";
   currency: "EUR";
-  currentPlan: PlanId;
-  targetPlan: PlanId;
+  currentPlan: string;
+  targetPlan: string;
   interval: "monthly" | "annual";
   direction: "upgrade" | "downgrade";
   effectiveAt: string;
@@ -44,7 +44,7 @@ export const PLAN_CHANGE_SNAPSHOT_SQL = `
 `;
 
 export const PLAN_CHANGE_CATALOG_SQL = `
-  select id,is_published,monthly_eur_cents,annual_eur_cents
+  select id,is_published,is_enabled,monthly_eur_cents,annual_eur_cents
   from public.billing_plans
   where id=$1 or id=$2
 `;
@@ -123,7 +123,7 @@ export async function getPlanChangePreview(
     throw new PlanChangePreviewError("PREVIEW_DISABLED","Plan change preview is not launched.");
   }
   const owner=normalizeBillingOwner(ownerPrincipal);
-  if(!isPlanId(targetPlanId) || ["free","enterprise"].includes(targetPlanId)) {
+  if(!isPaidPlanCandidate(targetPlanId)) {
     throw new PlanChangePreviewError("INVALID_TARGET_PLAN","Select a supported paid plan.");
   }
   const query:Query=options.query ?? ((sql,params)=>getPostgresPool().query(sql,params));
@@ -141,7 +141,7 @@ export async function getPlanChangePreview(
   if (interval!=="monthly" && interval!=="annual") {
     throw new PlanChangePreviewError("UNSUPPORTED_INTERVAL","Unsupported billing interval.");
   }
-  if (!isPlanId(sub.plan_id) || ["free","enterprise"].includes(sub.plan_id)
+  if (!isPaidPlanCandidate(sub.plan_id)
     || sub.plan_id===targetPlanId) {
     throw new PlanChangePreviewError("INVALID_CHANGE","Choose a different paid plan.");
   }
@@ -153,7 +153,9 @@ export async function getPlanChangePreview(
   const {rows:catalog}=await query(PLAN_CHANGE_CATALOG_SQL,[sub.plan_id,targetPlanId]);
   const current=catalog.find(row=>row.id===sub.plan_id);
   const target=catalog.find(row=>row.id===targetPlanId);
-  if (!current?.is_published || !target?.is_published) {
+  if (!current?.is_published || !target?.is_published ||
+    (isCustomPlanId(sub.plan_id) && !current.is_enabled) ||
+    (isCustomPlanId(targetPlanId) && !target.is_enabled)) {
     throw new PlanChangePreviewError("PLAN_NOT_PUBLISHED","Both plans must be published.");
   }
   const field=interval==="monthly"?"monthly_eur_cents":"annual_eur_cents";

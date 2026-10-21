@@ -4,11 +4,21 @@ import { createSubscriptionCheckoutInvoice } from "./subscriptionInvoiceCheckout
 import { createTopupCheckoutInvoice } from "./topupInvoiceCheckout";
 import { loadCryptoPaymentNetworkConfigs } from "../payments/paymentConfig";
 import { normalizeBillingOwner } from "./billingOverviewService";
+import {isPaidPlanCandidate,CUSTOM_PLAN_CHECKOUT_SWITCH} from "./customPlanEligibility";
 import type { CryptoPaymentNetwork } from "../payments/types";
 
 type Environment = Record<string, string | undefined>;
 const PURCHASABLE_PLANS = ["creator", "professional", "business", "agency"] as const;
 const PURCHASABLE_TOPUPS = ["ai_mini","ai_plus","ai_pro","ai_max"] as const;
+/** Explicit catalog gates keep draft custom tiers invisible at prelaunch. */
+export const CUSTOMER_PLAN_CATALOG_SQL = `
+  select id,display_name,monthly_eur_cents,annual_eur_cents
+  from public.billing_plans
+  where (id=any($1::text[]) or ($3::boolean and id ~ '^custom_[a-z][a-z0-9_]{2,29}$'))
+    and is_enabled=true and ($2::boolean=false or is_published=true)
+  order by case when id=any($1::text[]) then 0 else 1 end,
+           array_position($1::text[],id) nulls last,sort_order
+`;
 
 export type CustomerCheckoutNetwork = CryptoPaymentNetwork;
 
@@ -77,10 +87,8 @@ export async function getCustomerCheckoutCatalog():Promise<{
   const networks=active?loadCryptoPaymentNetworkConfigs().map(c=>c.id):[];
   const [p,k]=await Promise.all([
     getPostgresPool().query(
-      `select id,display_name,monthly_eur_cents,annual_eur_cents
-       from public.billing_plans
-       where id=any($1::text[]) and is_enabled=true and ($2::boolean=false or is_published=true)
-       order by array_position($1::text[],id)`,[PURCHASABLE_PLANS,active]),
+      CUSTOMER_PLAN_CATALOG_SQL,[PURCHASABLE_PLANS,active,
+        active&&process.env[CUSTOM_PLAN_CHECKOUT_SWITCH]==="true"]),
     getPostgresPool().query(
       `select id,label,ai_units::text as ai_units,price_eur_cents
        from public.billing_ai_topup_packs
@@ -106,7 +114,7 @@ export async function createCustomerSubscriptionQuote(
   interval: "monthly" | "annual"
 ) {
   requireCheckout();
-  if (!PURCHASABLE_PLANS.some(id => id === planId)) throw new CustomerCheckoutError("INVALID_PRODUCT");
+  if (!isPaidPlanCandidate(planId)) throw new CustomerCheckoutError("INVALID_PRODUCT");
   return createCheckoutQuote(normalizeBillingOwner(ownerPrincipal),{
     kind: "subscription", planId, interval
   });
