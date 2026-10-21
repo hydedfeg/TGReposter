@@ -46,6 +46,11 @@ async function database() {
         id uuid primary key default gen_random_uuid(),
         owner_principal text not null, enabled boolean not null default true
       );
+      -- Current billing usage includes both direct and promotional targets.
+      create table public.promotion_targets (
+        id uuid primary key default gen_random_uuid(),
+        owner_principal text not null, enabled boolean not null default true
+      );
       create table public.promotion_campaigns (
         id uuid primary key default gen_random_uuid(),
         owner_principal text not null, status text not null
