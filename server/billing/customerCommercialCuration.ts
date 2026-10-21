@@ -18,9 +18,12 @@ import type { CurationAction } from "../ai/curationPrompt";
 type Environment = Record<string, string | undefined>;
 
 export function isCommercialCurationRouteEnabled(env: Environment = process.env): boolean {
+  // The platform-funded route cannot work without its own provider key.
+  // Check configuration only; never disclose the key to clients.
   return env.TGREPOSTER_COMMERCIAL_AI_ENABLED === "true"
     && env.TGREPOSTER_COMMERCIAL_AI_ROUTE_ENABLED === "true"
-    && Boolean(env.DATABASE_URL?.trim());
+    && Boolean(env.DATABASE_URL?.trim())
+    && Boolean(env.TGREPOSTER_OPENROUTER_API_KEY?.trim());
 }
 
 export class CustomerCommercialCurationError extends Error {
