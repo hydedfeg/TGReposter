@@ -23,6 +23,7 @@ import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotTo
 import { deleteUserAIApiKey, getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, normalizeUserAIApiKey, saveUserAIApiKey } from "./server/services/aiCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
 import { PlanCapacityError,isPlanCapacityDbError } from "./server/billing/backendEntitlementGuard";
+import { runCustomerCommercialCuration, CustomerCommercialCurationError } from "./server/billing/customerCommercialCuration";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, isAppUiLocale, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, updateSupabaseAppUserUiLocale, validateSupabaseAccessToken } from "./server/services/appAuthService";
@@ -1683,6 +1684,50 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
   }
 
   const prompt = buildCurationPrompt(action, text, promptContext);
+
+  // Commercial credits are strictly opt-in and disabled by default. The
+  // existing bring-your-own-key path below is not charged or altered.
+  if (req.body?.billingMode !== undefined) {
+    if (req.body.billingMode !== "included") {
+      return res.status(400).json({
+        code: "INVALID_AI_BILLING_MODE", error: "Unsupported AI billing mode."
+      });
+    }
+    // The client cannot supply owner identity, grant period, credited amount,
+    // provider cost, or the provider API key for server-funded requests.
+    const allowed = new Set(["billingMode", "action", "text", "context", "targetLanguage"]);
+    if (!req.body || Object.keys(req.body).some(key => !allowed.has(key)) ||
+        typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({
+        code: "INVALID_COMMERCIAL_AI_REQUEST", error: "Invalid included AI request."
+      });
+    }
+    try {
+      const response = await runCustomerCommercialCuration({
+        user: req.user,
+        provider: aiProvider,
+        modelId: aiModel,
+        action,
+        prompt,
+        idempotencyKey: req.get("Idempotency-Key")
+      });
+      return res.json(response);
+    } catch (error: any) {
+      if (error instanceof CustomerCommercialCurationError) {
+        return res.status(error.status).json({code:error.code,error:error.message});
+      }
+      const schemaUnavailable = error?.code === "42P01" || error?.code === "42703";
+      if (!schemaUnavailable) {
+        console.error("Included AI curation failed:", {
+          code: typeof error?.code === "string" ? error.code : "UNEXPECTED"
+        });
+      }
+      return res.status(503).json({
+        code: "COMMERCIAL_AI_UNAVAILABLE",
+        error: "Included AI curation is temporarily unavailable."
+      });
+    }
+  }
 
   let geminiClient = ai;
   let geminiApiKey = process.env.GEMINI_API_KEY;
