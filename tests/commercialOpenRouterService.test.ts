@@ -116,3 +116,109 @@ test("unknown model is refused before reserve", async () => {
     /Model is not available/
   );
 });
+
+test("metered provider timeouts abort request, never settle zero, and retain pending reserve", async () => {
+  const sequence:string[]=[];
+  let signal: AbortSignal | undefined;
+  let failureReason = "";
+  await assert.rejects(
+    commercialOpenRouterCuration(input,{
+      apiKey:"SYNTHETIC_SERVER_KEY",
+      timeoutMs:12,
+      getModel:async()=>model,
+      reserve:async()=>{
+        sequence.push("reserve");
+        return {requestId:"reserved-test",reservedUnits:"5.000000",
+          includedUnits:"5.000000",purchasedUnits:"0.000000"};
+      },
+      callProvider:async request=>{
+        sequence.push("provider");
+        signal=request.signal;
+        // Simulate a hung adapter ignoring abort: Promise.race must still
+        // terminate the HTTP path while holding the reservation.
+        return new Promise<never>(()=>{});
+      },
+      settle:async()=>{
+        sequence.push("settle");
+        throw Error("Never settle unknown provider usage");
+      },
+      reconcile:async (owner,key,reason,gen)=>{
+        sequence.push("reconcile");
+        assert.equal(owner,input.ownerPrincipal);
+        assert.equal(key,input.requestKey);
+        assert.equal(gen,undefined);
+        failureReason=reason;
+      }
+    }),
+    (error:unknown)=>error instanceof CommercialAIError
+      && error.status===504 && error.code==="AI_PROVIDER_TIMEOUT"
+  );
+  assert.equal(signal?.aborted,true);
+  assert.deepEqual(sequence,["reserve","provider","reconcile"]);
+  assert.equal(failureReason,"AI_PROVIDER_TIMEOUT");
+});
+
+test("invalid provider timeout configuration is rejected before reserving credits",async()=>{
+  let reserveCalled=false;
+  for(const timeoutMs of [0,-1,60_001,Infinity,1.1]){
+    await assert.rejects(commercialOpenRouterCuration(input,{
+      apiKey:"SYNTHETIC_SERVER_KEY",timeoutMs,
+      getModel:async()=>model,
+      reserve:async()=>{
+        reserveCalled=true;
+        throw Error("reservation should not happen");
+      }
+    }),(error:unknown)=>error instanceof CommercialAIError
+      && error.code==="INVALID_COMMERCIAL_AI_TIMEOUT");
+  }
+  assert.equal(reserveCalled,false);
+});
+
+test("metered upstream errors never leak provider response or persist it as reconciliation text",async()=>{
+  let reconciliation="";
+  await assert.rejects(
+    commercialOpenRouterCuration(input,{
+      apiKey:"SYNTHETIC_SERVER_KEY",
+      getModel:async()=>model,
+      reserve:async()=>({requestId:"req-test",reservedUnits:"5.000000",
+        includedUnits:"5.000000",purchasedUnits:"0.000000"}),
+      callProvider:async()=>({
+        ok:false,status:502,error:"Secret API credential and private customer prompt"
+      }),
+      settle:async()=>{throw Error("must not settle");},
+      reconcile:async (_owner,_key,note)=>{reconciliation=note;}
+    }),
+    (error:unknown)=>error instanceof CommercialAIError
+      && error.code==="AI_PROVIDER_ERROR"
+      && !error.message.includes("Secret")
+      && !error.message.includes("private")
+  );
+  assert.equal(reconciliation,"AI_PROVIDER_ERROR");
+});
+
+test("completed usage still settles normally with a provider deadline",async()=>{
+  const events:string[]=[];
+  const result=await commercialOpenRouterCuration(input,{
+    apiKey:"SYNTHETIC_SERVER_KEY",timeoutMs:150,
+    getModel:async()=>model,
+    reserve:async()=>({requestId:"req-test",reservedUnits:"5.000000",
+      includedUnits:"5.000000",purchasedUnits:"0.000000"}),
+    callProvider:async request=>{
+      assert.equal(request.signal?.aborted,false);
+      events.push("provider");
+      return {ok:true,result:"Rewritten",modelId:model.id,generationId:"gen-12345",
+        usage:{costUsd:"0.0010000000",aiUnits:"0.100000",
+          promptTokens:100,completionTokens:30}};
+    },
+    settle:async record=>{
+      events.push("settle");
+      assert.equal(record.status,"success");
+      assert.equal(record.actualCostUsd,"0.0010000000");
+      return {requestId:"req-test",chargedUnits:"0.100000",settled:true};
+    },
+    reconcile:async()=>{throw Error("must not reconcile success");}
+  });
+  assert.equal(result.text,"Rewritten");
+  assert.equal(result.chargedUnits,"0.100000");
+  assert.deepEqual(events,["provider","settle"]);
+});
