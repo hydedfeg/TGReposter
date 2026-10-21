@@ -2,7 +2,8 @@ import { getPostgresPool } from "../utils/postgresPool";
 import { CryptoPaymentInvoiceService } from "../payments/invoiceService";
 import type { CryptoPaymentNetwork } from "../payments/types";
 import { prepareTopupOrder, AITopupError } from "./aiTopupService";
-import { CHECKOUT_INVOICE_TTL_MS, assertCheckoutInvoiceMatches } from "./subscriptionInvoiceCheckout";
+import { CHECKOUT_INVOICE_TTL_MS, assertCheckoutInvoiceMatches,
+  assertCheckoutInvoiceIdentity } from "./subscriptionInvoiceCheckout";
 
 /**
  * Non-custodial AI credit checkout. This only prepares a server-quoted
@@ -34,32 +35,51 @@ export async function createTopupCheckoutInvoice(
      from public.billing_fx_quotes
      where owner_principal=$1 and id=$2::uuid`,[owner,quoteId]);
   const quote=rows[0];
+  if(quote?.product_kind!=="topup"||!quote.pack_id)
+    throw new AITopupError("INVALID_QUOTE","Top-up quote was not found.");
+
+  // Existing owner-scoped orders survive both FX quote expiry and pack
+  // withdrawal. Never create another invoice or require a current catalog
+  // price when resuming an accepted purchase.
+  const {rows:existing}=await query(
+    `select o.id as order_id,o.pack_id,o.ai_units::text,
+            o.status as order_status,o.quoted_usdt_amount::text,
+            i.id as invoice_id,i.network,i.requested_amount::text
+     from public.billing_ai_topup_orders o
+     join public.crypto_payment_invoices i
+       on i.owner_principal=o.owner_principal and i.id=o.invoice_id
+     where o.owner_principal=$1 and o.quote_reference=$2
+     order by o.created_at asc limit 1`,[owner,quoteId]);
+  if(existing.length) {
+    const saved=existing[0];
+    assertCheckoutInvoiceIdentity(saved,network,quote.usdt_amount);
+    if(saved.pack_id!==quote.pack_id ||
+       Number(saved.quoted_usdt_amount)!==Number(quote.usdt_amount)) {
+      throw new AITopupError("ORDER_CONFLICT","The existing top-up order does not match its quote.");
+    }
+    return {
+      order:{orderId:saved.order_id,units:saved.ai_units,
+        fulfilled:saved.order_status==="fulfilled",created:false},
+      invoiceId:saved.invoice_id
+    };
+  }
   const expiry=quote?.expires_at?new Date(quote.expires_at).getTime():0;
-  if(quote?.product_kind!=="topup"||!quote.pack_id||
-     !Number.isFinite(expiry)||expiry-Date.now()<60_000)
+  if(!Number.isFinite(expiry)||expiry-Date.now()<60_000)
     throw new AITopupError("INVALID_QUOTE","Create a fresh top-up quote.");
-  // A published price may change after a quote was issued. Reject a
-  // withdrawn/repriced pack before reserving a payable invoice. The existing
-  // order path is idempotent and must survive a later catalog withdrawal.
-  const {rows:prepared}=await query(
-    `select id from public.billing_ai_topup_orders
-     where owner_principal=$1 and quote_reference=$2 limit 1`,
-    [owner,quoteId]
+  // Only new orders require an in-sale pack with an unchanged quoted
+  // price. Never issue a payable invoice for a withdrawn or repriced pack.
+  const {rows:packs}=await query(
+    `select is_published,price_eur_cents
+     from public.billing_ai_topup_packs where id=$1`,[quote.pack_id]
   );
-  if(!prepared.length) {
-    const {rows:packs}=await query(
-      `select is_published,price_eur_cents
-       from public.billing_ai_topup_packs where id=$1`,[quote.pack_id]
-    );
-    const pack=packs[0];
-    if(!pack?.is_published) {
-      throw new AITopupError("PACK_NOT_AVAILABLE","AI top-up pack is not for sale.");
-    }
-    if(!Number.isSafeInteger(quote.eur_cents) ||
-       quote.eur_cents!==pack.price_eur_cents) {
-      throw new AITopupError("QUOTE_PRICE_CHANGED",
-        "Pack price changed; request a fresh quote.");
-    }
+  const pack=packs[0];
+  if(!pack?.is_published) {
+    throw new AITopupError("PACK_NOT_AVAILABLE","AI top-up pack is not for sale.");
+  }
+  if(!Number.isSafeInteger(quote.eur_cents) ||
+     quote.eur_cents!==pack.price_eur_cents) {
+    throw new AITopupError("QUOTE_PRICE_CHANGED",
+      "Pack price changed; request a fresh quote.");
   }
   const invoice=await (deps.invoiceService??new CryptoPaymentInvoiceService()).createInvoice(
     owner,{
