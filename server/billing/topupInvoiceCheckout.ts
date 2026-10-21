@@ -1,4 +1,5 @@
 import { getPostgresPool } from "../utils/postgresPool";
+import { parseFixedDecimal } from "./checkoutQuoteService";
 import { CryptoPaymentInvoiceService } from "../payments/invoiceService";
 import type { CryptoPaymentNetwork } from "../payments/types";
 import { prepareTopupOrder, AITopupError } from "./aiTopupService";
@@ -54,7 +55,7 @@ export async function createTopupCheckoutInvoice(
     const saved=existing[0];
     assertCheckoutInvoiceIdentity(saved,network,quote.usdt_amount);
     if(saved.pack_id!==quote.pack_id ||
-       Number(saved.quoted_usdt_amount)!==Number(quote.usdt_amount)) {
+       parseFixedDecimal(saved.quoted_usdt_amount,18)!==parseFixedDecimal(quote.usdt_amount,18)) {
       throw new AITopupError("ORDER_CONFLICT","The existing top-up order does not match its quote.");
     }
     return {
