@@ -1,0 +1,424 @@
+{
+  "purpose": "Read-only migration provenance snapshot; NOT migration-application instructions",
+  "sourceCommit": "56597ffb7c3d0dc93df0866ac511aa7355ea47f1",
+  "stagingProjectRef": "msmfilgdwuoymjhgtrmy",
+  "sourceMigrationCount": 45,
+  "appliedLedgerCount": 46,
+  "drift": [
+    {
+      "file": "001_initial_schema.sql",
+      "storedVersion": "20260910134818",
+      "name": "initial_schema",
+      "storedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
+      "storedTrimmedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
+      "statementCount": 1,
+      "disposition": "baseline_plus_recovered_repairs"
+    },
+    {
+      "file": "002_auth_rls.sql",
+      "storedVersion": "20260910134821",
+      "name": "auth_rls",
+      "storedMd5": "6700763845e8f7d961870aa91576f4e3",
+      "storedTrimmedMd5": "6700763845e8f7d961870aa91576f4e3",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260823161247_video_media.sql",
+      "storedVersion": "20260910134823",
+      "name": "video_media",
+      "storedMd5": "ed52fe8c4913921b645c9c145744ea42",
+      "storedTrimmedMd5": "586777cb20f6792a0b7d7e83f3cc1a31",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260823165516_temporary_enable_pg_net_for_telegram_smoke_test.sql",
+      "storedVersion": "20260910134824",
+      "name": "temporary_enable_pg_net_for_telegram_smoke_test",
+      "storedMd5": "bd0bbee30266c486b3e631ddd49bd0ff",
+      "storedTrimmedMd5": "b575d941e06b05a77f5f50d32b2a5c31",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260823165548_temporary_disable_pg_net_after_telegram_smoke_test.sql",
+      "storedVersion": "20260910134826",
+      "name": "temporary_disable_pg_net_after_telegram_smoke_test",
+      "storedMd5": "cfd5899dc218c6317204957e8efd35ee",
+      "storedTrimmedMd5": "e027da07c2abcbd7426fae60ac1d70da",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260825134100_add_promotion_campaign_schema.sql",
+      "storedVersion": "20260910134828",
+      "name": "add_promotion_campaign_schema",
+      "storedMd5": "c69cdbea8dbe47ef2fb4a1fb11484583",
+      "storedTrimmedMd5": "a2db48ec2fe9509bc96a508a8a67cf8d",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260831153243_normalize_runtime_configuration.sql",
+      "storedVersion": "20260910135021",
+      "name": "normalize_runtime_configuration",
+      "storedMd5": "144f95b74e17a56bc0afb0b56bd4f32e",
+      "storedTrimmedMd5": "719a91a1d470aa990c64b3be0e0714f8",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260831153439_complete_post_runtime_fields.sql",
+      "storedVersion": "20260910135025",
+      "name": "complete_post_runtime_fields",
+      "storedMd5": "babab9427b991aeeae43a423f4c1b1f6",
+      "storedTrimmedMd5": "9861058c895a441dffa35995c47a0869",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260831154334_secure_runtime_and_schedule_inbox.sql",
+      "storedVersion": "20260910135148",
+      "name": "secure_runtime_and_schedule_inbox",
+      "storedMd5": "c708b88334543b3ca0d496b5ae2968fd",
+      "storedTrimmedMd5": "227bc6fac75ae85c1fd9046077fc4df0",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260901131205_harden_auth_profile_security.sql",
+      "storedVersion": "20260910135149",
+      "name": "harden_auth_profile_security",
+      "storedMd5": "a224f748e13c6388a32b784ee0464f4c",
+      "storedTrimmedMd5": "da2653361834f7b346ace9d63fbbd9bd",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260901132706_move_main_bot_token_to_vault.sql",
+      "storedVersion": "20260910135151",
+      "name": "move_main_bot_token_to_vault",
+      "storedMd5": "a482a804d58ea814eb886f6add42b523",
+      "storedTrimmedMd5": "d91b4286099bb07453418533b825ad4c",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260902150421_secure_auth_profile_bootstrap.sql",
+      "storedVersion": "20260910135156",
+      "name": "secure_auth_profile_bootstrap",
+      "storedMd5": "94c789633025736f31fb1d30e8b9a767",
+      "storedTrimmedMd5": "c671ce0b4251a27c2e5a5f8ced34855d",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260902153812_scope_destinations_by_user.sql",
+      "storedVersion": "20260910135158",
+      "name": "scope_destinations_by_user",
+      "storedMd5": "eca1c68c9ec4819e0e90eb865fff7314",
+      "storedTrimmedMd5": "030d971ed2ae911d99c1dc9cc8899a11",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260902185412_scope_content_inbox_by_user.sql",
+      "storedVersion": "20260910135159",
+      "name": "scope_content_inbox_by_user",
+      "storedMd5": "b18c6b5c2c2620afeb40a32c63d00c6b",
+      "storedTrimmedMd5": "9869c1f76ee1e9ca7a36f96176a8bc20",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260903124814_scope_all_application_data_by_user.sql",
+      "storedVersion": "20260910135201",
+      "name": "scope_all_application_data_by_user",
+      "storedMd5": "a0f81ca66f59579c26d140af34a5167b",
+      "storedTrimmedMd5": "5d95a880285affbc7b31cd053be74a6c",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260905125947_restrict_profile_mutations.sql",
+      "storedVersion": "20260910135214",
+      "name": "restrict_profile_mutations",
+      "storedMd5": "ffef95c19d4c86ab7180c0792b94832e",
+      "storedTrimmedMd5": "10f98f1314cea890483377af779d1741",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260905133955_finalize_personal_reposting_runtime.sql",
+      "storedVersion": "20260910135216",
+      "name": "finalize_personal_reposting_runtime",
+      "storedMd5": "77823e3f99cf59f06c5fc003417fa077",
+      "storedTrimmedMd5": "bd218a01beb4bf3dd58feed91c18bb58",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260905152000_finalize_personal_promotion_runtime.sql",
+      "storedVersion": "20260910135218",
+      "name": "finalize_personal_promotion_runtime",
+      "storedMd5": "2e15d9670e8e57ca6a0b1b69c1401785",
+      "storedTrimmedMd5": "bdafacef2cb1e84a254bccc8f580b539",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20260910133829_reject_implicit_promotion_owner_reassignment.sql",
+      "storedVersion": "20260910135219",
+      "name": "reject_implicit_promotion_owner_reassignment",
+      "storedMd5": "bad54b89b7945daef8c457d06f11dd74",
+      "storedTrimmedMd5": "7c200d595ddbeebc4e7c1ed4ca616bd6",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20261004160000_create_demo_requests.sql",
+      "storedVersion": "20261004160630",
+      "name": "create_demo_requests",
+      "storedMd5": "c7c0ad5505918457e8d67ac9aabbab30",
+      "storedTrimmedMd5": "c7c0ad5505918457e8d67ac9aabbab30",
+      "statementCount": 1,
+      "disposition": "trailing_newline_only"
+    },
+    {
+      "file": "20261017143000_allow_billing_expiration_retries.sql",
+      "storedVersion": "20261017143828",
+      "name": "allow_billing_expiration_retries",
+      "storedMd5": "7b8e08ebb7a4a2a5dd3cab6cdbccc450",
+      "storedTrimmedMd5": "eccda3e396531e1532e5c0edef500778",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20261019154000_checkout_rate_limits.sql",
+      "storedVersion": "20261019133218",
+      "name": "checkout_rate_limits",
+      "storedMd5": "8c0e5e2105803a6f49c7f157ef7005f1",
+      "storedTrimmedMd5": "b6f8ecee1cac1e678a01d10050902df5",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    },
+    {
+      "file": "20261019175500_atomic_plan_capacity_guards.sql",
+      "storedVersion": "20261019174232",
+      "name": "atomic_plan_capacity_guards",
+      "storedMd5": "867d7533d0b85b80da916477165dabc1",
+      "storedTrimmedMd5": "1f1496e78cf82afc951bf08bb6cc5bf5",
+      "statementCount": 1,
+      "disposition": "byte_identical"
+    }
+  ],
+  "repairArchive": [
+    {
+      "version": "20260910135008",
+      "name": "repair_missing_curator_settings_baseline",
+      "path": "docs/sql/staging-ledger-archive/20260910135008_repair_missing_curator_settings_baseline.sql",
+      "storedMd5": "4374b2dea4a8f43b702fce144d4bb626",
+      "statementCount": 1
+    },
+    {
+      "version": "20260910135132",
+      "name": "repair_missing_pg_cron_baseline",
+      "path": "docs/sql/staging-ledger-archive/20260910135132_repair_missing_pg_cron_baseline.sql",
+      "storedMd5": "6b9f2c132e9860d5e04a7f0eb2d50890",
+      "statementCount": 1
+    }
+  ],
+  "unappliedSourceFiles": [
+    "20261021154000_ai_reconciliation_backoff.sql"
+  ],
+  "sourceFiles": [
+    {
+      "file": "001_initial_schema.sql",
+      "blobSha1": "aaaf0000f4b552b0a5c541cdea9db81c28dad84b"
+    },
+    {
+      "file": "002_auth_rls.sql",
+      "blobSha1": "facb7cc63fbfc38f098e736ac8ea3cd47c5b5f26"
+    },
+    {
+      "file": "20260823161247_video_media.sql",
+      "blobSha1": "9e3e0fb1d26faa2c4e9a4d0ef00001f0495960f5"
+    },
+    {
+      "file": "20260823165516_temporary_enable_pg_net_for_telegram_smoke_test.sql",
+      "blobSha1": "928ff2be758c91c55fd859effaed9f185cd4d4a6"
+    },
+    {
+      "file": "20260823165548_temporary_disable_pg_net_after_telegram_smoke_test.sql",
+      "blobSha1": "250863252ef6fb11cd16e029f3b45097c34f7315"
+    },
+    {
+      "file": "20260825134100_add_promotion_campaign_schema.sql",
+      "blobSha1": "f8dd7331de75bff3aadce7a7f93ad6973afc7842"
+    },
+    {
+      "file": "20260831153243_normalize_runtime_configuration.sql",
+      "blobSha1": "4e57fa73bc0b81010d00874a8eafdb3d409d3cfd"
+    },
+    {
+      "file": "20260831153439_complete_post_runtime_fields.sql",
+      "blobSha1": "f4fbefba73327a81e466d35173025b2887a7c218"
+    },
+    {
+      "file": "20260831154334_secure_runtime_and_schedule_inbox.sql",
+      "blobSha1": "5149818cc3d83edecbd446b63e2b66334147f454"
+    },
+    {
+      "file": "20260901131205_harden_auth_profile_security.sql",
+      "blobSha1": "b5556f2910460f8964ff0e1f70e539c74dd41d27"
+    },
+    {
+      "file": "20260901132706_move_main_bot_token_to_vault.sql",
+      "blobSha1": "724c900df2d14904e7c87f4a2fb9a061ea723bc6"
+    },
+    {
+      "file": "20260902150421_secure_auth_profile_bootstrap.sql",
+      "blobSha1": "0b40cfab89c2bd7b7d5762056fb4e2f3615b38c5"
+    },
+    {
+      "file": "20260902153812_scope_destinations_by_user.sql",
+      "blobSha1": "d2e3952bbe95c0f8d17b325f1a5a39fe4d63d4d5"
+    },
+    {
+      "file": "20260902185412_scope_content_inbox_by_user.sql",
+      "blobSha1": "4c07b9f2f1a225db5f0ed3e4a1f27d45637188ae"
+    },
+    {
+      "file": "20260903124814_scope_all_application_data_by_user.sql",
+      "blobSha1": "09601cd2a91b6b6d134706078dcb0ec6589995b4"
+    },
+    {
+      "file": "20260905125947_restrict_profile_mutations.sql",
+      "blobSha1": "879cbb8df5ae03bbd8b0a193bfc3821fd683ebd9"
+    },
+    {
+      "file": "20260905133955_finalize_personal_reposting_runtime.sql",
+      "blobSha1": "0feaf8e34ca956da4bd030b28c27da8cad9f0781"
+    },
+    {
+      "file": "20260905152000_finalize_personal_promotion_runtime.sql",
+      "blobSha1": "28444c7d329826d7abe3e041c3eac4521ff91ca0"
+    },
+    {
+      "file": "20260910133829_reject_implicit_promotion_owner_reassignment.sql",
+      "blobSha1": "f2e20ee898ff21341cff5ebdea47a14259f09b54"
+    },
+    {
+      "file": "20260915125102_configure_environment_specific_inbox_cron_url.sql",
+      "blobSha1": "8ead64e190c736f42d1bf7a93d8b5cd0b5a0ff61"
+    },
+    {
+      "file": "20260929161219_persist_user_ui_locale.sql",
+      "blobSha1": "7682a4cc719d2a973a32a4826e1a3e0e0aae81a1"
+    },
+    {
+      "file": "20261004160000_create_demo_requests.sql",
+      "blobSha1": "fb4bf9b74fcec63b021ffff16c99236910b67ca8"
+    },
+    {
+      "file": "20261004183039_create_crypto_payment_infrastructure.sql",
+      "blobSha1": "760f108d171cc124eca7dfd282ff1327332b91c4"
+    },
+    {
+      "file": "20261004183118_index_crypto_payment_event_transactions.sql",
+      "blobSha1": "db2e2951bbe775c6ef3bfcb8fb1271ec974c91e5"
+    },
+    {
+      "file": "20261004184225_create_crypto_payment_network_state.sql",
+      "blobSha1": "09555adf5d8885f45ab395b34037d39cf2530c07"
+    },
+    {
+      "file": "20261004190058_scope_crypto_payment_event_transactions.sql",
+      "blobSha1": "b64ac28436d26dcf58cd27f7d2c3841ab0350aca"
+    },
+    {
+      "file": "20261004190125_index_scoped_crypto_payment_event_transactions.sql",
+      "blobSha1": "62b1248d2f726dcdec0c62a85606a9a8e00ac743"
+    },
+    {
+      "file": "20261004191015_create_crypto_payment_amount_reservations.sql",
+      "blobSha1": "9ce80a90bb6c15c6f0ceb6fc0d3cfd04cb923141"
+    },
+    {
+      "file": "20261006133316_add_crypto_payment_invoice_idempotency.sql",
+      "blobSha1": "8e5c05aa2213c74aeecffd15981273f2a5970e76"
+    },
+    {
+      "file": "20261012135152_create_crypto_payment_unassigned_transfers.sql",
+      "blobSha1": "0250ca86231c3635c96faf8f7ca9a8ac76e71f6e"
+    },
+    {
+      "file": "20261012135929_allow_zero_value_crypto_unassigned_observations.sql",
+      "blobSha1": "13a0f4238050d774084abaae1cb19bb8085547c0"
+    },
+    {
+      "file": "20261012141130_create_crypto_payment_operational_alerts.sql",
+      "blobSha1": "a7be8836c2521553f6ca3494e2152a0392c2edf9"
+    },
+    {
+      "file": "20261012144506_create_commercial_foundation.sql",
+      "blobSha1": "aeb7125f68aa46a840c2571a6e51e608d1d34ff9"
+    },
+    {
+      "file": "20261012144528_add_ai_usage_reconciliation.sql",
+      "blobSha1": "1be504ab4d3bb0ff1f322878c190f2e5181368d8"
+    },
+    {
+      "file": "20261012144532_add_ai_topup_packs.sql",
+      "blobSha1": "ded8ee725b2391f2f75512ded05f5d7f6502f8e5"
+    },
+    {
+      "file": "20261012144536_add_ai_topup_orders.sql",
+      "blobSha1": "e22e05ebffb8322a5f6333e4a18cb9ef0082ce2e"
+    },
+    {
+      "file": "20261012144539_subscription_checkout_foundation.sql",
+      "blobSha1": "9d77ed4757cb06255a12ab26e26bf8b4fe874422"
+    },
+    {
+      "file": "20261012144544_billing_operation_retries.sql",
+      "blobSha1": "5dafa66a580e40ad14b117c38a63a522149e328b"
+    },
+    {
+      "file": "20261012144548_subscription_lifecycle_events.sql",
+      "blobSha1": "b504d7b1fa2d76a010e3c21963d71a9be031ff3e"
+    },
+    {
+      "file": "20261017143000_allow_billing_expiration_retries.sql",
+      "blobSha1": "91cb7b6a16e5a480473b006fa7ba58c15d937115"
+    },
+    {
+      "file": "20261019140859_sales_plan_management.sql",
+      "blobSha1": "605c7b01284d5bf9ce4305a9fd1497772b529267"
+    },
+    {
+      "file": "20261019154000_checkout_rate_limits.sql",
+      "blobSha1": "ca2f2684d1193475e688485175a9ce2dd0ea8b94"
+    },
+    {
+      "file": "20261019173245_custom_sales_plan_drafts.sql",
+      "blobSha1": "7cb99469efb0483fbbf2296760b2ffc7412a5371"
+    },
+    {
+      "file": "20261019175500_atomic_plan_capacity_guards.sql",
+      "blobSha1": "2c08aee2c9a700b8d20e019b78e2faa0570b19b8"
+    },
+    {
+      "file": "20261021154000_ai_reconciliation_backoff.sql",
+      "blobSha1": "5947a7010f148db849c96f82b34507108be0eed6"
+    }
+  ],
+  "originalBaselineArchive": {
+    "version": "20260910134818",
+    "name": "initial_schema",
+    "path": "docs/sql/staging-ledger-archive/20260910134818_initial_schema.sql",
+    "storedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
+    "statementCount": 1
+  }
+}
