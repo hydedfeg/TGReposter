@@ -92,3 +92,45 @@ Railway staging last verified healthy 1/1 replicas but serving `0140bfa`, behind
 ### Read-only verification script
 
 Use [`docs/sql/issue71_staging_billing_preflight.sql`](./sql/issue71_staging_billing_preflight.sql) against **staging only**. It performs `SELECT` queries; it does not modify migrations, business records, flags or schema. All audit findings must be refreshed immediately before migration repair or deployment.
+
+
+## October 24, 2026 — original migration SQL recovered and compared
+
+The staging Supabase `supabase_migrations.schema_migrations.statements`
+column retains the **original migration SQL** (one stored statement for each
+of the 23 version-mismatched source files). A read-only, direct text comparison
+against the current source tree found:
+
+| Classification | Migrations | Resolution |
+| --- | ---: | --- |
+| Exact SQL bytes/text | **21 of 23** | Source migration text matches stored staging text. Versions differ; do not replay. |
+| Trailing newline only | **1 of 23** | `create_demo_requests` differs by one final newline; trimmed text is identical. |
+| Material text divergence | **1 of 23** | `initial_schema`: GitHub 2,565 characters, stored staging 1,894 characters. **Not equivalent; requires human review.** |
+
+The two missing staging repair migrations were recovered verbatim from their
+historical ledger records and archived at:
+
+- `docs/sql/staging-ledger-archive/20260910135008_repair_missing_curator_settings_baseline.sql`
+- `docs/sql/staging-ledger-archive/20260910135132_repair_missing_pg_cron_baseline.sql`
+
+Both archives are intentionally **outside** `supabase/migrations/`.
+The existing `public.curator_settings` table and `pg_cron` extension in
+`pg_catalog` were verified present in staging.
+
+The immutable-source inventory and stored-SQL checksums are recorded in
+`docs/staging-migration-ledger-snapshot.json`. A CI test,
+`tests/stagingMigrationLedgerGuard.test.ts`, rejects unreviewed edits,
+renames, additions, and removals to the audited 45 migration source files.
+It also verifies the 21 exact matches, known newline-only discrepancy,
+unresolved initial-schema difference, and the two recovered SQL archives.
+
+**The manifest does not authorize applying scripts or repairing the Supabase
+ledger.** The original initial-schema discrepancy remains a blocker to
+mechanically marking every historical source version as applied. Use an
+isolated disposable database clone and an audited plan before any ledger
+repair. The genuinely new `ai_reconciliation_backoff` migration also
+remains unapplied and its scheduler must stay off.
+
+The new Railway staging deployment of `56597ff` was verified SUCCESS and
+online 1/1 on October 24. This establishes deployment of the application
+code, **not** reconciliation of the staging migration ledger.
