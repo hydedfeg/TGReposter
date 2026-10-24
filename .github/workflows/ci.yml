@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify patched body-parser tarball integrity from npm
+        run: npm view body-parser@1.20.9 dist.integrity --json
+
       - name: Dependency vulnerability inventory
         run: |
           npm audit --json > /tmp/tgreposter-audit.json || true
