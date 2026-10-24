@@ -24,12 +24,16 @@ const snapshot=JSON.parse(fs.readFileSync(
     file:string;storedVersion:string;name:string;storedMd5:string;
     storedTrimmedMd5:string;statementCount:number;
     disposition:"byte_identical"|"trailing_newline_only"|
-      "material_difference_review_required";
+      "baseline_plus_recovered_repairs";
   }[];
   repairArchive:{
     version:string;name:string;path:string;storedMd5:string;
     statementCount:number;
   }[];
+  originalBaselineArchive:{
+    version:string;name:string;path:string;storedMd5:string;
+    statementCount:number;
+  };
   unappliedSourceFiles:string[];
 };
 
@@ -45,6 +49,7 @@ test("historical staging migration snapshot is intentionally pinned to the audit
   assert.equal(snapshot.appliedLedgerCount,46);
   assert.equal(snapshot.drift.length,23);
   assert.equal(snapshot.repairArchive.length,2);
+  assert.equal(snapshot.originalBaselineArchive.version,"20260910134818");
   assert.deepEqual(snapshot.unappliedSourceFiles,
     ["20261021154000_ai_reconciliation_backoff.sql"]);
 });
@@ -91,9 +96,29 @@ test("all 23 staging version drifts retain the reviewed source-to-ledger relatio
         "Whitespace-only difference requires a fresh review");
       newline++;
     }else{
-      assert.equal(row.disposition,"material_difference_review_required");
+      assert.equal(row.disposition,"baseline_plus_recovered_repairs");
       assert.notEqual(sourceHash,row.storedMd5,
-        "Unexpected resolution of historical difference requires explicit audit");
+        "GitHub's initial baseline is expected to contain two recovered repairs");
+      const original=fs.readFileSync(
+        path.join(root,snapshot.originalBaselineArchive.path),"utf8"
+      );
+      const anchor="-- User profiles (linked to Supabase Auth)";
+      const atSource=source.indexOf(anchor);
+      const atOriginal=original.indexOf(anchor);
+      assert.ok(atSource>0 && atOriginal>0);
+      assert.equal(source.slice(atSource).trimEnd(),
+        original.slice(atOriginal).trimEnd(),
+        "The baseline table definitions must equal the original stored staging SQL");
+      const repairSql=snapshot.repairArchive.map(x=>
+        fs.readFileSync(path.join(root,x.path),"utf8")).join("\n");
+      const canonical=(sql:string)=>sql.replace(/--[^\n]*/g,"")
+        .split(";").map(x=>x.trim().replace(/\s+/g," ").toLowerCase())
+        .filter(Boolean).sort();
+      assert.deepEqual(
+        canonical(source.slice(0,atSource)),
+        canonical(original.slice(0,atOriginal)+"\n"+repairSql),
+        "The baseline additions must match exactly the two recovered repair SQL scripts"
+      );
       divergent++;
     }
   }
@@ -101,7 +126,7 @@ test("all 23 staging version drifts retain the reviewed source-to-ledger relatio
 });
 
 test("two recovered repair SQL archives remain unmodified and outside runnable migration directory",()=>{
-  for(const row of snapshot.repairArchive){
+  for(const row of [...snapshot.repairArchive,snapshot.originalBaselineArchive]){
     assert.match(row.path,/^docs\/sql\/staging-ledger-archive\/\d+_[a-z0-9_]+\.sql$/);
     assert.equal(row.statementCount,1);
     const bytes=fs.readFileSync(path.join(root,row.path));
