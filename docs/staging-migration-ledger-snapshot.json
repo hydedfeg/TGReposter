@@ -12,7 +12,7 @@
       "storedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
       "storedTrimmedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
       "statementCount": 1,
-      "disposition": "material_difference_review_required"
+      "disposition": "baseline_plus_recovered_repairs"
     },
     {
       "file": "002_auth_rls.sql",
@@ -413,5 +413,12 @@
       "file": "20261021154000_ai_reconciliation_backoff.sql",
       "blobSha1": "5947a7010f148db849c96f82b34507108be0eed6"
     }
-  ]
+  ],
+  "originalBaselineArchive": {
+    "version": "20260910134818",
+    "name": "initial_schema",
+    "path": "docs/sql/staging-ledger-archive/20260910134818_initial_schema.sql",
+    "storedMd5": "89c1bfddccb5aecd3fac7ffba97da279",
+    "statementCount": 1
+  }
 }
