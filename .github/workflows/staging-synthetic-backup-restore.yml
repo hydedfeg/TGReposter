@@ -1,0 +1,90 @@
+name: Billing synthetic PostgreSQL backup restore drill
+
+on:
+  pull_request:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'tests/sql/staging_backoff_postgres_rehearsal.sql'
+      - 'tests/sql/staging_synthetic_restore_verify.sql'
+      - '.github/workflows/staging-synthetic-backup-restore.yml'
+      - 'supabase/migrations/**'
+  push:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'tests/sql/staging_backoff_postgres_rehearsal.sql'
+      - 'tests/sql/staging_synthetic_restore_verify.sql'
+      - '.github/workflows/staging-synthetic-backup-restore.yml'
+      - 'supabase/migrations/**'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable_test_only
+          POSTGRES_DB: tgreposter_backoff_rehearsal
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tgreposter_backoff_rehearsal"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: disposable_test_only
+      POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Prepare synthetic source DB with the pending migration
+        env:
+          PGAPPNAME: tgreposter-disposable-backoff-test
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tgreposter_backoff_rehearsal -X \
+            -v ON_ERROR_STOP=1 -f tests/sql/staging_backoff_postgres_rehearsal.sql
+      - name: Dump custom-format archive and restore into second disposable DB
+        run: |
+          archive="$RUNNER_TEMP/synthetic-backoff-only.dump"
+          docker exec "$POSTGRES_CONTAINER" pg_dump -U postgres \
+            --format=custom --no-owner --no-acl \
+            -d tgreposter_backoff_rehearsal > "$archive"
+          test -s "$archive"
+          docker exec "$POSTGRES_CONTAINER" createdb -U postgres \
+            tgreposter_backoff_restore_test
+          docker exec -i "$POSTGRES_CONTAINER" pg_restore -U postgres \
+            --exit-on-error --no-owner --no-acl \
+            -d tgreposter_backoff_restore_test < "$archive"
+          # Do not upload even this fully synthetic archive as an artifact.
+      - name: Fail closed on wrong database and missing session marker
+        run: |
+          if PGAPPNAME=tgreposter-disposable-restore-test psql -h 127.0.0.1 \
+            -U postgres -d postgres -X -v ON_ERROR_STOP=1 \
+            -f tests/sql/staging_synthetic_restore_verify.sql \
+            > "$RUNNER_TEMP/wrong-db.log" 2>&1; then
+            echo "SECURITY FAILURE: verifier accepted an unexpected database"
+            exit 1
+          fi
+          grep -q 'Refusing to inspect anything but the disposable restore test' \
+            "$RUNNER_TEMP/wrong-db.log"
+          if PGAPPNAME=untrusted-test psql -h 127.0.0.1 \
+            -U postgres -d tgreposter_backoff_restore_test -X \
+            -v ON_ERROR_STOP=1 -f tests/sql/staging_synthetic_restore_verify.sql \
+            > "$RUNNER_TEMP/missing-marker.log" 2>&1; then
+            echo "SECURITY FAILURE: verifier accepted an unexpected session"
+            exit 1
+          fi
+          grep -q 'Refusing to inspect anything but the disposable restore test' \
+            "$RUNNER_TEMP/missing-marker.log"
+      - name: Check restored synthetic events, credits and RLS
+        env:
+          PGAPPNAME: tgreposter-disposable-restore-test
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tgreposter_backoff_restore_test \
+            -X -v ON_ERROR_STOP=1 -f tests/sql/staging_synthetic_restore_verify.sql
