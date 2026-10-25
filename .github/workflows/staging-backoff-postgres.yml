@@ -1,0 +1,52 @@
+name: Staging backoff migration - disposable PostgreSQL 17
+on:
+  pull_request:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'tests/sql/staging_backoff_postgres_rehearsal.sql'
+      - '.github/workflows/staging-backoff-postgres.yml'
+      - 'supabase/migrations/**'
+  push:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'tests/sql/staging_backoff_postgres_rehearsal.sql'
+      - '.github/workflows/staging-backoff-postgres.yml'
+      - 'supabase/migrations/**'
+permissions:
+  contents: read
+jobs:
+  backoff-real-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable_test_only
+          POSTGRES_DB: tgreposter_backoff_rehearsal
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tgreposter_backoff_rehearsal"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGPASSWORD: disposable_test_only
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: Verify safety guard rejects non-disposable target
+        run: |
+          if psql -h 127.0.0.1 -U postgres -d postgres -X \
+            -v ON_ERROR_STOP=1 -f tests/sql/staging_backoff_postgres_rehearsal.sql \
+            > /tmp/backoff-guard.log 2>&1; then
+            echo "SECURITY FAILURE: SQL allowed non-disposable target"
+            exit 1
+          fi
+          grep -q "Refusing SQL outside the disposable local database" /tmp/backoff-guard.log
+      - name: Rehearse transaction, rollback, privileges and AI credit preservation
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tgreposter_backoff_rehearsal \
+            -X -v ON_ERROR_STOP=1 -f tests/sql/staging_backoff_postgres_rehearsal.sql
