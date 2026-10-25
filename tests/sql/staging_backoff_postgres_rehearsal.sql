@@ -2,7 +2,7 @@
 \set ON_ERROR_STOP on
 DO $guard$ BEGIN
  IF current_database()<>'tgreposter_backoff_rehearsal'
-    OR inet_server_addr() NOT IN ('127.0.0.1'::inet,'::1'::inet)
+    OR current_setting('application_name',true)<>'tgreposter-disposable-backoff-test'
  THEN RAISE EXCEPTION 'Refusing SQL outside the disposable local database'; END IF;
 END $guard$;
 DO $roles$ BEGIN

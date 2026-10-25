@@ -33,6 +33,7 @@ jobs:
           --health-retries 10
     env:
       PGPASSWORD: disposable_test_only
+      PGAPPNAME: tgreposter-disposable-backoff-test
     steps:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL client
