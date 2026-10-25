@@ -38,7 +38,6 @@ jobs:
           --health-retries 10
     env:
       PGPASSWORD: disposable_test_only
-      POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
     steps:
       - uses: actions/checkout@v4
       - name: Install PostgreSQL client
@@ -50,6 +49,8 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d tgreposter_backoff_rehearsal -X \
             -v ON_ERROR_STOP=1 -f tests/sql/staging_backoff_postgres_rehearsal.sql
       - name: Dump custom-format archive and restore into second disposable DB
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
         run: |
           archive="$RUNNER_TEMP/synthetic-backoff-only.dump"
           docker exec "$POSTGRES_CONTAINER" pg_dump -U postgres \
