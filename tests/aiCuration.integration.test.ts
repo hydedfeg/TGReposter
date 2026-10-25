@@ -72,9 +72,12 @@ function readCalls(tempDir: string): any[] {
 
 async function waitForServer(child: ChildProcessWithoutNullStreams) {
   let lastError: unknown;
-  for (let attempt = 0; attempt < 80; attempt++) {
-    if (child.exitCode !== null) {
-      throw new Error(`Test server exited early with code ${child.exitCode}.`);
+  // Railway's shared Docker builders can take longer to start the TypeScript
+  // server under parallel test load. Keep a bounded readiness deadline.
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`Test server exited early (code=${child.exitCode}, signal=${child.signalCode}).`);
     }
     try {
       const response = await fetch(`${apiBase}/api/auth/status`, {
@@ -119,7 +122,7 @@ async function postJson(pathname: string, payload: Record<string, unknown>, toke
   return { response, body };
 }
 
-test("AI curation route regression suite", { timeout: 45_000 }, async t => {
+test("AI curation route regression suite", { timeout: 120_000 }, async t => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tgreposter-ai-tests-"));
   fs.symlinkSync(path.join(repoRoot, "node_modules"), path.join(tempDir, "node_modules"), "dir");
   writeState(tempDir);
