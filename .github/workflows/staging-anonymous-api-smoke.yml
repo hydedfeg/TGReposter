@@ -1,0 +1,73 @@
+# Credential-free staging security smoke. NO staging account password, access
+# token, service_role, database URL or private API key is needed or injected.
+# This checks LIVE anonymous/forged-token boundaries, not two-account login.
+name: Staging anonymous API security smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'server.ts'
+      - 'server/routes/billingOverview.ts'
+      - 'server/routes/customerCheckout.ts'
+      - 'server/routes/channels.ts'
+      - 'server/routes/promotion.ts'
+      - 'server/routes/cryptoPayments.ts'
+      - 'server/routes/salesPlanAdmin.ts'
+      - 'scripts/verifyStagingBillingAuth.ts'
+      - 'scripts/stagingAuthAcceptanceGuards.ts'
+      - '.github/workflows/staging-anonymous-api-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-anonymous-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  anonymous-read-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Hard-coded exact staging origin. Never use the production API.
+      TGREPOSTER_STAGING_BASE_URL: https://tgreposter-staging-production.up.railway.app
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Refuse private login credentials on public runner
+        shell: bash
+        run: |
+          # Do not print environment variables or secrets on failure.
+          node --input-type=module <<'NODE'
+          const keys=[
+            'TGREPOSTER_STAGING_ALICE_EMAIL','TGREPOSTER_STAGING_ALICE_PASSWORD',
+            'TGREPOSTER_STAGING_BOB_EMAIL','TGREPOSTER_STAGING_BOB_PASSWORD',
+            'DATABASE_URL','SUPABASE_SERVICE_ROLE_KEY',
+            'SUPABASE_SERVICE_KEY','RESTORED_STAGING_POSTGRES_URL'
+          ];
+          if(keys.some(key => Boolean(process.env[key]))) {
+            process.stderr.write('FAIL: refusing public staging smoke with private credentials configured.\n');
+            process.exit(1);
+          }
+          NODE
+
+      - name: Live staging anonymous and forged bearer read checks
+        run: npx --no-install tsx scripts/verifyStagingBillingAuth.ts --preflight
+
+      - name: Record scope of successful smoke
+        if: success()
+        run: |
+          echo 'PASS: staging-only public unauthenticated/invalid-JWT GET boundary.'
+          echo 'NOT CERTIFIED: credentialed two-user Auth, mutation ACL, backup restore, or release.'
