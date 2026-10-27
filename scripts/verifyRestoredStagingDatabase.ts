@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 import pg from "pg";
+import {evaluateRestoreSideEffectSafety, type RestoreSideEffectState} from "./stagingRestoreSideEffectSafety";
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const TARGET="tgreposter_staging_restore_verification";
 type M={version:string;name:string;statementCount:number;firstStatementMd5:string};
@@ -49,6 +50,7 @@ async function main(){
  const baseline=JSON.parse(fs.readFileSync(path.join(ROOT,
    "docs/staging-restore-provenance-baseline.json"),"utf8")) as Baseline;
  const query=fs.readFileSync(path.join(ROOT,"scripts/sql/stagingRestoreFingerprint.sql"),"utf8");
+ const sideEffectSql=fs.readFileSync(path.join(ROOT,"scripts/sql/stagingRestoreSideEffectGate.sql"),"utf8");
  const pool=new pg.Pool({connectionString:value,max:1,connectionTimeoutMillis:7000,
    query_timeout:25000,application_name:"tgreposter-private-restore-audit"});
  try{
@@ -58,6 +60,9 @@ async function main(){
    await c.query("SET LOCAL statement_timeout='20s'");
    const id=await c.query<{db:string}>("SELECT current_database() AS db");
    if(id.rows[0]?.db!==TARGET)throw Error("Restored database identity differs");
+   const safety=await c.query<{safety_state:RestoreSideEffectState}>(sideEffectSql);
+   const problems=evaluateRestoreSideEffectSafety(safety.rows[0]?.safety_state);
+   if(problems.length)throw Error("Restore side-effect gate FAILED: "+problems.join("; "));
    const result=await c.query<{audit_payload:Payload}>(query);
    if(result.rows.length!==1)throw Error("Audit row count differs");
    const errors=checkRestoredProvenance(baseline,result.rows[0].audit_payload);
@@ -70,7 +75,8 @@ async function main(){
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url))
  main().catch(err=>{
   const message=err instanceof Error?err.message:"unknown error";
-  if(message.startsWith("Restore verification FAILED:")||message.startsWith("Provide ")||
+  if(message.startsWith("Restore side-effect gate FAILED:")||
+     message.startsWith("Restore verification FAILED:")||message.startsWith("Provide ")||
      message.startsWith("Restore verifier refuses")||message.startsWith("Invalid ")||
      message.startsWith("Restored database identity")||message.startsWith("Audit row count"))
     console.error(message);
