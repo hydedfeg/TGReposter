@@ -1,0 +1,323 @@
+{
+  "purpose": "Metadata-only staging reference for a PRIVATE backup restore; not proof of a real backup",
+  "sourceProjectRef": "msmfilgdwuoymjhgtrmy",
+  "recordedDate": "2026-10-27",
+  "sourceGitCommit": "a5eecd84f0eae8acf2dc828f5d01bf83e6859d1b",
+  "payload": {
+    "commercial": {
+      "plans": 6,
+      "aiUsageRows": 0,
+      "topupOrders": 0,
+      "aiLedgerRows": 0,
+      "backoffColumns": 0,
+      "publishedPlans": 0,
+      "subscriptionOrders": 0,
+      "entitlementEnforced": false
+    },
+    "postgresMajor": 17,
+    "migrationLedger": [
+      {
+        "name": "initial_schema",
+        "version": "20260910134818",
+        "statementCount": 1,
+        "firstStatementMd5": "89c1bfddccb5aecd3fac7ffba97da279"
+      },
+      {
+        "name": "auth_rls",
+        "version": "20260910134821",
+        "statementCount": 1,
+        "firstStatementMd5": "6700763845e8f7d961870aa91576f4e3"
+      },
+      {
+        "name": "video_media",
+        "version": "20260910134823",
+        "statementCount": 1,
+        "firstStatementMd5": "ed52fe8c4913921b645c9c145744ea42"
+      },
+      {
+        "name": "temporary_enable_pg_net_for_telegram_smoke_test",
+        "version": "20260910134824",
+        "statementCount": 1,
+        "firstStatementMd5": "bd0bbee30266c486b3e631ddd49bd0ff"
+      },
+      {
+        "name": "temporary_disable_pg_net_after_telegram_smoke_test",
+        "version": "20260910134826",
+        "statementCount": 1,
+        "firstStatementMd5": "cfd5899dc218c6317204957e8efd35ee"
+      },
+      {
+        "name": "add_promotion_campaign_schema",
+        "version": "20260910134828",
+        "statementCount": 1,
+        "firstStatementMd5": "c69cdbea8dbe47ef2fb4a1fb11484583"
+      },
+      {
+        "name": "repair_missing_curator_settings_baseline",
+        "version": "20260910135008",
+        "statementCount": 1,
+        "firstStatementMd5": "4374b2dea4a8f43b702fce144d4bb626"
+      },
+      {
+        "name": "normalize_runtime_configuration",
+        "version": "20260910135021",
+        "statementCount": 1,
+        "firstStatementMd5": "144f95b74e17a56bc0afb0b56bd4f32e"
+      },
+      {
+        "name": "complete_post_runtime_fields",
+        "version": "20260910135025",
+        "statementCount": 1,
+        "firstStatementMd5": "babab9427b991aeeae43a423f4c1b1f6"
+      },
+      {
+        "name": "repair_missing_pg_cron_baseline",
+        "version": "20260910135132",
+        "statementCount": 1,
+        "firstStatementMd5": "6b9f2c132e9860d5e04a7f0eb2d50890"
+      },
+      {
+        "name": "secure_runtime_and_schedule_inbox",
+        "version": "20260910135148",
+        "statementCount": 1,
+        "firstStatementMd5": "c708b88334543b3ca0d496b5ae2968fd"
+      },
+      {
+        "name": "harden_auth_profile_security",
+        "version": "20260910135149",
+        "statementCount": 1,
+        "firstStatementMd5": "a224f748e13c6388a32b784ee0464f4c"
+      },
+      {
+        "name": "move_main_bot_token_to_vault",
+        "version": "20260910135151",
+        "statementCount": 1,
+        "firstStatementMd5": "a482a804d58ea814eb886f6add42b523"
+      },
+      {
+        "name": "secure_auth_profile_bootstrap",
+        "version": "20260910135156",
+        "statementCount": 1,
+        "firstStatementMd5": "94c789633025736f31fb1d30e8b9a767"
+      },
+      {
+        "name": "scope_destinations_by_user",
+        "version": "20260910135158",
+        "statementCount": 1,
+        "firstStatementMd5": "eca1c68c9ec4819e0e90eb865fff7314"
+      },
+      {
+        "name": "scope_content_inbox_by_user",
+        "version": "20260910135159",
+        "statementCount": 1,
+        "firstStatementMd5": "b18c6b5c2c2620afeb40a32c63d00c6b"
+      },
+      {
+        "name": "scope_all_application_data_by_user",
+        "version": "20260910135201",
+        "statementCount": 1,
+        "firstStatementMd5": "a0f81ca66f59579c26d140af34a5167b"
+      },
+      {
+        "name": "restrict_profile_mutations",
+        "version": "20260910135214",
+        "statementCount": 1,
+        "firstStatementMd5": "ffef95c19d4c86ab7180c0792b94832e"
+      },
+      {
+        "name": "finalize_personal_reposting_runtime",
+        "version": "20260910135216",
+        "statementCount": 1,
+        "firstStatementMd5": "77823e3f99cf59f06c5fc003417fa077"
+      },
+      {
+        "name": "finalize_personal_promotion_runtime",
+        "version": "20260910135218",
+        "statementCount": 1,
+        "firstStatementMd5": "2e15d9670e8e57ca6a0b1b69c1401785"
+      },
+      {
+        "name": "reject_implicit_promotion_owner_reassignment",
+        "version": "20260910135219",
+        "statementCount": 1,
+        "firstStatementMd5": "bad54b89b7945daef8c457d06f11dd74"
+      },
+      {
+        "name": "configure_environment_specific_inbox_cron_url",
+        "version": "20260915125102",
+        "statementCount": 1,
+        "firstStatementMd5": "4252d3baf0c98fc31a6deda6f542819d"
+      },
+      {
+        "name": "persist_user_ui_locale",
+        "version": "20260929161219",
+        "statementCount": 1,
+        "firstStatementMd5": "90cdb8d5fd23c5184d01706e67b52dd1"
+      },
+      {
+        "name": "create_demo_requests",
+        "version": "20261004160630",
+        "statementCount": 1,
+        "firstStatementMd5": "c7c0ad5505918457e8d67ac9aabbab30"
+      },
+      {
+        "name": "create_crypto_payment_infrastructure",
+        "version": "20261004183039",
+        "statementCount": 1,
+        "firstStatementMd5": "fc7f66a0e159c740b558d98d124ce660"
+      },
+      {
+        "name": "index_crypto_payment_event_transactions",
+        "version": "20261004183118",
+        "statementCount": 1,
+        "firstStatementMd5": "85f4395ad99aa2121d760ed37914a38a"
+      },
+      {
+        "name": "create_crypto_payment_network_state",
+        "version": "20261004184225",
+        "statementCount": 1,
+        "firstStatementMd5": "a9d1b895fe1ddc11d5fb47c45a2fd7fc"
+      },
+      {
+        "name": "scope_crypto_payment_event_transactions",
+        "version": "20261004190058",
+        "statementCount": 1,
+        "firstStatementMd5": "28f4a2f779db4935759a849114c55aa1"
+      },
+      {
+        "name": "index_scoped_crypto_payment_event_transactions",
+        "version": "20261004190125",
+        "statementCount": 1,
+        "firstStatementMd5": "0aa8519bf157d828066381232a677501"
+      },
+      {
+        "name": "create_crypto_payment_amount_reservations",
+        "version": "20261004191015",
+        "statementCount": 1,
+        "firstStatementMd5": "a6dd4e8d1718c382c6ddfa6f9d7d5a95"
+      },
+      {
+        "name": "add_crypto_payment_invoice_idempotency",
+        "version": "20261006133316",
+        "statementCount": 1,
+        "firstStatementMd5": "6c64f3dbfa767cb8845595bff4ace620"
+      },
+      {
+        "name": "create_crypto_payment_unassigned_transfers",
+        "version": "20261012135152",
+        "statementCount": 1,
+        "firstStatementMd5": "08d2b8f4725196b41628af0620aad27f"
+      },
+      {
+        "name": "allow_zero_value_crypto_unassigned_observations",
+        "version": "20261012135929",
+        "statementCount": 1,
+        "firstStatementMd5": "d507bec4e45bb4cb86a1befe599e5817"
+      },
+      {
+        "name": "create_crypto_payment_operational_alerts",
+        "version": "20261012141130",
+        "statementCount": 1,
+        "firstStatementMd5": "55101ba2da9ce46152e9514195bd47a6"
+      },
+      {
+        "name": "create_commercial_foundation",
+        "version": "20261012144506",
+        "statementCount": 1,
+        "firstStatementMd5": "9cfa2d3d889fc29840f640ad3a799b7b"
+      },
+      {
+        "name": "add_ai_usage_reconciliation",
+        "version": "20261012144528",
+        "statementCount": 1,
+        "firstStatementMd5": "734924068510712da0984ecdb1a6317a"
+      },
+      {
+        "name": "add_ai_topup_packs",
+        "version": "20261012144532",
+        "statementCount": 1,
+        "firstStatementMd5": "b5c8775574b9423e7ddc2a1ed4d6bf61"
+      },
+      {
+        "name": "add_ai_topup_orders",
+        "version": "20261012144536",
+        "statementCount": 1,
+        "firstStatementMd5": "017a343bcf597f12e011c9c3dd192659"
+      },
+      {
+        "name": "subscription_checkout_foundation",
+        "version": "20261012144539",
+        "statementCount": 1,
+        "firstStatementMd5": "32a6b95d17e814091cd3f6b1f1e97c8f"
+      },
+      {
+        "name": "billing_operation_retries",
+        "version": "20261012144544",
+        "statementCount": 1,
+        "firstStatementMd5": "413374ace90df21ccc6f5c29256585b8"
+      },
+      {
+        "name": "subscription_lifecycle_events",
+        "version": "20261012144548",
+        "statementCount": 1,
+        "firstStatementMd5": "55728ae4eb56b59ff082b48eef7f9652"
+      },
+      {
+        "name": "allow_billing_expiration_retries",
+        "version": "20261017143828",
+        "statementCount": 1,
+        "firstStatementMd5": "7b8e08ebb7a4a2a5dd3cab6cdbccc450"
+      },
+      {
+        "name": "checkout_rate_limits",
+        "version": "20261019133218",
+        "statementCount": 1,
+        "firstStatementMd5": "8c0e5e2105803a6f49c7f157ef7005f1"
+      },
+      {
+        "name": "sales_plan_management",
+        "version": "20261019140859",
+        "statementCount": 1,
+        "firstStatementMd5": "7ce0ddef31748c73167b25d16903831b"
+      },
+      {
+        "name": "custom_sales_plan_drafts",
+        "version": "20261019173245",
+        "statementCount": 1,
+        "firstStatementMd5": "5d24f23dab87a5b862c93bcb71f68268"
+      },
+      {
+        "name": "atomic_plan_capacity_guards",
+        "version": "20261019174232",
+        "statementCount": 1,
+        "firstStatementMd5": "867d7533d0b85b80da916477165dabc1"
+      }
+    ],
+    "schemaFingerprints": {
+      "index": {
+        "md5": "1b1fe7991938b6084e56c5677ddc59b5",
+        "count": 131
+      },
+      "policy": {
+        "md5": "dd43516e2948011d59e8e622d3793fec",
+        "count": 1
+      },
+      "trigger": {
+        "md5": "ecc1760a836a65ab33791560035750d4",
+        "count": 4
+      },
+      "function": {
+        "md5": "359c60239fb75cbbd679eb29b1a697a6",
+        "count": 2
+      },
+      "relation": {
+        "md5": "f3ea56c040655b44a855e3c84e8ba92d",
+        "count": 38
+      },
+      "constraint": {
+        "md5": "22ec2ef4b25f49b33cf13a1e9ed47295",
+        "count": 244
+      }
+    }
+  }
+}
