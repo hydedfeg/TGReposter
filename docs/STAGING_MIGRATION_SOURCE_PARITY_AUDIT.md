@@ -44,3 +44,23 @@ The offline `tests/stagingMigrationSourceParity.test.ts` checks the 46-entry bas
 **Release blocker:** an actual protected staging PostgreSQL 17 backup must be restored to a network-isolated destination (with cron/pg_net and all Telegram/payment side effects disabled) and compared to a backup-time-matched baseline. Synthetic backups and a successful hash audit are not substitutes. Genuine two-account staging Auth acceptance remains separate.
 
 This audit is read-only and does not authorize a `supabase db push`, migration ledger repair, customer checkout, or production deployment.
+
+## Follow-up — reviewed executable SQL differences (October 27, 2026)
+
+**Result:** All three non-whitespace differences were explained by read-only inspection of the exact applied migration statements. **No migration replay or ledger rewrite is needed to explain these particular differences.**
+
+1. **`persist_user_ui_locale`**: The applied and repository SQL differ only in preceding line comments and formatting. After removing comments and whitespace in these reviewed files, the executable text has identical MD5 `2fa01506f6691ccd3699d1ca66a0f38d`. Staging currently has the `profiles.ui_locale` column.
+2. **`allow_zero_value_crypto_unassigned_observations`**: The repository adds explanatory line comments; the applied DDL and column/constraint comment statement match. Normalized MD5 is `ab0ad37735c6d40b1a21b6b0f08d4289`. Staging's check constraint remains `amount >= 0`.
+3. **`initial_schema`**: The repository source includes extra `pg_cron` extension/grants and `curator_settings` table/default-row setup that **were not part of the recorded initial applied SQL**. Those sections match two separately applied staging-only repair migrations:
+   - `repair_missing_pg_cron_baseline`: executable SQL MD5 `2fd06845ccedbcbd1dc41801ded3a452`
+   - `repair_missing_curator_settings_baseline`: executable SQL MD5 `5c1e3a273ecca1f15878c44da9da7f35`
+
+After removing exactly those two sections from the repository's normalized `initial_schema` SQL, its MD5 equals the applied initial migration's normalized MD5: `dc33311976e3c0d0586757b50393b0cb`. Read-only staging checks also confirmed `pg_cron` exists, `curator_settings` exists, its `default` row exists, and the `postgres` role retains `cron` schema usage. **Do not rerun the extra DDL merely because it appears in the repository initial migration.**
+
+The separate whitespace-only differences in `create_demo_requests`, `index_crypto_payment_event_transactions`, and `create_crypto_payment_network_state` were already identified; they remain recorded as such.
+
+### Regression evidence and limitations
+
+`tests/stagingHistoricalSqlDiscrepancies.test.ts` pins these five stored historical statement hashes and the reviewed normalized code equivalents without connecting to any database. It will fail if source SQL unexpectedly diverges. The normalizer is **deliberately limited to these reviewed statements**, not a general SQL parser or proof of runtime behavioral equivalence.
+
+The remaining **real staging backup/restore gate stays BLOCKED**. This historical source-vs-ledger explanation does not prove backup completeness, recovery readiness, extension compatibility or tenant data integrity. The pending `20261021154000_ai_reconciliation_backoff.sql` remains unapplied. Production and active staging schemas were not changed.
