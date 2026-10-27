@@ -2,7 +2,7 @@
 
 **Scope:** credential-free staging-only read authorization check; **not** production and **not** proof of real two-user acceptance.
 
-Workflow: `.github/workflows/staging-anonymous-api-smoke.yml`, branch `feat/commercial-staging-integration`. It is triggered when selected auth-sensitive route, acceptance script or workflow files are pushed to the branch, and can be run manually using GitHub Actions **Run workflow** on that branch *after* Railway has deployed the matching commit.
+Workflow: `.github/workflows/staging-anonymous-api-smoke.yml`, branch `feat/commercial-staging-integration`. It is triggered when selected auth-sensitive route, acceptance script or workflow files are pushed to the staging branch. **While this workflow file is not yet on the repository's default branch, GitHub's `Run workflow` button may not be available.** After a Railway deployment settles, re-run an existing completed successful smoke execution instead: GitHub **Actions → Staging anonymous API security smoke → select a run → Re-run jobs → Re-run all jobs** (subject to GitHub's re-run retention window). This re-run probes the then-live staging API; it does not attest the deployed source SHA. Once the workflow exists on the default branch, `workflow_dispatch` can also be used to select the staging branch.
 
 The workflow installs the locked dependencies on Node 22.23.0, refuses to run if staging test-account credentials or privileged database environment variables are present, and invokes:
 
