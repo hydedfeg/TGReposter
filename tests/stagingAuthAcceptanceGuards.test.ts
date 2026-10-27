@@ -52,3 +52,31 @@ test("foreign owner query overrides must not change channel or billing snapshots
    [{username:"owner_a"}],[],[],[]
  ),/override changed Alice/);
 });
+
+test("promotion owner overrides cannot change read-only bot, target or campaign snapshots",()=>{
+ const extra=[{
+  name:"promotion campaigns",
+  aliceOriginal:[{id:"only-alice"}],
+  aliceOverride:[{id:"only-alice"}],
+  bobOriginal:[],
+  bobOverride:[]
+ }];
+ assert.doesNotThrow(()=>assertIsolatedAccountEvidence(
+   free(),free(),free(),free(),[],[],[],[],extra
+ ));
+ assert.throws(()=>assertIsolatedAccountEvidence(
+   free(),free(),free(),free(),[],[],[],[],
+   [{...extra[0],aliceOverride:[{id:"foreign-owner-data"}]}]
+ ),/override changed Alice's private promotion campaigns/);
+ assert.throws(()=>assertIsolatedAccountEvidence(
+   free(),free(),free(),free(),[],[],[],[],
+   [{...extra[0],bobOverride:[{id:"foreign-owner-data"}]}]
+ ),/override changed Bob's private promotion campaigns/);
+});
+
+test("empty promotion resources alone do not establish positive owner isolation",()=>{
+ assert.throws(()=>assertIsolatedAccountEvidence(
+   free(),free(),free(),free(),[],[],[],[],
+   [{name:"promotion targets",aliceOriginal:[],aliceOverride:[],bobOriginal:[],bobOverride:[]}]
+ ),/INCONCLUSIVE/);
+});
