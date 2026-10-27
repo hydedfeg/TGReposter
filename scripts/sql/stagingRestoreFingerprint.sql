@@ -37,9 +37,64 @@ where n.nspname='public' and not t.tgisinternal
 select kind,count(*)::integer object_count,
 md5(coalesce(string_agg(object_key||E'\t'||definition,E'\n' order by object_key),'')) fingerprint
 from objects group by kind
+), owner_footprints AS (
+ select 'source_channels' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.source_channels
+ union all
+ select 'destination_targets' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.destination_targets
+ union all
+ select 'user_inbox_items' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.user_inbox_items
+ union all
+ select 'promotion_campaigns' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.promotion_campaigns
+ union all
+ select 'promotion_targets' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.promotion_targets
+ union all
+ select 'telegram_bot_accounts' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.telegram_bot_accounts
+ union all
+ select 'posts' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.posts
+ union all
+ select 'filters' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.filters
+ union all
+ select 'ai_usage_events' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.ai_usage_events
+ union all
+ select 'crypto_payment_invoices' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.crypto_payment_invoices
+ union all
+ select 'billing_subscription_orders' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.billing_subscription_orders
+ union all
+ select 'billing_ai_topup_orders' as table_name,count(*)::integer as row_count,
+ md5(coalesce(string_agg(coalesce(owner_principal,'<no-owner>'), E'\n' order by owner_principal nulls first),'')) as owner_md5
+ from public.billing_ai_topup_orders
 )
 SELECT jsonb_build_object(
  'postgresMajor', current_setting('server_version_num')::integer/10000,
+ 'authFootprint',jsonb_build_object(
+   'users',(select count(*)::integer from auth.users),
+   'confirmedUsers',(select count(*)::integer from auth.users where email_confirmed_at is not null),
+   'profiles',(select count(*)::integer from public.profiles),
+   'unmatchedProfiles',(select count(*)::integer from public.profiles p where not exists (select 1 from auth.users u where u.id=p.id))
+ ),
+ 'tenantFootprints',(select jsonb_object_agg(table_name,jsonb_build_object('rows',row_count,'ownerMd5',owner_md5)) from owner_footprints),
  'schemaFingerprints',(select jsonb_object_agg(kind,jsonb_build_object('count',object_count,'md5',fingerprint)) from f),
  'migrationLedger',(select coalesce(jsonb_agg(jsonb_build_object('version',version,'name',name,
     'statementCount',cardinality(statements),'firstStatementMd5',md5(coalesce(statements[1],'')))

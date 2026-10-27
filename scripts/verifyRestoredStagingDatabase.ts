@@ -12,14 +12,19 @@ const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const TARGET="tgreposter_staging_restore_verification";
 type M={version:string;name:string;statementCount:number;firstStatementMd5:string};
 export type Payload={postgresMajor:number;schemaFingerprints:Record<string,{count:number;md5:string}>;
-  migrationLedger:M[];commercial:Record<string,number|boolean>};
+  migrationLedger:M[];commercial:Record<string,number|boolean>;
+  authFootprint:Record<"users"|"confirmedUsers"|"profiles"|"unmatchedProfiles",number>;
+  tenantFootprints:Record<string,{rows:number;ownerMd5:string}>};
 export type Baseline={sourceProjectRef:string;recordedDate:string;payload:Payload};
 export function validatePrivateRestoreUrl(input:string){
   let url:URL;
   try{url=new URL(input);}catch{throw Error("Invalid private restore connection URL.");}
   if(!["postgres:","postgresql:"].includes(url.protocol)||
     !["localhost","127.0.0.1","[::1]"].includes(url.hostname)||
-    decodeURIComponent(url.pathname)!=="/"+TARGET||!url.username||url.hash){
+    decodeURIComponent(url.pathname)!=="/"+TARGET||!url.username||
+    // PostgreSQL connection parameters can override localhost authority.
+    // Reject host/hostaddr/service and ALL other URL query parameters.
+    url.search||url.hash){
     throw Error("Restore verifier refuses non-loopback or unexpected database targets.");
   }
 }
@@ -41,6 +46,25 @@ export function checkRestoredProvenance(reference:Baseline,actual:Payload):strin
  for(const k of Object.keys(old))if(now[k]!==old[k])errors.push("commercial "+k+" differs");
  if(now.backoffColumns!==0)errors.push("pending AI reconciliation migration already applied");
  if(now.entitlementEnforced!==false)errors.push("unexpected quota enforcement");
+ const expectedAuth=reference.payload.authFootprint||{} as Payload["authFootprint"];
+ const restoredAuth=actual.authFootprint||{} as Payload["authFootprint"];
+ const authKeys=Object.keys(expectedAuth).sort();
+ if(authKeys.length!==4||authKeys.join("|")!==Object.keys(restoredAuth).sort().join("|"))
+   errors.push("Auth/profile footprint fields differ");
+ for(const k of authKeys) if(restoredAuth[k as keyof Payload["authFootprint"]]!==expectedAuth[k as keyof Payload["authFootprint"]])
+   errors.push("Auth/profile "+k+" count differs");
+ if(restoredAuth.unmatchedProfiles!==0)errors.push("orphaned restored profile detected");
+ if(restoredAuth.confirmedUsers>restoredAuth.users)errors.push("invalid confirmed user count");
+ const ownerBefore=reference.payload.tenantFootprints||{};
+ const ownerAfter=actual.tenantFootprints||{};
+ if(Object.keys(ownerBefore).length!==12||
+    Object.keys(ownerBefore).sort().join("|")!==Object.keys(ownerAfter).sort().join("|"))
+   errors.push("tenant table footprint keys differ");
+ for(const [table,footprint] of Object.entries(ownerBefore)){
+   const next=ownerAfter[table];
+   if(!next||footprint.rows!==next.rows||footprint.ownerMd5!==next.ownerMd5)
+     errors.push("tenant footprint differs: "+table);
+ }
  return [...new Set(errors)];
 }
 async function main(){
@@ -67,7 +91,7 @@ async function main(){
    if(result.rows.length!==1)throw Error("Audit row count differs");
    const errors=checkRestoredProvenance(baseline,result.rows[0].audit_payload);
    if(errors.length)throw Error("Restore verification FAILED: "+errors.join("; "));
-   console.info("PASS: schema, 46 migration digests and commercial aggregates match baseline.");
+   console.info("PASS: schema, 46 migration digests, commercial, Auth/profile and 12 tenant ownership footprints match baseline.");
    console.info("This alone does NOT prove backup completeness, row integrity or recovery readiness.");
   }finally{await c.query("ROLLBACK").catch(()=>{});c.release();}
  }finally{await pool.end();}

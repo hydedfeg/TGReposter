@@ -1,8 +1,8 @@
 {
-  "purpose": "Metadata-only staging reference for a PRIVATE backup restore; not proof of a real backup",
+  "purpose": "Staging reference for PRIVATE restore: schema, migration, commercial and anonymized tenant/Auth metadata, NOT backup proof",
   "sourceProjectRef": "msmfilgdwuoymjhgtrmy",
   "recordedDate": "2026-10-27",
-  "sourceGitCommit": "a5eecd84f0eae8acf2dc828f5d01bf83e6859d1b",
+  "sourceGitCommit": "2f56be9b7cf100cd4e875e6ccc961e25a2aa7667",
   "payload": {
     "commercial": {
       "plans": 6,
@@ -317,6 +317,62 @@
       "constraint": {
         "md5": "22ec2ef4b25f49b33cf13a1e9ed47295",
         "count": 244
+      }
+    },
+    "authFootprint": {
+      "users": 3,
+      "profiles": 3,
+      "confirmedUsers": 3,
+      "unmatchedProfiles": 0
+    },
+    "tenantFootprints": {
+      "posts": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "filters": {
+        "rows": 3,
+        "ownerMd5": "5f2da813df2bff04a5728d73ea8825ae"
+      },
+      "ai_usage_events": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "source_channels": {
+        "rows": 2,
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "user_inbox_items": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "promotion_targets": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "destination_targets": {
+        "rows": 2,
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "promotion_campaigns": {
+        "rows": 2,
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "telegram_bot_accounts": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "billing_ai_topup_orders": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "crypto_payment_invoices": {
+        "rows": 2,
+        "ownerMd5": "d28b1af8c2f7eb90fb1bf79186d6ec5f"
+      },
+      "billing_subscription_orders": {
+        "rows": 0,
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
       }
     }
   }
