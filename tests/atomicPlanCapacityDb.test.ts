@@ -6,6 +6,9 @@ import path from "node:path";
 import {fileURLToPath} from "node:url";
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
+// Test cases execute sequentially; reset only their data so PGlite is started once.
+let sharedDb:PGlite|undefined;
+test.after(async()=>{if(sharedDb)await sharedDb.close();});
 const sql=fs.readFileSync(path.join(root,
   "supabase/migrations/20261019175500_atomic_plan_capacity_guards.sql"),"utf8");
 const alice="legacy:alice",bob="legacy:bob";
@@ -13,6 +16,10 @@ const blocked=(e:unknown)=>Boolean(e&&typeof e==="object"&&"code" in e&&
   (e as {code:unknown}).code==="PZ409");
 
 async function fixture(){
+  if(sharedDb){
+    await sharedDb.exec("truncate public.source_channels,public.destination_targets,public.promotion_targets,public.promotion_campaigns,public.billing_subscriptions restart identity; delete from public.billing_entitlement_enforcement; insert into public.billing_entitlement_enforcement(singleton,enabled) values(true,false);");
+    return sharedDb;
+  }
   const db=new PGlite();
   await db.exec([
     "create role anon;create role authenticated;create role service_role;",
@@ -25,6 +32,7 @@ async function fixture(){
     "create table public.promotion_campaigns(id bigserial primary key,owner_principal text not null,status text default 'draft');"
   ].join("\n"));
   await db.exec(sql);
+  sharedDb=db;
   return db;
 }
 async function paid(db:PGlite,owner=alice,plan="creator"){
@@ -39,7 +47,6 @@ const promoTarget=(db:PGlite,owner:string,id:string)=>db.query(
 
 test("capacity enforcement is disabled by default and customers cannot configure it",async()=>{
   const db=await fixture();
-  try{
     const policy=await db.query<{enabled:boolean}>(
       "select enabled from public.billing_entitlement_enforcement where singleton=true");
     assert.deepEqual(policy.rows,[{enabled:false}]);
@@ -50,12 +57,11 @@ test("capacity enforcement is disabled by default and customers cannot configure
     const count=await db.query<{n:number}>(
       "select count(*)::int as n from public.source_channels where owner_principal=$1",[alice]);
     assert.equal(count.rows[0].n,5);
-  }finally{await db.close();}
+  
 });
 
 test("direct source writes obey owner-specific free limits, including simultaneous calls",async()=>{
   const db=await fixture();
-  try{
     await db.exec("update public.billing_entitlement_enforcement set enabled=true");
     const outcomes=await Promise.allSettled(Array.from({length:9},(_,i)=>
       source(db,alice,"source"+i)));
@@ -69,12 +75,11 @@ test("direct source writes obey owner-specific free limits, including simultaneo
     await source(db,alice,"new");
     await assert.rejects(db.query(
       "update public.source_channels set enabled=true where owner_principal=$1 and username='source0'",[alice]),blocked);
-  }finally{await db.close();}
+  
 });
 
 test("personal and promotion targets share the same serialized destination cap",async()=>{
   const db=await fixture();
-  try{
     await db.exec("update public.billing_entitlement_enforcement set enabled=true");
     await personal(db,alice,"personal");
     await assert.rejects(promoTarget(db,alice,"campaign"),blocked);
@@ -85,12 +90,11 @@ test("personal and promotion targets share the same serialized destination cap",
     await paid(db);
     await db.query("update public.destination_targets set enabled=true where owner_principal=$1",[alice]);
     await assert.rejects(personal(db,alice,"third"),blocked);
-  }finally{await db.close();}
+  
 });
 
 test("campaign activation, retries, downgrades and Enterprise null limits",async()=>{
   const db=await fixture();
-  try{
     await db.exec("update public.billing_entitlement_enforcement set enabled=true");
     const r=await db.query<{id:number}>(
       "insert into public.promotion_campaigns(owner_principal) values($1) returning id",[alice]);
@@ -115,15 +119,14 @@ test("campaign activation, retries, downgrades and Enterprise null limits",async
       await source(db,bob,"s"+i);
       await db.query("insert into public.promotion_campaigns(owner_principal,status) values($1,'ready')",[bob]);
     }
-  }finally{await db.close();}
+  
 });
 
 test("a missing policy row cannot silently bypass enabled capacity enforcement",async()=>{
   const db=await fixture();
-  try{
     await db.exec("delete from public.billing_entitlement_enforcement");
     await assert.rejects(personal(db,alice,"x"),
       (e:unknown)=>Boolean(e&&typeof e==="object"&&"code" in e&&
         (e as {code:unknown}).code==="PZ500"));
-  }finally{await db.close();}
+  
 });
