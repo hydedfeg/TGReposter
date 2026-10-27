@@ -37,6 +37,14 @@ export function validateTwoTestAccounts(accounts: Array<{email?: string; passwor
   }
 }
 
+export interface StagingOwnerResourceEvidence {
+  name: string;
+  aliceOriginal: unknown[];
+  aliceOverride: unknown[];
+  bobOriginal: unknown[];
+  bobOverride: unknown[];
+}
+
 type Overview = {
   availability: string;
   plan?: { id: string };
@@ -65,7 +73,8 @@ export function assertIsolatedAccountEvidence(
   aliceOriginal:Overview, aliceOverride:Overview,
   bobOriginal:Overview, bobOverride:Overview,
   aliceChannels:unknown[], bobChannels:unknown[],
-  aliceChannelOverride:unknown[], bobChannelOverride:unknown[]
+  aliceChannelOverride:unknown[], bobChannelOverride:unknown[],
+  extraResources: ReadonlyArray<StagingOwnerResourceEvidence> = []
 ): void {
   assert.equal(ownerEvidence(aliceOriginal),ownerEvidence(aliceOverride),
     "An attempted owner override changed Alice's private billing view.");
@@ -75,9 +84,18 @@ export function assertIsolatedAccountEvidence(
     "An attempted owner override changed Alice's private source channels.");
   assert.deepEqual(bobChannels,bobChannelOverride,
     "An attempted owner override changed Bob's private source channels.");
+  // Include read-only promotion fixtures in the positive-evidence requirement.
+  // No customer content, bot credentials, or bearer tokens are logged.
+  const differentExtraResource = extraResources.map(resource => {
+    assert.deepEqual(resource.aliceOriginal, resource.aliceOverride,
+      "An attempted owner override changed Alice's private " + resource.name + ".");
+    assert.deepEqual(resource.bobOriginal, resource.bobOverride,
+      "An attempted owner override changed Bob's private " + resource.name + ".");
+    return JSON.stringify(resource.aliceOriginal) !== JSON.stringify(resource.bobOriginal);
+  }).some(Boolean);
   const differentBilling = ownerEvidence(aliceOriginal) !== ownerEvidence(bobOriginal);
   const differentChannels = JSON.stringify(aliceChannels) !== JSON.stringify(bobChannels);
-  assert.ok(differentBilling || differentChannels,
+  assert.ok(differentBilling || differentChannels || differentExtraResource,
     "INCONCLUSIVE: Both test accounts have indistinguishable read-only data. " +
     "Prepare distinct staging-only fixtures before certifying owner isolation.");
 }
