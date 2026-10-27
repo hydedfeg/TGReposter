@@ -2,6 +2,8 @@
  * Staging two-account Auth and billing isolation acceptance.
  *
  * NO purchase, subscription, mutation, Telegram message or test account creation.
+ * Scope: billing, source channels, promotion bots/targets/campaigns (read-only).
+ * A pass cannot certify authorization of write operations or production safety.
  * --preflight runs anonymously with no secrets and never attempts a login.
  *
  * Run credential-free: TGREPOSTER_STAGING_BASE_URL=https://tgreposter-staging-production.up.railway.app
@@ -41,21 +43,41 @@ async function getJson(path:string,init:RequestInit={}) {
   try{body=await response.json();}catch{body=null;}
   return {response,body:body as Record<string,any>|null};
 }
+const promotionResources = [
+  {path:"/api/promotion/bot-accounts",field:"botAccounts",name:"promotion bot accounts"},
+  {path:"/api/promotion/targets",field:"targets",name:"promotion targets"},
+  {path:"/api/promotion/campaigns",field:"campaigns",name:"promotion campaigns"}
+] as const;
+
 async function preflight() {
-  for(const path of ["/api/billing/overview",
-     "/api/billing/overview?owner_principal=supabase%3Aforged-override"]){
-    const anonymous=await getJson(path);
+  const privateReadPaths = [
+    "/api/billing/overview",
+    "/api/billing/overview?owner_principal=supabase%3Aforged-override",
+    "/api/billing/ai-credits/status",
+    "/api/billing/checkout/status",
+    "/api/channels",
+    ...promotionResources.map(resource => resource.path),
+    "/api/admin/sales-plans",
+    "/api/crypto-payments/overview",
+    "/api/settings"
+  ];
+  for (const path of privateReadPaths) {
+    const anonymous = await getJson(path);
     assert.equal(anonymous.response.status,401,
-      "Anonymous private billing API read must be denied.");
+      "Anonymous private staging API read must be denied: " + path.split("?")[0]);
   }
-  const forged=await getJson("/api/billing/overview",{
-    headers:{Authorization:"Bearer staging-acceptance-intentionally-invalid-jwt"}
-  });
-  assert.equal(forged.response.status,401,
-    "Invalid bearer JWT must be denied.");
-  const channels=await getJson("/api/channels");
-  assert.equal(channels.response.status,401,"Anonymous source-channel access must fail.");
-  console.info("PASS: anonymous, owner-override and forged-JWT staging API preflight (no credentials).");
+  for (const path of [
+    "/api/billing/overview",
+    "/api/billing/checkout/status",
+    "/api/promotion/campaigns"
+  ]) {
+    const forged = await getJson(path,{
+      headers:{Authorization:"Bearer staging-acceptance-intentionally-invalid-jwt"}
+    });
+    assert.equal(forged.response.status,401,
+      "Invalid bearer JWT must be denied: " + path);
+  }
+  console.info("PASS: read-only anonymous/forged-JWT staging preflight across billing, promotions, channels and operations.");
 }
 async function login(email:string,password:string) {
   const {response,body}=await getJson("/api/auth/login",{
@@ -100,6 +122,22 @@ async function channels(token:string,ownerOverride?:string){
   assert.ok(Array.isArray(body),"Source-channel response must be an array.");
   return body as unknown[];
 }
+async function promotionCollection(
+  token:string,
+  resource:typeof promotionResources[number],
+  ownerOverride?:string
+):Promise<unknown[]>{
+  const path=resource.path+(ownerOverride?
+    "?owner_principal="+encodeURIComponent(ownerOverride):"");
+  const {response,body}=await getJson(path,{
+    headers:{Authorization:"Bearer "+token}
+  });
+  assert.equal(response.status,200,"Owner " + resource.name + " unavailable.");
+  const items=body?.[resource.field];
+  assert.ok(Array.isArray(items), "Invalid " + resource.name + " response.");
+  return items as unknown[];
+}
+
 async function run(){
   await preflight();
   if(preflightOnly){
@@ -119,9 +157,21 @@ async function run(){
     channels(alice.token),channels(alice.token,bob.accountKey),
     channels(bob.token),channels(bob.token,alice.accountKey)
   ]);
-  assertIsolatedAccountEvidence(av,avOverride,bv,bvOverride,ac,bc,acOverride,bcOverride);
-  console.info("PASS: two real staging Supabase identities; distinguishable owner fixtures; " +
-    "foreign-owner overrides ineffective; no paid commercial data.");
+  const promotionEvidence=await Promise.all(promotionResources.map(async resource=>{
+    const [aliceOriginal,aliceOverride,bobOriginal,bobOverride]=await Promise.all([
+      promotionCollection(alice.token,resource),
+      promotionCollection(alice.token,resource,bob.accountKey),
+      promotionCollection(bob.token,resource),
+      promotionCollection(bob.token,resource,alice.accountKey)
+    ]);
+    return {name:resource.name,aliceOriginal,aliceOverride,bobOriginal,bobOverride};
+  }));
+  assertIsolatedAccountEvidence(
+    av,avOverride,bv,bvOverride,ac,bc,acOverride,bcOverride,promotionEvidence
+  );
+  console.info("PASS: two real staging Supabase identities; distinguishable billing/channel/promotion fixtures; " +
+    "foreign-owner read overrides ineffective; no paid commercial data.");
+  console.info("READ-ONLY: Write-operation authorization and private database restore remain separate release gates.");
 }
 run().catch(error=>{
   // Fail closed without any stack traces, JSON, emails, JWTs or passwords.
