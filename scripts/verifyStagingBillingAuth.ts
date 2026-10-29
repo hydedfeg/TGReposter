@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import {
   requireStagingBase, requireStagingApiUrl, refuseHttpRedirect,
   validateTwoTestAccounts, assertIsolatedAccountEvidence,
+  STAGING_PRIVATE_GET_PATHS,STAGING_FORGED_TOKEN_GET_PATHS,
 } from "./stagingAuthAcceptanceGuards";
 
 const args=process.argv.slice(2);
@@ -50,34 +51,21 @@ const promotionResources = [
 ] as const;
 
 async function preflight() {
-  const privateReadPaths = [
-    "/api/billing/overview",
-    "/api/billing/overview?owner_principal=supabase%3Aforged-override",
-    "/api/billing/ai-credits/status",
-    "/api/billing/checkout/status",
-    "/api/channels",
-    ...promotionResources.map(resource => resource.path),
-    "/api/admin/sales-plans",
-    "/api/crypto-payments/overview",
-    "/api/settings"
-  ];
-  for (const path of privateReadPaths) {
+  for (const path of STAGING_PRIVATE_GET_PATHS) {
     const anonymous = await getJson(path);
     assert.equal(anonymous.response.status,401,
       "Anonymous private staging API read must be denied: " + path.split("?")[0]);
   }
-  for (const path of [
-    "/api/billing/overview",
-    "/api/billing/checkout/status",
-    "/api/promotion/campaigns"
-  ]) {
+  for (const path of STAGING_FORGED_TOKEN_GET_PATHS) {
     const forged = await getJson(path,{
       headers:{Authorization:"Bearer staging-acceptance-intentionally-invalid-jwt"}
     });
     assert.equal(forged.response.status,401,
-      "Invalid bearer JWT must be denied: " + path);
+      "Invalid bearer JWT must be denied: " + path.split("?")[0]);
   }
-  console.info("PASS: read-only anonymous/forged-JWT staging preflight across billing, promotions, channels and operations.");
+  console.info("PASS: staging GET-only anonymous/forged-JWT denial on " +
+    STAGING_PRIVATE_GET_PATHS.length + " private reads and " +
+    STAGING_FORGED_TOKEN_GET_PATHS.length + " forged-token reads.");
 }
 async function login(email:string,password:string) {
   const {response,body}=await getJson("/api/auth/login",{

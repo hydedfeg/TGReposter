@@ -11,7 +11,7 @@ TGREPOSTER_STAGING_BASE_URL=https://tgreposter-staging-production.up.railway.app
   npx tsx scripts/verifyStagingBillingAuth.ts --preflight
 ```
 
-The script makes a bounded number of **GET** requests only against the exact staging origin, checks that private billing, checkout, channels, promotion targets/bots/campaigns, administration, settings and crypto monitoring routes reject anonymous requests with HTTP 401, and checks forged bearer tokens on selected routes. It never sends customer login passwords, genuine JWTs, Telegram messages or payment orders. Redirect responses fail closed.
+The script makes **23 unauthenticated GETs and 10 intentionally forged-token GETs** against the exact staging origin and fails on any response other than HTTP 401. Coverage includes billing overviews, credits, plan-change previews, checkout status and order lookup, source-channel owner overrides, promotion bots/targets/campaigns and campaign lookups, payment runtime and notification status and invoice lookup, plan administration, system settings, database health and AI model discovery. It never sends customer login passwords, genuine JWTs, Telegram messages or payment orders. Redirect responses fail closed.
 
 ## Interpretation
 

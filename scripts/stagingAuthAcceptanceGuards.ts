@@ -2,6 +2,51 @@ import assert from "node:assert/strict";
 
 export const STAGING_ORIGIN = "https://tgreposter-staging-production.up.railway.app";
 
+// Credential-free GET-only security acceptance contract for the LIVE staging API.
+// These are intentionally actual registered private routes, never mutations.
+// Fail closed on 404, redirect, 2xx, 403, or any response other than 401.
+const MISSING_ID = "00000000-0000-0000-0000-000000000000";
+const INVALID_OWNER = "owner_principal=supabase%3Aforged-override";
+export const STAGING_PRIVATE_GET_PATHS = [
+  "/api/billing/overview",
+  "/api/billing/overview?" + INVALID_OWNER,
+  "/api/billing/ai-credits/status",
+  "/api/billing/subscription/change-preview?targetPlanId=free",
+  "/api/billing/checkout/status",
+  "/api/billing/checkout/orders/" + MISSING_ID,
+  "/api/channels",
+  "/api/channels?" + INVALID_OWNER,
+  "/api/promotion/bot-accounts",
+  "/api/promotion/bot-accounts?" + INVALID_OWNER,
+  "/api/promotion/targets",
+  "/api/promotion/targets?" + INVALID_OWNER,
+  "/api/promotion/campaigns",
+  "/api/promotion/campaigns?" + INVALID_OWNER,
+  "/api/promotion/campaigns/" + MISSING_ID,
+  "/api/admin/sales-plans",
+  "/api/crypto-payments/status",
+  "/api/crypto-payments/overview",
+  "/api/crypto-payments/notifications/status",
+  "/api/crypto-payments/invoices/" + MISSING_ID,
+  "/api/settings",
+  "/api/supabase/status",
+  "/api/ai/openrouter/models",
+] as const;
+
+export const STAGING_FORGED_TOKEN_GET_PATHS = [
+  "/api/billing/overview",
+  "/api/billing/subscription/change-preview?targetPlanId=free",
+  "/api/billing/checkout/status",
+  "/api/billing/checkout/orders/" + MISSING_ID,
+  "/api/channels",
+  "/api/promotion/campaigns",
+  "/api/promotion/targets",
+  "/api/crypto-payments/notifications/status",
+  "/api/admin/sales-plans",
+  "/api/supabase/status",
+] as const;
+
+
 export function requireStagingBase(value: string | undefined): URL {
   if (!value) throw new Error("Specify TGREPOSTER_STAGING_BASE_URL explicitly.");
   let url: URL;

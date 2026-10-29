@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   requireStagingBase,requireStagingApiUrl,refuseHttpRedirect,
-  validateTwoTestAccounts,assertIsolatedAccountEvidence
+  validateTwoTestAccounts,assertIsolatedAccountEvidence,
+  STAGING_PRIVATE_GET_PATHS,STAGING_FORGED_TOKEN_GET_PATHS
 } from "../scripts/stagingAuthAcceptanceGuards";
 
 const free=(sources=0)=>({
@@ -79,4 +80,31 @@ test("empty promotion resources alone do not establish positive owner isolation"
    free(),free(),free(),free(),[],[],[],[],
    [{name:"promotion targets",aliceOriginal:[],aliceOverride:[],bobOriginal:[],bobOverride:[]}]
  ),/INCONCLUSIVE/);
+});
+
+test("staging preflight covers protected payment, billing, promotion, AI and database reads",()=>{
+ const paths=new Set(STAGING_PRIVATE_GET_PATHS);
+ assert.equal(paths.size,23,"Private GET list must not include duplicates.");
+ for(const p of [
+   "/api/billing/overview",
+   "/api/billing/checkout/orders/00000000-0000-0000-0000-000000000000",
+   "/api/billing/subscription/change-preview?targetPlanId=free",
+   "/api/crypto-payments/notifications/status",
+   "/api/crypto-payments/invoices/00000000-0000-0000-0000-000000000000",
+   "/api/promotion/campaigns/00000000-0000-0000-0000-000000000000",
+   "/api/supabase/status",
+   "/api/ai/openrouter/models",
+ ])assert.ok(paths.has(p),"Missing private route: "+p);
+ for(const path of STAGING_PRIVATE_GET_PATHS) {
+   const url=new URL(path,requireStagingBase("https://tgreposter-staging-production.up.railway.app"));
+   assert.doesNotThrow(()=>requireStagingApiUrl(url,requireStagingBase("https://tgreposter-staging-production.up.railway.app")));
+   assert.ok(!url.pathname.startsWith("/api/auth/"),"Preflight must not call authentication mutations.");
+   assert.equal(url.hash,"");
+ }
+});
+test("forged token paths are genuine private GET routes and unique",()=>{
+ const all=new Set(STAGING_PRIVATE_GET_PATHS);
+ const forged=new Set(STAGING_FORGED_TOKEN_GET_PATHS);
+ assert.equal(forged.size,10,"Forged bearer list must have 10 unique reads.");
+ for(const path of forged)assert.ok(all.has(path),"Unknown forged-token route: "+path);
 });
