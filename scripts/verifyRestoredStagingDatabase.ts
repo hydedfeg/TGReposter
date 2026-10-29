@@ -10,6 +10,16 @@ import pg from "pg";
 import {evaluateRestoreSideEffectSafety, type RestoreSideEffectState} from "./stagingRestoreSideEffectSafety";
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const TARGET="tgreposter_staging_restore_verification";
+/**
+ * Clone-only operator attestation; added AFTER restore and network quarantine.
+ * This deliberately does not occur in the source staging database or a dump.
+ */
+export const PRIVATE_RESTORE_ATTESTATION="TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v1";
+export function requirePrivateRestoreAttestation(value:unknown):void{
+ if(value!==PRIVATE_RESTORE_ATTESTATION){
+   throw Error("Private restore operator attestation missing or invalid.");
+ }
+}
 type M={version:string;name:string;statementCount:number;firstStatementMd5:string};
 export type Payload={postgresMajor:number;schemaFingerprints:Record<string,{count:number;md5:string}>;
   migrationLedger:M[];commercial:Record<string,number|boolean>;
@@ -84,6 +94,13 @@ async function main(){
    await c.query("SET LOCAL statement_timeout='20s'");
    const id=await c.query<{db:string}>("SELECT current_database() AS db");
    if(id.rows[0]?.db!==TARGET)throw Error("Restored database identity differs");
+   // A loopback URL can still be an SSH tunnel to a live database.
+   // Require an explicit marker that was written ONLY into the quarantined
+   // restored clone after the operator disabled external side effects.
+   const attestation=await c.query<{attestation:string|null}>(
+     "SELECT shobj_description(oid,'pg_database') AS attestation " +
+     "FROM pg_database WHERE datname=current_database()");
+   requirePrivateRestoreAttestation(attestation.rows[0]?.attestation);
    const safety=await c.query<{safety_state:RestoreSideEffectState}>(sideEffectSql);
    const problems=evaluateRestoreSideEffectSafety(safety.rows[0]?.safety_state);
    if(problems.length)throw Error("Restore side-effect gate FAILED: "+problems.join("; "));
@@ -102,7 +119,9 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
   if(message.startsWith("Restore side-effect gate FAILED:")||
      message.startsWith("Restore verification FAILED:")||message.startsWith("Provide ")||
      message.startsWith("Restore verifier refuses")||message.startsWith("Invalid ")||
-     message.startsWith("Restored database identity")||message.startsWith("Audit row count"))
+     message.startsWith("Restored database identity")||
+     message.startsWith("Private restore operator attestation")||
+     message.startsWith("Audit row count"))
     console.error(message);
   else console.error("Restore verifier failed; inspect the trusted private environment.");
   process.exitCode=1;

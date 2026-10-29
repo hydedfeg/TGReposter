@@ -22,8 +22,9 @@ Date: October 27, 2026. Scope: staging only; no live database schema/config chan
 1. Establish a network-egress-denied destination **before** initiating a real backup clone or restoring files. This SQL check cannot prevent cron/pg_net actions that occur before the test runs.
 2. Obtain approval for a real encrypted staging backup. Supabase Restore to a New Project is an optional paid/beta process; it includes Auth users and may replicate executable extension jobs. Do not clone customer data to a public CI sandbox.
 3. In the isolated copy, stop all cron jobs and other external workers, quarantine queued pg_net requests, and disable Telegram publishing, payment watchers, webhooks and email sends.
-4. Connect privately through localhost to a clone called tgreposter_staging_restore_verification and run the existing command: npx tsx scripts/verifyRestoredStagingDatabase.ts, with the database URL passed privately using RESTORED_STAGING_POSTGRES_URL.
-5. Even a PASS requires backup integrity, row-level recovery, external Storage objects, credentials/extension compatibility and rollback verification. Do not apply staging DDL or repair historical migration ledger without separate authorization.
+4. Independently confirm the restore is isolated and network egress is blocked. In a separate privileged session, set the **clone-only database COMMENT** `TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v1` on `tgreposter_staging_restore_verification`, after side effects are disabled (see `docs/STAGING_RESTORE_PROVENANCE_VERIFICATION.md`). Never write this attestation to live staging or production. The verifier rejects a missing or mismatched comment before reading restored catalogs; the comment alone is not proof of isolation.
+5. Connect privately through localhost to that exact clone and run `npx tsx scripts/verifyRestoredStagingDatabase.ts`, with the DB URL passed privately using `RESTORED_STAGING_POSTGRES_URL`.
+6. Even a PASS requires backup integrity, row-level recovery, external Storage objects, credentials/extension compatibility and rollback verification. Do not apply staging DDL or repair historical migration ledger without separate authorization.
 
 Source guidance: https://supabase.com/docs/guides/platform/clone-project
 Source guidance: https://supabase.com/docs/guides/auth/password-security

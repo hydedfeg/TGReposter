@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {validatePrivateRestoreUrl,checkRestoredProvenance} from "../scripts/verifyRestoredStagingDatabase";
+import {
+ validatePrivateRestoreUrl,checkRestoredProvenance,
+ PRIVATE_RESTORE_ATTESTATION,requirePrivateRestoreAttestation
+} from "../scripts/verifyRestoredStagingDatabase";
 const b=JSON.parse(fs.readFileSync("docs/staging-restore-provenance-baseline.json","utf8"));
 const copy=()=>structuredClone(b.payload);
 test("restore audit can only target the exact local restored database",()=>{
@@ -64,4 +67,25 @@ test("missing auth section or replacement tenant footprint map fails closed",()=
  const errors=checkRestoredProvenance(b,p).join("; ");
  assert.match(errors,/Auth\/profile footprint fields differ/);
  assert.match(errors,/tenant table footprint keys differ/);
+});
+
+test("restored database requires a clone-only operator attestation before schema checks",()=>{
+ assert.equal(PRIVATE_RESTORE_ATTESTATION,"TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v1");
+ assert.doesNotThrow(()=>requirePrivateRestoreAttestation(PRIVATE_RESTORE_ATTESTATION));
+ for(const value of [null,undefined,"",false,
+   "TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED",
+   "TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v2",
+   "tgreposter_private_restore_operator_attested_v1",
+   ["TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v1"]]){
+   assert.throws(()=>requirePrivateRestoreAttestation(value),/attestation missing or invalid/);
+ }
+});
+test("private verifier reads pg_database comment before scanning restored catalog",()=>{
+ const body=fs.readFileSync("scripts/verifyRestoredStagingDatabase.ts","utf8");
+ const marker=body.indexOf("requirePrivateRestoreAttestation(attestation.rows[0]?.attestation)");
+ const sideEffects=body.indexOf("evaluateRestoreSideEffectSafety(safety.rows[0]?.safety_state)");
+ const provenance=body.indexOf("checkRestoredProvenance(baseline,result.rows[0].audit_payload)");
+ assert.ok(body.includes("shobj_description(oid,'pg_database')"));
+ assert.ok(marker>=0&&sideEffects>marker&&provenance>sideEffects,
+   "Refuse inspection until clone attestation and side-effect checks pass.");
 });

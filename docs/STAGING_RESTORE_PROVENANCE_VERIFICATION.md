@@ -12,7 +12,20 @@ Obtain an approved encrypted **actual staging backup** and restore it inside a r
 
 Ensure the reference baseline was captured **at the backup's exact point in time**. This snapshot will not automatically match backups from earlier or later dates. Recalculate and review a time-matched baseline before comparison when necessary.
 
-Use a secured localhost tunnel to a private DB named `tgreposter_staging_restore_verification`. Provide its connection URL in the operator's private environment as `RESTORED_STAGING_POSTGRES_URL` and execute `npx tsx scripts/verifyRestoredStagingDatabase.ts`. The script refuses any non-loopback target and performs only queries in a READ ONLY transaction. It will not connect to production or live staging.
+Use a secured localhost tunnel to a private DB named `tgreposter_staging_restore_verification`. **Before any verification,** isolate the restored environment at the network/firewall level and disable cron, pg_net queues, Telegram, payment workers, email and webhook side effects. A localhost tunnel alone is insufficient: it could point to a live database.
+
+After verifying these external restrictions, in a **separate privileged session connected to the isolated restored database only**, the authorized operator must explicitly attest the isolated clone:
+
+```sql
+-- STOP: only on the privately restored, egress-blocked PostgreSQL 17 clone.
+SELECT current_database(); -- expect tgreposter_staging_restore_verification
+COMMENT ON DATABASE tgreposter_staging_restore_verification
+  IS 'TGREPOSTER_PRIVATE_RESTORE_OPERATOR_ATTESTED_v1';
+```
+
+This database-level comment is an **operator attestation**, not a technical guarantee of network isolation, backup completeness, or a substitute for independent firewall verification. It must be written only **after** the backup has been restored and side effects disabled, never in live staging, production, a generic template database or the source archive. The comment does not affect the public-schema fingerprint.
+
+Provide the connection URL privately via `RESTORED_STAGING_POSTGRES_URL` and run `npx tsx scripts/verifyRestoredStagingDatabase.ts`. The verifier validates loopback and exact database name, checks this database comment **before** inspecting restored state, rejects active side effects, then compares the baseline. All verifier SQL runs in a READ ONLY transaction; it never creates or sets the attestation itself. It is not a live staging/production acceptance test.
 
 Even a PASS does **not** prove row-for-row backup consistency, external object storage, full Supabase extensions/roles, freshness or actual recoverability; these require separate protected restore audits, backup integrity checks, and approved rollback procedures. Never blindly replay the 23 historical migration aliases or two staging-only repairs, never manually rewrite migration history, and don't apply `20261021154000_ai_reconciliation_backoff.sql` on staging before separate approval.
 
