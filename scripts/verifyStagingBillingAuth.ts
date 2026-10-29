@@ -16,6 +16,7 @@
  * Do not execute the real-account mode on a public runner.
  */
 import assert from "node:assert/strict";
+import {requireDistinctOwnerFixtures,assertCampaignDetailRead} from "./stagingRealOwnerFixtureGuards";
 import {
   requireStagingBase, requireStagingApiUrl, refuseHttpRedirect,
   validateTwoTestAccounts, assertIsolatedAccountEvidence,
@@ -157,7 +158,31 @@ async function run(){
   assertIsolatedAccountEvidence(
     av,avOverride,bv,bvOverride,ac,bc,acOverride,bcOverride,promotionEvidence
   );
-  console.info("PASS: two real staging Supabase identities; distinguishable billing/channel/promotion fixtures; " +
+  // Two independently owned source rows and two independently owned
+  // campaign rows are required; a billing-only difference is insufficient.
+  const campaigns=promotionEvidence.find(entry=>entry.name==="promotion campaigns");
+  assert.ok(campaigns,"Promotion campaign verification was omitted.");
+  const {aliceCampaignId,bobCampaignId}=requireDistinctOwnerFixtures(
+    ac,bc,campaigns.aliceOriginal,campaigns.bobOriginal
+  );
+  // Read-only cross-owner probe: owner detail returns 200, foreign detail
+  // must return generic 404/NOT_FOUND without campaign/posts/deliveries.
+  const [aliceOwn,bobOwn,aliceForeign,bobForeign]=await Promise.all([
+    getJson("/api/promotion/campaigns/"+encodeURIComponent(aliceCampaignId),
+      {headers:{Authorization:"Bearer "+alice.token}}),
+    getJson("/api/promotion/campaigns/"+encodeURIComponent(bobCampaignId),
+      {headers:{Authorization:"Bearer "+bob.token}}),
+    getJson("/api/promotion/campaigns/"+encodeURIComponent(bobCampaignId),
+      {headers:{Authorization:"Bearer "+alice.token}}),
+    getJson("/api/promotion/campaigns/"+encodeURIComponent(aliceCampaignId),
+      {headers:{Authorization:"Bearer "+bob.token}})
+  ]);
+  assertCampaignDetailRead(aliceOwn.response.status,aliceOwn.body,aliceCampaignId,true);
+  assertCampaignDetailRead(bobOwn.response.status,bobOwn.body,bobCampaignId,true);
+  assertCampaignDetailRead(aliceForeign.response.status,aliceForeign.body,bobCampaignId,false);
+  assertCampaignDetailRead(bobForeign.response.status,bobForeign.body,aliceCampaignId,false);
+  console.info("PASS: two real staging Supabase identities; separate source and campaign rows; "+
+    "own campaign details readable and foreign campaign details denied; "+
     "foreign-owner read overrides ineffective; no paid commercial data.");
   console.info("READ-ONLY: Write-operation authorization and private database restore remain separate release gates.");
 }
