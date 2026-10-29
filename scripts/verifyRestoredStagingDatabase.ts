@@ -10,6 +10,7 @@ import pg from "pg";
 import {evaluateRestoreSideEffectSafety, type RestoreSideEffectState} from "./stagingRestoreSideEffectSafety";
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"..");
 const TARGET="tgreposter_staging_restore_verification";
+const ROW_ALGORITHM="pg17-jsonb-row-md5-sorted-aggregate-v1";
 /**
  * Clone-only operator attestation; added AFTER restore and network quarantine.
  * This deliberately does not occur in the source staging database or a dump.
@@ -24,8 +25,8 @@ type M={version:string;name:string;statementCount:number;firstStatementMd5:strin
 export type Payload={postgresMajor:number;schemaFingerprints:Record<string,{count:number;md5:string}>;
   migrationLedger:M[];commercial:Record<string,number|boolean>;
   authFootprint:Record<"users"|"confirmedUsers"|"profiles"|"unmatchedProfiles",number>;
-  tenantFootprints:Record<string,{rows:number;ownerMd5:string}>};
-export type Baseline={sourceProjectRef:string;recordedDate:string;payload:Payload};
+  tenantFootprints:Record<string,{rows:number;ownerMd5:string;rowMd5:string}>};
+export type Baseline={sourceProjectRef:string;recordedDate:string;rowFingerprintAlgorithm:string;payload:Payload};
 export function validatePrivateRestoreUrl(input:string){
   let url:URL;
   try{url=new URL(input);}catch{throw Error("Invalid private restore connection URL.");}
@@ -41,6 +42,7 @@ export function validatePrivateRestoreUrl(input:string){
 export function checkRestoredProvenance(reference:Baseline,actual:Payload):string[]{
  const errors:string[]=[];
  if(reference.sourceProjectRef!=="msmfilgdwuoymjhgtrmy")errors.push("unexpected baseline project");
+ if(reference.rowFingerprintAlgorithm!==ROW_ALGORITHM)errors.push("unknown baseline row fingerprint algorithm");
  if(reference.payload.postgresMajor!==17||actual.postgresMajor!==17)errors.push("PostgreSQL major version differs");
  const a=reference.payload.schemaFingerprints,b=actual.schemaFingerprints||{};
  if(Object.keys(a).sort().join("|")!==Object.keys(b).sort().join("|"))errors.push("public schema categories differ");
@@ -74,6 +76,12 @@ export function checkRestoredProvenance(reference:Baseline,actual:Payload):strin
    const next=ownerAfter[table];
    if(!next||footprint.rows!==next.rows||footprint.ownerMd5!==next.ownerMd5)
      errors.push("tenant footprint differs: "+table);
+   // Fail closed even if row counts and owner distributions are unchanged.
+   if(typeof footprint.rowMd5!=="string"||!/^[0-9a-f]{32}$/.test(footprint.rowMd5))
+     errors.push("invalid baseline row content digest: "+table);
+   if(!next||typeof next.rowMd5!=="string"||!/^[0-9a-f]{32}$/.test(next.rowMd5)||
+      footprint.rowMd5!==next.rowMd5)
+     errors.push("tenant row content differs: "+table);
  }
  return [...new Set(errors)];
 }
@@ -92,6 +100,11 @@ async function main(){
   try{
    await c.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
    await c.query("SET LOCAL statement_timeout='20s'");
+   // JSONB renders time-sensitive types using session settings.
+   // Pin these on the private restore to match the source staging snapshot.
+   await c.query("SET LOCAL TIME ZONE 'UTC'");
+   await c.query("SET LOCAL DateStyle TO 'ISO, MDY'");
+   await c.query("SET LOCAL IntervalStyle TO 'postgres'");
    const id=await c.query<{db:string}>("SELECT current_database() AS db");
    if(id.rows[0]?.db!==TARGET)throw Error("Restored database identity differs");
    // A loopback URL can still be an SSH tunnel to a live database.
@@ -108,7 +121,7 @@ async function main(){
    if(result.rows.length!==1)throw Error("Audit row count differs");
    const errors=checkRestoredProvenance(baseline,result.rows[0].audit_payload);
    if(errors.length)throw Error("Restore verification FAILED: "+errors.join("; "));
-   console.info("PASS: schema, 46 migration digests, commercial, Auth/profile and 12 tenant ownership footprints match baseline.");
+   console.info("PASS: schema, 46 migration digests, commercial, Auth/profile and 12 tenant ownership/full-row content fingerprints match baseline.");
    console.info("This alone does NOT prove backup completeness, row integrity or recovery readiness.");
   }finally{await c.query("ROLLBACK").catch(()=>{});c.release();}
  }finally{await pool.end();}

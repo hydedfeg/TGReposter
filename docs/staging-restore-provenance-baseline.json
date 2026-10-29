@@ -1,8 +1,8 @@
 {
-  "purpose": "Staging reference for PRIVATE restore: schema, migration, commercial and anonymized tenant/Auth metadata, NOT backup proof",
+  "purpose": "Staging reference for PRIVATE restore: hashed schema, historical migrations, anonymized tenant ownership/row-content fingerprints, and Auth/commercial counts; NOT a backup",
   "sourceProjectRef": "msmfilgdwuoymjhgtrmy",
-  "recordedDate": "2026-10-27",
-  "sourceGitCommit": "2f56be9b7cf100cd4e875e6ccc961e25a2aa7667",
+  "recordedDate": "2026-10-29",
+  "sourceGitCommit": "6c9d7769260d63da94f87d7e3ff564147375e92b",
   "payload": {
     "commercial": {
       "plans": 6,
@@ -13,6 +13,12 @@
       "publishedPlans": 0,
       "subscriptionOrders": 0,
       "entitlementEnforced": false
+    },
+    "authFootprint": {
+      "users": 3,
+      "profiles": 3,
+      "confirmedUsers": 3,
+      "unmatchedProfiles": 0
     },
     "postgresMajor": 17,
     "migrationLedger": [
@@ -293,6 +299,68 @@
         "firstStatementMd5": "867d7533d0b85b80da916477165dabc1"
       }
     ],
+    "tenantFootprints": {
+      "posts": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "filters": {
+        "rows": 3,
+        "rowMd5": "6ac07960396cb22c4f923ef42c337211",
+        "ownerMd5": "5f2da813df2bff04a5728d73ea8825ae"
+      },
+      "ai_usage_events": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "source_channels": {
+        "rows": 2,
+        "rowMd5": "d9f30398ba451ddedff3bd1a5ab297b0",
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "user_inbox_items": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "promotion_targets": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "destination_targets": {
+        "rows": 2,
+        "rowMd5": "9f3ce995d28b09c3451cc55e5d214b5b",
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "promotion_campaigns": {
+        "rows": 2,
+        "rowMd5": "dfff1744f29615a42ee89f43b6223861",
+        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
+      },
+      "telegram_bot_accounts": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "billing_ai_topup_orders": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      },
+      "crypto_payment_invoices": {
+        "rows": 2,
+        "rowMd5": "120178021001418052a76e6e96b1b0e9",
+        "ownerMd5": "d28b1af8c2f7eb90fb1bf79186d6ec5f"
+      },
+      "billing_subscription_orders": {
+        "rows": 0,
+        "rowMd5": "d41d8cd98f00b204e9800998ecf8427e",
+        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
+      }
+    },
     "schemaFingerprints": {
       "index": {
         "md5": "1b1fe7991938b6084e56c5677ddc59b5",
@@ -318,62 +386,7 @@
         "md5": "22ec2ef4b25f49b33cf13a1e9ed47295",
         "count": 244
       }
-    },
-    "authFootprint": {
-      "users": 3,
-      "profiles": 3,
-      "confirmedUsers": 3,
-      "unmatchedProfiles": 0
-    },
-    "tenantFootprints": {
-      "posts": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "filters": {
-        "rows": 3,
-        "ownerMd5": "5f2da813df2bff04a5728d73ea8825ae"
-      },
-      "ai_usage_events": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "source_channels": {
-        "rows": 2,
-        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
-      },
-      "user_inbox_items": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "promotion_targets": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "destination_targets": {
-        "rows": 2,
-        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
-      },
-      "promotion_campaigns": {
-        "rows": 2,
-        "ownerMd5": "0c2e149441802778f117ae07298f35e3"
-      },
-      "telegram_bot_accounts": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "billing_ai_topup_orders": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      },
-      "crypto_payment_invoices": {
-        "rows": 2,
-        "ownerMd5": "d28b1af8c2f7eb90fb1bf79186d6ec5f"
-      },
-      "billing_subscription_orders": {
-        "rows": 0,
-        "ownerMd5": "d41d8cd98f00b204e9800998ecf8427e"
-      }
     }
-  }
+  },
+  "rowFingerprintAlgorithm": "pg17-jsonb-row-md5-sorted-aggregate-v1"
 }

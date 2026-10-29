@@ -89,3 +89,41 @@ test("private verifier reads pg_database comment before scanning restored catalo
  assert.ok(marker>=0&&sideEffects>marker&&provenance>sideEffects,
    "Refuse inspection until clone attestation and side-effect checks pass.");
 });
+
+test("all 12 tenant content digests are hashed metadata, not raw row values",()=>{
+ assert.equal(b.rowFingerprintAlgorithm,"pg17-jsonb-row-md5-sorted-aggregate-v1");
+ assert.equal(Object.keys(b.payload.tenantFootprints).length,12);
+ for(const value of Object.values(b.payload.tenantFootprints) as Array<{rowMd5:string;ownerMd5:string;rows:number}>){
+   assert.match(value.rowMd5,/^[0-9a-f]{32}$/);
+   assert.match(value.ownerMd5,/^[0-9a-f]{32}$/);
+   assert.ok(Number.isInteger(value.rows)&&value.rows>=0);
+ }
+});
+test("same row count and owner, but altered row content fails restored provenance",()=>{
+ const p=copy(),row=p.tenantFootprints.source_channels;
+ const originalCount=row.rows, originalOwner=row.ownerMd5;
+ row.rowMd5=row.rowMd5==="a".repeat(32)?"b".repeat(32):"a".repeat(32);
+ assert.equal(row.rows,originalCount);
+ assert.equal(row.ownerMd5,originalOwner);
+ assert.match(checkRestoredProvenance(b,p).join(";"),/tenant row content differs: source_channels/);
+});
+test("missing, malformed and unsupported content digests fail closed",()=>{
+ const missing=copy();delete missing.tenantFootprints.promotion_campaigns.rowMd5;
+ assert.match(checkRestoredProvenance(b,missing).join(";"),/tenant row content differs: promotion_campaigns/);
+ const bad=copy();bad.tenantFootprints.filters.rowMd5="not-a-digest";
+ assert.match(checkRestoredProvenance(b,bad).join(";"),/tenant row content differs: filters/);
+ const reference=structuredClone(b);delete reference.payload.tenantFootprints.source_channels.rowMd5;
+ assert.match(checkRestoredProvenance(reference,copy()).join(";"),/invalid baseline row content digest/);
+ const unknown=structuredClone(b);unknown.rowFingerprintAlgorithm="unknown";
+ assert.match(checkRestoredProvenance(unknown,copy()).join(";"),/unknown baseline row fingerprint algorithm/);
+});
+test("SQL audits the full content of all 12 tenant tables without exporting rows",()=>{
+ const sql=fs.readFileSync("scripts/sql/stagingRestoreFingerprint.sql","utf8");
+ assert.equal((sql.match(/as row_md5/g)||[]).length,12);
+ assert.equal((sql.match(/md5\(to_jsonb\(t\)::text\)/g)||[]).length,24);
+ assert.match(sql,/'rowMd5',row_md5/);
+ assert.doesNotMatch(sql,/SELECT\s+\*\s+FROM\s+public\./i);
+ const code=fs.readFileSync("scripts/verifyRestoredStagingDatabase.ts","utf8");
+ for(const stmt of ["SET LOCAL TIME ZONE 'UTC'","SET LOCAL DateStyle TO 'ISO, MDY'","SET LOCAL IntervalStyle TO 'postgres'"])
+   assert.ok(code.includes(stmt),stmt);
+});
