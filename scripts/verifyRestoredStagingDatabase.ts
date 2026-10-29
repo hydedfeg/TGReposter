@@ -27,6 +27,28 @@ export type Payload={postgresMajor:number;schemaFingerprints:Record<string,{coun
   authFootprint:Record<"users"|"confirmedUsers"|"profiles"|"unmatchedProfiles",number>;
   tenantFootprints:Record<string,{rows:number;ownerMd5:string;rowMd5:string}>};
 export type Baseline={sourceProjectRef:string;recordedDate:string;rowFingerprintAlgorithm:string;payload:Payload};
+/**
+ * The committed example snapshot becomes stale when source staging changes.
+ * Only accept a private, backup-time-matched reference outside the repo.
+ * Explicit file, restrictive permissions, no symlinks and no credentials.
+ */
+export function validatePrivateRestoreReferenceFile(input:string|undefined):string{
+ if(!input||!path.isAbsolute(input))
+   throw Error("Provide an absolute private backup-time reference file path.");
+ let file:fs.Stats,real:string;
+ try{
+   file=fs.lstatSync(input);
+   real=fs.realpathSync(input);
+ }catch{
+   throw Error("Private backup-time reference file cannot be read.");
+ }
+ if(!file.isFile()||file.isSymbolicLink()||file.size>1024*1024||
+    (process.platform!=="win32"&&(file.mode&0o077)!==0)||
+    (typeof process.getuid==="function"&&file.uid!==process.getuid())||
+    real===ROOT||real.startsWith(ROOT+path.sep))
+   throw Error("Private backup-time reference must be a restricted regular file outside the repository.");
+ return real;
+}
 export function validatePrivateRestoreUrl(input:string){
   let url:URL;
   try{url=new URL(input);}catch{throw Error("Invalid private restore connection URL.");}
@@ -89,8 +111,16 @@ async function main(){
  const value=process.env.RESTORED_STAGING_POSTGRES_URL;
  if(!value)throw Error("Provide RESTORED_STAGING_POSTGRES_URL privately.");
  validatePrivateRestoreUrl(value);
- const baseline=JSON.parse(fs.readFileSync(path.join(ROOT,
-   "docs/staging-restore-provenance-baseline.json"),"utf8")) as Baseline;
+ const manifestPath=validatePrivateRestoreReferenceFile(
+   process.env.RESTORED_STAGING_REFERENCE_FILE);
+ let baseline:Baseline;
+ try{baseline=JSON.parse(fs.readFileSync(manifestPath,"utf8")) as Baseline;}
+ catch{throw Error("Private backup-time reference is not valid JSON.");}
+ if(!baseline||typeof baseline!=="object"||baseline.sourceProjectRef!=="msmfilgdwuoymjhgtrmy"||
+    baseline.rowFingerprintAlgorithm!==ROW_ALGORITHM||!baseline.payload||
+    !baseline.payload.schemaFingerprints||!baseline.payload.migrationLedger||
+    !baseline.payload.tenantFootprints||!baseline.payload.authFootprint)
+   throw Error("Private backup-time reference has invalid provenance fields.");
  const query=fs.readFileSync(path.join(ROOT,"scripts/sql/stagingRestoreFingerprint.sql"),"utf8");
  const sideEffectSql=fs.readFileSync(path.join(ROOT,"scripts/sql/stagingRestoreSideEffectGate.sql"),"utf8");
  const pool=new pg.Pool({connectionString:value,max:1,connectionTimeoutMillis:7000,
@@ -134,6 +164,8 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
      message.startsWith("Restore verifier refuses")||message.startsWith("Invalid ")||
      message.startsWith("Restored database identity")||
      message.startsWith("Private restore operator attestation")||
+     message.startsWith("Provide an absolute private backup-time")||
+     message.startsWith("Private backup-time reference")||
      message.startsWith("Audit row count"))
     console.error(message);
   else console.error("Restore verifier failed; inspect the trusted private environment.");

@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
  validatePrivateRestoreUrl,checkRestoredProvenance,
- PRIVATE_RESTORE_ATTESTATION,requirePrivateRestoreAttestation
+ PRIVATE_RESTORE_ATTESTATION,requirePrivateRestoreAttestation,
+ validatePrivateRestoreReferenceFile
 } from "../scripts/verifyRestoredStagingDatabase";
 const b=JSON.parse(fs.readFileSync("docs/staging-restore-provenance-baseline.json","utf8"));
 const copy=()=>structuredClone(b.payload);
@@ -126,4 +129,30 @@ test("SQL audits the full content of all 12 tenant tables without exporting rows
  const code=fs.readFileSync("scripts/verifyRestoredStagingDatabase.ts","utf8");
  for(const stmt of ["SET LOCAL TIME ZONE 'UTC'","SET LOCAL DateStyle TO 'ISO, MDY'","SET LOCAL IntervalStyle TO 'postgres'"])
    assert.ok(code.includes(stmt),stmt);
+});
+
+test("real restore requires a separate private backup-point reference, never the repo example",()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),"tgreposter-reference-"));
+ try{
+   const secure=path.join(dir,"backup-point.json");
+   fs.writeFileSync(secure,JSON.stringify(b),{mode:0o600});
+   assert.equal(validatePrivateRestoreReferenceFile(secure),fs.realpathSync(secure));
+   assert.throws(()=>validatePrivateRestoreReferenceFile(undefined),/absolute private/);
+   assert.throws(()=>validatePrivateRestoreReferenceFile("docs/staging-restore-provenance-baseline.json"),/absolute private/);
+   const repoExample=path.resolve("docs/staging-restore-provenance-baseline.json");
+   assert.throws(()=>validatePrivateRestoreReferenceFile(repoExample),/outside the repository/);
+   const worldReadable=path.join(dir,"public.json");
+   fs.writeFileSync(worldReadable,"{}",{mode:0o644});
+   assert.throws(()=>validatePrivateRestoreReferenceFile(worldReadable),/restricted regular file/);
+   const symlink=path.join(dir,"link.json");
+   fs.symlinkSync(secure,symlink);
+   assert.throws(()=>validatePrivateRestoreReferenceFile(symlink),/restricted regular file/);
+   assert.throws(()=>validatePrivateRestoreReferenceFile(path.join(dir,"missing.json")),/cannot be read/);
+ } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});
+test("private restore runner never falls back to a stale committed reference",()=>{
+ const code=fs.readFileSync("scripts/verifyRestoredStagingDatabase.ts","utf8");
+ assert.match(code,/process\.env\.RESTORED_STAGING_REFERENCE_FILE/);
+ assert.match(code,/validatePrivateRestoreReferenceFile\(/);
+ assert.doesNotMatch(code,/fs\.readFileSync\(path\.join\(ROOT,\s*"docs\/staging-restore-provenance-baseline\.json"/);
 });
