@@ -1,0 +1,11 @@
+# Disposable encrypted PostgreSQL 17 recovery CI drill
+
+**This is NOT a live staging backup and NOT issue #78 recovery acceptance.** This workflow exclusively creates throwaway data in a PostgreSQL 17 GitHub Actions service. No Supabase credentials, customer content, user IDs, chain wallets, tokens, or production resources are accessed.
+
+Workflow: `.github/workflows/staging-synthetic-encrypted-archive.yml`
+
+It is restricted to the integration branch's relevant paths. It deliberately uses PostgreSQL 17 tools *inside the disposable Docker service*, and installs `age` on the ephemeral runner. It creates a synthetic source database and three fixed synthetic records, streams `pg_dump -Fc` directly into `age` (no unencrypted archive on disk), writes a local temporary structural verification fixture, and runs `scripts/verifyStagingEncryptedArchive.ts --verify` using a synthetic age identity and a PostgreSQL 17 `pg_restore --list` wrapper. It rejects a changed archive (checksum mismatch) and an incorrect decryption identity. Finally, it decrypts and restores the disposable ciphertext into a second PostgreSQL 17 database and verifies the expected synthetic row count, amount sum, and text hash. All temporary keys, reference metadata and ciphertext are deleted at job end; no artifacts are uploaded.
+
+**Important separation:** the structural manifest in this synthetic drill incorporates the *already committed* example staging fingerprint fields solely to exercise manifest-format checks. The synthetic dump contains only synthetic records; its manifest is **not** a real backup-time-matched staging reference. This test validates the encrypted transport and PostgreSQL archive handling, not equality of those manifest fingerprints against the synthetic dump. The real private capture/restore tools require a genuine synchronized source snapshot.
+
+Passing this CI does not prove real staging data recoverability, Auth identity restoration, global roles and extensions, Supabase Storage objects, absence of external side effects on a private clone, encryption key custody, or two-user acceptance. #78 and #79 remain blocked until private authorized execution and evidence. The pending AI reconciliation migration and commercial payment activation remain off-limits.

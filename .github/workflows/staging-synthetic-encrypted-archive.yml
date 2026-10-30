@@ -1,0 +1,132 @@
+name: Synthetic encrypted PostgreSQL 17 archive and restore verification
+
+on:
+  push:
+    branches: [feat/commercial-staging-integration]
+    paths:
+      - 'scripts/verifyStagingEncryptedArchive.ts'
+      - 'scripts/stagingEncryptedArchiveGuards.ts'
+      - 'tests/stagingEncryptedArchiveGuards.test.ts'
+      - 'docs/staging-restore-provenance-baseline.json'
+      - 'tests/sql/staging_encrypted_archive_rehearsal.sql'
+      - '.github/workflows/staging-synthetic-encrypted-archive.yml'
+  pull_request:
+    branches: [feat/crypto-payment-infrastructure]
+    paths:
+      - 'scripts/verifyStagingEncryptedArchive.ts'
+      - 'scripts/stagingEncryptedArchiveGuards.ts'
+      - 'tests/stagingEncryptedArchiveGuards.test.ts'
+      - 'docs/staging-restore-provenance-baseline.json'
+      - 'tests/sql/staging_encrypted_archive_rehearsal.sql'
+      - '.github/workflows/staging-synthetic-encrypted-archive.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: disposable_synthetic_only
+          POSTGRES_DB: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies and disposable age binary
+        run: |
+          npm ci --ignore-scripts=false
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq age
+      - name: Build synthetic encrypted backup and private matching manifest
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="$RUNNER_TEMP/private-encrypted-restore-test"
+          mkdir -m 700 "$work"
+          archive="$work/staging-2026-10-30T00-00-00-000Z.dump.age"
+          docker exec "$POSTGRES_CONTAINER" createdb -U postgres tgreposter_synthetic_source
+          docker exec -i "$POSTGRES_CONTAINER" psql -U postgres -d tgreposter_synthetic_source             -X -v ON_ERROR_STOP=1 < tests/sql/staging_encrypted_archive_rehearsal.sql
+          age-keygen -o "$work/age-identity.txt" > /dev/null 2>&1
+          recipient="$(age-keygen -y "$work/age-identity.txt")"
+          docker exec "$POSTGRES_CONTAINER" pg_dump -U postgres --format=custom             --no-owner --no-acl -d tgreposter_synthetic_source |
+            age -r "$recipient" > "$archive"
+          test -s "$archive"
+          chmod 600 "$archive" "$work/age-identity.txt"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import {createHash} from 'node:crypto';
+          const dir=path.join(process.env.RUNNER_TEMP,'private-encrypted-restore-test');
+          const name='staging-2026-10-30T00-00-00-000Z.dump.age';
+          const base=JSON.parse(fs.readFileSync('docs/staging-restore-provenance-baseline.json','utf8'));
+          const digest=createHash('sha256').update(fs.readFileSync(path.join(dir,name))).digest('hex');
+          base.recordedDate='2026-10-30';
+          base.capture={
+            method:'pg_export_snapshot+pg_dump-same-snapshot+age-v1',
+            capturedAtUtc:'2026-10-30T00:00:00.000Z',
+            archiveFile:name,
+            encryptedArchiveSha256:digest
+          };
+          fs.writeFileSync(path.join(dir,name.replace(/\.dump\.age$/,'.reference.json')),
+            JSON.stringify(base),{mode:0o600,flag:'wx'});
+          NODE
+          # The pg_restore process of the actual checker is PostgreSQL 17
+          # inside the disposable Docker service, never a host PG16 client.
+          tools="$RUNNER_TEMP/synthetic-pg17-bin"
+          mkdir -m 700 "$tools"
+          printf '#!/bin/sh\nexec docker exec -i "%s" pg_restore "$@"\n' "$POSTGRES_CONTAINER"             > "$tools/pg_restore"
+          chmod 700 "$tools/pg_restore"
+      - name: Accept an authentic synthetic archive and reject a corrupted one
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/synthetic-pg17-bin:$PATH"
+          work="$RUNNER_TEMP/private-encrypted-restore-test"
+          export STAGING_ENCRYPTED_ARCHIVE_FILE="$work/staging-2026-10-30T00-00-00-000Z.dump.age"
+          export STAGING_ARCHIVE_REFERENCE_FILE="$work/staging-2026-10-30T00-00-00-000Z.reference.json"
+          export STAGING_ARCHIVE_AGE_IDENTITY_FILE="$work/age-identity.txt"
+          npx --no-install tsx scripts/verifyStagingEncryptedArchive.ts --verify
+          cp "$STAGING_ENCRYPTED_ARCHIVE_FILE" "$work/safe-copy.age"
+          printf 'synthetic-corruption' >> "$STAGING_ENCRYPTED_ARCHIVE_FILE"
+          if npx --no-install tsx scripts/verifyStagingEncryptedArchive.ts --verify; then
+            echo "SECURITY FAILURE: corrupted archive was accepted"
+            exit 1
+          fi
+          mv "$work/safe-copy.age" "$STAGING_ENCRYPTED_ARCHIVE_FILE"
+          chmod 600 "$STAGING_ENCRYPTED_ARCHIVE_FILE"
+          age-keygen -o "$work/wrong-identity.txt" > /dev/null 2>&1
+          export STAGING_ARCHIVE_AGE_IDENTITY_FILE="$work/wrong-identity.txt"
+          if npx --no-install tsx scripts/verifyStagingEncryptedArchive.ts --verify; then
+            echo "SECURITY FAILURE: incorrect age identity was accepted"
+            exit 1
+          fi
+          echo "PASS: authentic synthetic archive accepted, corruption and wrong identity denied"
+      - name: Restore only synthetic ciphertext into a second disposable PG17 database
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/private-encrypted-restore-test"
+          docker exec "$POSTGRES_CONTAINER" createdb -U postgres tgreposter_synthetic_restore
+          age --decrypt -i "$work/age-identity.txt"             "$work/staging-2026-10-30T00-00-00-000Z.dump.age" |
+            docker exec -i "$POSTGRES_CONTAINER" pg_restore -U postgres               --exit-on-error --no-owner --no-acl -d tgreposter_synthetic_restore
+          docker exec -i "$POSTGRES_CONTAINER" psql -U postgres             -d tgreposter_synthetic_restore -X -v ON_ERROR_STOP=1             -f /dev/stdin < tests/sql/staging_encrypted_archive_rehearsal.sql
+          echo "PASS: disposable PG17 restore and synthetic record integrity verified"
+      - name: Delete synthetic archive, manifest and key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/private-encrypted-restore-test" "$RUNNER_TEMP/synthetic-pg17-bin"
