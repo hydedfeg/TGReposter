@@ -366,3 +366,79 @@ test("EVM single-block log-range rejection fails closed and is not retried",asyn
   }),/log response size exceeded/);
   assert.equal(attempts,1);
 });
+
+test("BSC historical eth_getLogs is split into contiguous 128-block requests",async()=>{
+  const requested:Array<[number,number]>=[];
+  const rpc:typeof fetch=async(_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string;params:any[]};
+    const reply=(result:unknown)=>new Response(JSON.stringify({id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x12b");
+    if(body.method==="eth_getCode")return reply("0x6001");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getLogs"){
+      const {fromBlock,toBlock}=body.params[0];
+      requested.push([Number(BigInt(fromBlock)),Number(BigInt(toBlock))]);
+      return reply([]);
+    }
+    throw new Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter({...config(),maxBlocksPerScan:300},rpc);
+  const scan=await adapter.scanTransfers({receivingAddress:merchant,tokenIdentifier:token,cursor:"0",maxBlocks:300});
+  assert.deepEqual(requested,[[0,127],[128,255],[256,299]]);
+  assert.equal(scan.scannedFrom,"0");
+  assert.equal(scan.scannedTo,"299");
+  assert.equal(scan.nextCursor,"297");
+  assert.equal(scan.observations.length,0);
+});
+
+test("BSC log timeout splits only the timed-out range and completes all blocks",async()=>{
+  const requested:Array<[number,number]>=[];
+  const rpc:typeof fetch=async(_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string;params:any[]};
+    const reply=(result:unknown)=>new Response(JSON.stringify({id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x64");
+    if(body.method==="eth_getCode")return reply("0x6001");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getLogs"){
+      const {fromBlock,toBlock}=body.params[0];
+      const from=Number(BigInt(fromBlock)),to=Number(BigInt(toBlock));
+      requested.push([from,to]);
+      if(to-from>=2)throw new DOMException("operation timed out","TimeoutError");
+      return reply([]);
+    }
+    throw new Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter({...config(),maxBlocksPerScan:8},rpc);
+  const scan=await adapter.scanTransfers({receivingAddress:merchant,tokenIdentifier:token,cursor:"93",maxBlocks:8});
+  assert.deepEqual(requested,[[93,100],[93,96],[93,94],[95,96],[97,100],[97,98],[99,100]]);
+  assert.equal(scan.scannedFrom,"93");
+  assert.equal(scan.scannedTo,"100");
+  assert.equal(scan.nextCursor,"98");
+});
+
+test("BSC single-block timeouts fail the scan instead of returning partial log results",async()=>{
+  const requested:Array<[number,number]>=[];
+  const rpc:typeof fetch=async(_url,opts)=>{
+    const body=JSON.parse(String(opts?.body)) as {id:number;method:string;params:any[]};
+    const reply=(result:unknown)=>new Response(JSON.stringify({id:body.id,result}),{status:200});
+    if(body.method==="eth_chainId")return reply("0x38");
+    if(body.method==="eth_blockNumber")return reply("0x64");
+    if(body.method==="eth_getCode")return reply("0x6001");
+    if(body.method==="eth_call")return reply("0x6");
+    if(body.method==="eth_getLogs"){
+      const {fromBlock,toBlock}=body.params[0];
+      const from=Number(BigInt(fromBlock)),to=Number(BigInt(toBlock));
+      requested.push([from,to]);
+      if(from===99&&to===99)return reply([]);
+      throw new DOMException("operation timed out","TimeoutError");
+    }
+    throw new Error("Unexpected method "+body.method);
+  };
+  const adapter=new EvmUsdtAdapter({...config(),maxBlocksPerScan:2},rpc);
+  await assert.rejects(()=>adapter.scanTransfers({
+    receivingAddress:merchant,tokenIdentifier:token,cursor:"99",maxBlocks:2
+  }),{name:"TimeoutError"});
+  assert.deepEqual(requested,[[99,100],[99,99],[100,100]]);
+});
