@@ -73,6 +73,8 @@ test("simulated two-customer HTTP subscription purchase is isolated and credits 
     };
     app.use("/api/billing/checkout", createCustomerCheckoutRouter({
       authMiddleware: authenticate,
+      // Fixture auth is independent from staging-only allowlists in Railway.
+      testOwner: () => undefined,
       enabled: () => enabled,
       topupsEnabled: () => false,
       hasDatabase: () => true,
