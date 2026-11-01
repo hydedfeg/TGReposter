@@ -1,0 +1,222 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import express from "express";
+import { createServer } from "node:http";
+import { createBillingOverviewRouter } from "../server/routes/billingOverview";
+
+async function withServer(
+  auth: express.RequestHandler,
+  loadOverview: (owner: string) => Promise<any>,
+  check: (base: string) => Promise<void>,
+  hasDatabase = true,
+  commercialEnabled = false
+) {
+  const app = express();
+  app.use("/api/billing",createBillingOverviewRouter({
+    authMiddleware:auth,
+    loadOverview:loadOverview as any,
+    hasDatabase:()=>hasDatabase,
+    canUseCommercialAI:()=>commercialEnabled
+  }));
+  const server=createServer(app);
+  await new Promise<void>((resolve)=>server.listen(0,"127.0.0.1",resolve));
+  try {
+    const address=server.address();
+    if(!address || typeof address==="string")throw Error("No test listener");
+    await check(`http://127.0.0.1:${address.port}`);
+  } finally {
+    await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
+  }
+}
+
+test("billing API never accepts user-supplied owner and sets no-store headers",async()=>{
+  let captured="";
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async owner=>{captured=owner;return {availability:"prelaunch",orders:[]}},
+    async base=>{
+      const response=await fetch(base+"/api/billing/overview?owner_principal=legacy:bob",{
+        headers:{Authorization:"Bearer demo-ignored"}
+      });
+      assert.equal(response.status,200);
+      assert.match(response.headers.get("cache-control")??"",/no-store/);
+      assert.equal(response.headers.get("vary"),"Authorization");
+      assert.deepEqual(await response.json(),{overview:{availability:"prelaunch",orders:[]}});
+    }
+  );
+  assert.equal(captured,"legacy:alice");
+});
+
+test("billing API denies missing authenticated identity even if an old local auth guard passes",async()=>{
+  let calls=0;
+  await withServer((_req,_res,next)=>next(),async()=>{calls++;return null},async base=>{
+    const response=await fetch(base+"/api/billing/overview");
+    assert.equal(response.status,401);
+    assert.equal((await response.json()).code,"BILLING_AUTH_REQUIRED");
+  });
+  assert.equal(calls,0);
+});
+
+test("billing schema absence is a clear 503 and cannot be mistaken for zero balances",async()=>{
+  await withServer(
+    (req:any,_res,next)=>{req.user={id:"00000000-0000-4000-8000-000000000009",
+      authProvider:"supabase"};next()},
+    async()=>{throw Object.assign(Error("missing relation"),{code:"42P01"})},
+    async base=>{
+      const response=await fetch(base+"/api/billing/overview");
+      assert.equal(response.status,503);
+      assert.equal((await response.json()).code,"BILLING_NOT_READY");
+    }
+  );
+});
+
+test("billing endpoint does not consult the database when not configured",async()=>{
+  let calls=0;
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async()=>{calls++;return null},
+    async base=>{
+      const response=await fetch(base+"/api/billing/overview");
+      assert.equal(response.status,503);
+      assert.equal((await response.json()).code,"BILLING_NOT_READY");
+    },false
+  );
+  assert.equal(calls,0);
+});
+
+test("commercial AI credit status is disabled by default without reading any owner balances",async()=>{
+  let calls=0;
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async()=>{calls++;throw Error("must not query")},async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{enabled:false});
+      assert.match(response.headers.get("cache-control")??"",/no-store/);
+      assert.equal(response.headers.get("vary"),"Authorization");
+    }
+  );
+  assert.equal(calls,0);
+});
+
+test("commercial AI credit status uses only the authenticated owner and omits private invoices",async()=>{
+  let ownerSeen="";
+  await withServer(
+    (req:any,_res,next)=>{
+      req.user={id:"b7dfb113-431c-43a5-9573-6c3bbc9ff001",authProvider:"supabase"};
+      next();
+    },
+    async owner=>{
+      ownerSeen=owner;
+      return {
+        plan:{id:"creator",published:true},
+        ai:{includedAvailable:"12.500000",purchasedAvailable:"3.250000",periodEnd:"2026-11-01T00:00:00Z"},
+        orders:[{id:"sensitive-invoice-should-not-appear"}]
+      };
+    },async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status?owner_principal=legacy:bob",{
+        headers:{"Authorization":"Bearer ignored"}
+      });
+      assert.equal(response.status,200);
+      assert.equal(response.headers.get("vary"),"Authorization");
+      assert.deepEqual(await response.json(),{
+        enabled:true,
+        balance:{
+          includedAvailable:"12.500000",
+          purchasedAvailable:"3.250000",
+          periodEnd:"2026-11-01T00:00:00Z"
+        }
+      });
+    },true,true
+  );
+  assert.equal(ownerSeen,"supabase:b7dfb113-431c-43a5-9573-6c3bbc9ff001");
+});
+
+test("commercial AI status fails closed for anonymous users or unverifiable balances",async()=>{
+  let anonymousCalls=0;
+  await withServer((_req,_res,next)=>next(),async()=>{anonymousCalls++;return null},
+    async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,401);
+      assert.equal((await response.json()).code,"BILLING_AUTH_REQUIRED");
+    },true,true
+  );
+  assert.equal(anonymousCalls,0);
+  await withServer((req:any,_res,next)=>{req.user={username:"alice",authProvider:"legacy"};next()},
+    async()=>{throw Object.assign(Error("DB temporarily unavailable"),{code:"42P01"})},
+    async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,503);
+      const body=await response.json();
+      assert.equal(body.code,"AI_CREDITS_UNAVAILABLE");
+      assert.equal(body.balance,undefined);
+      assert.equal(body.enabled,undefined);
+      assert.ok(!JSON.stringify(body).includes("DB temporarily unavailable"));
+    },true,true
+  );
+});
+
+test("unpublished Free plan never offers commercial AI despite positive stale balances",async()=>{
+  let ownerSeen="";
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+    async owner=>{
+      ownerSeen=owner;
+      return {
+        availability:"prelaunch",
+        plan:{id:"free",published:false},
+        ai:{includedAvailable:"80.000000",purchasedAvailable:"20.000000",periodEnd:null}
+      };
+    },async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{enabled:false});
+    },true,true
+  );
+  assert.equal(ownerSeen,"legacy:alice");
+});
+
+test("existing paid subscriber keeps AI credit eligibility when accepted plan is delisted",async()=>{
+  await withServer(
+    (req:any,_res,next)=>{req.user={username:"alice",authProvider:"legacy"};next()},
+    async()=>({
+      availability:"prelaunch",
+      plan:{id:"creator",published:false},
+      subscription:{status:"active",periodStart:"2026-10-01T00:00:00Z",
+        periodEnd:"2026-11-01T00:00:00Z"},
+      ai:{includedAvailable:"8.750000",purchasedAvailable:"1.250000",
+        periodEnd:"2026-11-01T00:00:00Z"}
+    }),async base=>{
+      const response=await fetch(base+"/api/billing/ai-credits/status");
+      assert.equal(response.status,200);
+      assert.deepEqual(await response.json(),{
+        enabled:true,
+        balance:{
+          includedAvailable:"8.750000",
+          purchasedAvailable:"1.250000",
+          periodEnd:"2026-11-01T00:00:00Z"
+        }
+      });
+    },true,true
+  );
+});
+
+test("missing plan or corrupt balances fail closed without enabling commercial AI",async()=>{
+  for(const overview of [
+    {ai:{includedAvailable:"5.000000",purchasedAvailable:"0",periodEnd:null}},
+    {plan:{id:"free",published:true},ai:{includedAvailable:"invalid",purchasedAvailable:"2",periodEnd:null}},
+    {plan:{id:"creator",published:true},ai:{includedAvailable:"2",purchasedAvailable:null,periodEnd:null}}
+  ]){
+    await withServer(
+      (req:any,_res,next)=>{req.user={username:"Alice",authProvider:"legacy"};next()},
+      async()=>overview,async base=>{
+        const response=await fetch(base+"/api/billing/ai-credits/status");
+        assert.equal(response.status,503);
+        const body=await response.json();
+        assert.equal(body.code,"AI_CREDITS_UNAVAILABLE");
+        assert.equal(body.enabled,undefined);
+        assert.equal(body.balance,undefined);
+      },true,true
+    );
+  }
+});

@@ -13,8 +13,11 @@ const navigation = {
     filters: "فیلترهای من",
     destinations: "مقصدهای من",
     aiConfiguration: "تنظیمات هوش مصنوعی من",
+    billing: "صورتحساب و استفاده",
     teamAccess: "تیم و دسترسی",
     systemSettings: "تنظیمات سیستم",
+    salesPlans: "طرح‌های فروش",
+    payments: "پرداخت‌ها",
   },
   titles: {
     dashboard: "داشبورد",
@@ -25,8 +28,11 @@ const navigation = {
     filters: "فیلترهای محتوا",
     destination: "مقصدهای من",
     ai: "تنظیمات هوش مصنوعی",
+    billing: "صورتحساب و میزان استفاده",
     team: "تیم و دسترسی",
     database: "تنظیمات سیستم",
+    salesPlans: "مدیریت طرح‌های فروش",
+    payments: "عملیات پرداخت",
   },
   mobile: {
     home: "خانه",

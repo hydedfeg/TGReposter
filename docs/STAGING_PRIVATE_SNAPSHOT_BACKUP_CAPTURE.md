@@ -1,0 +1,22 @@
+# Private staging backup capture — coordinated PostgreSQL snapshot
+
+**Not executed against live staging.** This is an operator-only procedure for the still-open recovery blocker [#78](https://github.com/hydedfeg/TGReposter/issues/78). It does not authorize any production changes, account creation, financial activation or migrations.
+
+## Why this command exists
+
+The private restore verifier requires a fingerprint baseline **from the same PostgreSQL snapshot** as the backup. A normal staging read-only query taken minutes later can disagree with a valid backup because source-channel scans update rows. PostgreSQL 17 explicitly supports `pg_export_snapshot()` and `pg_dump --snapshot=...`. The new `scripts/captureStagingBackup.ts` holds a single repeatable-read, read-only transaction open while reading `scripts/sql/stagingRestoreFingerprint.sql` and while `pg_dump` imports the exact exported snapshot.
+
+The full custom-format dump is piped **directly to age encryption**. No unencrypted backup file is written to disk; the operator receives an `.age` archive and a permission-restricted JSON reference containing metadata hashes, the encrypted archive's SHA-256 checksum and capture method. Neither content values nor credentials are printed. The tool does not export environment files, Supabase Storage objects, global roles, platform service configuration or external secrets; it is **not a complete Supabase disaster-recovery solution**.
+
+## Requirements (private operator only)
+
+1. Explicit operational approval and a maintenance plan. Do not run this on GitHub Actions, public runners, Railway staging, the production service or shared shells. Run locally on a trusted computer with encrypted, access-controlled backup storage, PostgreSQL **17** client tools (including `pg_dump`) and [age](https://age-encryption.org/) installed.
+2. Obtain the **DIRECT**, port-5432 PostgreSQL connection string for *staging only* in the Supabase Connect page. It must target `db.msmfilgdwuoymjhgtrmy.supabase.co:5432/postgres` as the `postgres` user, with TLS certificate verification. Production ref `biowrbnafkagaafonzws`, session/transaction poolers, alternate hosts/ports, URL options and localhost tunnels are refused.
+3. Pre-create a private output directory **outside the repository**, owned by the operator with mode `0700`, on encrypted storage. Prepare an **age recipient public key**; its private identity is needed later to decrypt. The recipient is public, but must be securely controlled to ensure intended access.
+4. In the trusted operator environment, set `STAGING_BACKUP_SOURCE_POSTGRES_URL`, `STAGING_BACKUP_OUTPUT_DIR`, `STAGING_BACKUP_AGE_RECIPIENT` and `STAGING_BACKUP_OPERATOR_APPROVED=I_APPROVE_PRIVATE_STAGING_SNAPSHOT_CAPTURE`. Supply secrets via a private secret manager or restricted process environment, never in chat, public CI, a repository, shell history, app logs or screenshots.
+5. Run `npx --no-install tsx scripts/captureStagingBackup.ts --capture` on the trusted operator machine. The script validates source/destination, checks PostgreSQL 17, exports a snapshot, fingerprints the 46-migration/12-tenant-table state, streams `pg_dump` through `age`, writes restricted output and records the encrypted archive checksum. It fails closed and removes partial artifacts if the capture fails.
+6. Independently verify the encrypted archive checksum and retain the archive, age recipient identity and reference in secured, encrypted backup storage according to your retention policy. Practice decrypting and restoring **only in a network-isolated, authorization-approved clone**. The clone verifier still requires the clone-only attestation, disabled cron/pg_net and exact clone DB identity, and its `RESTORED_STAGING_REFERENCE_FILE` must refer to this separately generated private reference.
+
+**Cautions:** PostgreSQL snapshots coordinate database contents but not Supabase Storage files, external workers or global roles. The operator must independently secure those components and confirm encryption and archive retention. Maintain deployment and rollback evidence before any release. This script has only been tested with offline validations unless a private operator explicitly runs the capture and recovery drill.
+
+References: [PostgreSQL 17 pg_dump --snapshot](https://www.postgresql.org/docs/17/app-pgdump.html); [Supabase direct database connection](https://supabase.com/docs/guides/database/connecting-to-postgres).

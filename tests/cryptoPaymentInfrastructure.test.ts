@@ -1,0 +1,225 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  loadCryptoPaymentNetworkConfigs,
+  loadCryptoPaymentPreflightConfigs,
+} from "../server/payments/paymentConfig";
+import { CryptoPaymentNetworkRegistry } from "../server/payments/networkRegistry";
+import {
+  assertCryptoInvoiceTransition,
+  canTransitionCryptoInvoice,
+} from "../server/payments/paymentState";
+import type { CryptoPaymentNetworkAdapter } from "../server/payments/types";
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const migration = fs.readFileSync(
+  path.join(
+    repoRoot,
+    "supabase/migrations/20261004183039_create_crypto_payment_infrastructure.sql"
+  ),
+  "utf8"
+);
+
+test("crypto payments remain disabled unless explicitly enabled", () => {
+  assert.deepEqual(loadCryptoPaymentNetworkConfigs({}), []);
+  assert.deepEqual(
+    loadCryptoPaymentNetworkConfigs({
+      CRYPTO_PAYMENTS_ENABLED: "true",
+    }),
+    []
+  );
+});
+
+test("enabled USDT networks require complete server-side configuration", () => {
+  assert.throws(
+    () =>
+      loadCryptoPaymentNetworkConfigs({
+        CRYPTO_PAYMENTS_ENABLED: "true",
+        CRYPTO_USDT_BSC_ENABLED: "true",
+        CRYPTO_USDT_BSC_CONFIRMATIONS: "4",
+      }),
+    /CRYPTO_USDT_BSC_RPC_URL is missing/
+  );
+
+  const configs = loadCryptoPaymentNetworkConfigs({
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_BSC_ENABLED: "true",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS: "0xmerchant",
+    CRYPTO_USDT_BSC_TOKEN_IDENTIFIER: "0x55d398326f99059ff775485246999027b3197955",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "4",
+  });
+
+  assert.deepEqual(configs, [
+    {
+      id: "bsc",
+      family: "evm",
+      asset: "USDT",
+      enabled: true,
+      rpcUrl: "https://rpc.example.test",
+      receivingAddress: "0xmerchant",
+      tokenIdentifier: "0x55d398326f99059ff775485246999027b3197955",
+      requiredConfirmations: 4,
+      maxBlocksPerScan: 1000,
+      requestTimeoutMs: 10000,
+    },
+  ]);
+});
+
+test("crypto network registry rejects duplicate chain adapters", () => {
+  const registry = new CryptoPaymentNetworkRegistry();
+  const adapter: CryptoPaymentNetworkAdapter = {
+    network: "bsc",
+    async getAssetDecimals() {
+      return 6;
+    },
+    async scanTransfers() {
+      return {
+        observations: [],
+        nextCursor: "0",
+      };
+    },
+  };
+
+  registry.register(adapter);
+  assert.equal(registry.get("bsc"), adapter);
+  assert.deepEqual(registry.list(), ["bsc"]);
+  assert.throws(() => registry.register(adapter), /already registered/);
+});
+
+test("invoice state machine prevents terminal-state re-crediting", () => {
+  assert.equal(canTransitionCryptoInvoice("pending", "detected"), true);
+  assert.equal(canTransitionCryptoInvoice("detected", "confirming"), true);
+  assert.equal(canTransitionCryptoInvoice("confirming", "paid"), true);
+  assert.equal(canTransitionCryptoInvoice("paid", "paid"), true);
+  assert.equal(canTransitionCryptoInvoice("paid", "confirming"), false);
+  assert.throws(
+    () => assertCryptoInvoiceTransition("paid", "pending"),
+    /Invalid crypto payment invoice transition/
+  );
+});
+
+test("payment ledger is backend-owned and idempotent", () => {
+  for (const table of [
+    "crypto_payment_invoices",
+    "crypto_payment_transactions",
+    "crypto_payment_events",
+  ]) {
+    assert.match(
+      migration,
+      new RegExp(
+        `alter table public\\.${table} enable row level security;`,
+        "i"
+      )
+    );
+    assert.match(
+      migration,
+      new RegExp(
+        `revoke all on table public\\.${table} from anon, authenticated;`,
+        "i"
+      )
+    );
+  }
+
+  assert.match(
+    migration,
+    /unique \(network, tx_hash, event_index\)/i
+  );
+  assert.match(
+    migration,
+    /foreign key \(owner_principal, invoice_id\)[\s\S]*?crypto_payment_invoices/i
+  );
+
+  assert.doesNotMatch(
+    migration,
+    /^\s*(private_key|seed_phrase|mnemonic|wallet_password)\s+/im
+  );
+});
+
+test("TON indexed payment config requires one finalized observation", () => {
+  assert.throws(
+    () =>
+      loadCryptoPaymentNetworkConfigs({
+        CRYPTO_PAYMENTS_ENABLED: "true",
+        CRYPTO_USDT_TON_ENABLED: "true",
+        CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
+        CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
+        CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+        CRYPTO_USDT_TON_CONFIRMATIONS: "2",
+      }),
+    /requires CRYPTO_USDT_TON_CONFIRMATIONS=1/
+  );
+
+  const [config] = loadCryptoPaymentNetworkConfigs({
+    CRYPTO_PAYMENTS_ENABLED: "true",
+    CRYPTO_USDT_TON_ENABLED: "true",
+    CRYPTO_USDT_TON_RPC_URL: "https://toncenter.example.test",
+    CRYPTO_USDT_TON_API_KEY: "server-only",
+    CRYPTO_USDT_TON_RECEIVING_ADDRESS: "EQMerchant",
+    CRYPTO_USDT_TON_TOKEN_IDENTIFIER: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+    CRYPTO_USDT_TON_CONFIRMATIONS: "1",
+  });
+
+  assert.equal(config.apiKey, "server-only");
+});
+
+test("transfer matching uses the blockchain timestamp instead of wall-clock invoice expiry", () => {
+  const repository = fs.readFileSync(
+    path.join(repoRoot, "server/repositories/cryptoPaymentRepository.ts"),
+    "utf8"
+  );
+
+  assert.match(repository, /created_at <= \$3::timestamptz/);
+  assert.match(repository, /expires_at >= \$3::timestamptz/);
+  assert.match(repository, /expected_amount = \$2::numeric/);
+  assert.match(repository, /lower\(receiving_address\) = lower\(\$4\)/);
+  assert.match(repository, /limit 2/i);
+});
+
+test("EVM payment networks require an explicit confirmation threshold", () => {
+  assert.throws(
+    () =>
+      loadCryptoPaymentNetworkConfigs({
+        CRYPTO_PAYMENTS_ENABLED: "true",
+        CRYPTO_USDT_BSC_ENABLED: "true",
+        CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+        CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+          "0x2222222222222222222222222222222222222222",
+        CRYPTO_USDT_BSC_TOKEN_IDENTIFIER:
+          "0x55d398326f99059ff775485246999027b3197955",
+      }),
+    /requires explicit required confirmations/
+  );
+});
+
+test("preflight can validate a configured network while payment switches stay off", () => {
+  const configs = loadCryptoPaymentPreflightConfigs({
+    CRYPTO_PAYMENTS_ENABLED: "false",
+    CRYPTO_USDT_BSC_ENABLED: "false",
+    CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+      "0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+    CRYPTO_USDT_BSC_MAX_BLOCKS_PER_SCAN: "500",
+  });
+
+  assert.equal(configs.length, 1);
+  assert.equal(configs[0].id, "bsc");
+  assert.equal(configs[0].enabled, false);
+  assert.equal(configs[0].requiredConfirmations, 120);
+
+  assert.deepEqual(
+    loadCryptoPaymentNetworkConfigs({
+      CRYPTO_PAYMENTS_ENABLED: "false",
+      CRYPTO_USDT_BSC_ENABLED: "false",
+      CRYPTO_USDT_BSC_RPC_URL: "https://rpc.example.test",
+      CRYPTO_USDT_BSC_RECEIVING_ADDRESS:
+        "0x2222222222222222222222222222222222222222",
+      CRYPTO_USDT_BSC_CONFIRMATIONS: "120",
+    }),
+    []
+  );
+});

@@ -116,3 +116,49 @@ test("OpenRouter adapter leaves connection failures for the route to handle", as
     /Mock connection failure/
   );
 });
+
+test("commercial OpenRouter calls return generation, resolved model and billed usage", async () => {
+  let sentBody: Record<string, unknown> | null = null;
+  const response = await requestOpenRouterCuration({
+    apiKey: "TEST_KEY",
+    model: "provider/model",
+    prompt: "Test",
+    maxTokens: 512,
+    includeUsage: true,
+    fetchImpl: async (_url, init) => {
+      sentBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        id: "gen-verified-test",
+        model: "provider/model",
+        choices: [{ message: { content: "Commercial result" } }],
+        usage: { prompt_tokens: 18, completion_tokens: 42, cost: 0.0025 }
+      }), { status: 200 });
+    }
+  });
+  assert.equal(sentBody?.max_tokens, 512);
+  assert.equal(response.ok, true);
+  if (response.ok) {
+    assert.equal(response.generationId, "gen-verified-test");
+    assert.equal(response.usage?.costUsd, "0.0025000000");
+    assert.equal(response.usage?.aiUnits, "0.250000");
+    assert.equal(response.modelId, "provider/model");
+  }
+});
+
+test("missing provider cost is unknown, never silently treated as a free request", async () => {
+  const result = await requestOpenRouterCuration({
+    apiKey: "TEST_KEY",
+    model: "provider/model",
+    prompt: "Test",
+    includeUsage: true,
+    fetchImpl: async () => new Response(JSON.stringify({
+      id: "gen-unknown-cost",
+      choices: [{ message: { content: "Text without cost" } }]
+    }), { status: 200 })
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.generationId, "gen-unknown-cost");
+    assert.equal(result.usage, null);
+  }
+});

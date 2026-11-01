@@ -30,7 +30,7 @@ async function freePort() {
   return port;
 }
 
-test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_000 }, async t => {
+test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 120_000 }, async t => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), "tgreposter-tenant-test-"));
   // PostgreSQL runs in-process, with a wire-protocol server used by the real pg
   // driver. No inherited DATABASE_URL or production credentials are used.
@@ -82,11 +82,17 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 90_0
     });
     return { status: response.status, data: await response.json() as any };
   };
-  for (let attempt = 0; attempt < 100; attempt++) {
-    if (app.exitCode !== null) throw new Error(logs);
-    if (logs.includes("Telegram Content Curator running on")) break;
-    if (attempt === 99) throw new Error(`Test server failed to start: ${logs}`);
-    await delay(50);
+  // TypeScript startup can take longer in constrained Railway Docker builders.
+  // Poll until a bounded deadline instead of treating five seconds as a failure.
+  const startupDeadline = Date.now() + 45_000;
+  while (!logs.includes("Telegram Content Curator running on")) {
+    if (app.exitCode !== null || app.signalCode !== null) {
+      throw new Error(`Test server exited before startup (code=${app.exitCode}, signal=${app.signalCode}): ${logs.slice(-4000)}`);
+    }
+    if (Date.now() >= startupDeadline) {
+      throw new Error(`Test server failed to start within 45 seconds: ${logs.slice(-4000)}`);
+    }
+    await delay(100);
   }
   const ok = async (promise: ReturnType<typeof api>, expected = 200) => {
     const result = await promise;

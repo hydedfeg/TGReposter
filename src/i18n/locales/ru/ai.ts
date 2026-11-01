@@ -1,4 +1,18 @@
 const ai = {
+  billingMode: {
+    title: "Способ оплаты ИИ",
+    refresh: "Обновить",
+    byok: "Мой API-ключ",
+    included: "Включённые AI Units",
+    balance: "Доступно: {{included}} включённых · {{purchased}} купленных AI Units",
+    periodEnd: "Сброс {{date}}",
+    notLaunched: "Включённые AI Units пока недоступны. Ваш личный API-ключ продолжает работать.",
+    loading: "Проверка баланса AI Units…",
+    error: "Не удалось проверить баланс. Включённые AI Units сейчас недоступны.",
+    openRouterOnly: "Для использования AI Units выберите OpenRouter.",
+    usageNotice: "Этот запрос расходует AI Units. Стоимость рассчитывается сервером.",
+    byokNotice: "Используется ваш личный API-ключ, AI Units TGReposter не расходуются.",
+  },
   header: {
     title: "Модуль ИИ-обработки",
     description: "Настройте языковую модель для перефразирования, перевода и извлечения хэштегов из публикаций.",

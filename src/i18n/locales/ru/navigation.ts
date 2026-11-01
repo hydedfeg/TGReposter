@@ -13,8 +13,11 @@ const navigation = {
     filters: "Мои фильтры",
     destinations: "Мои каналы назначения",
     aiConfiguration: "Мои настройки ИИ",
+    billing: "Оплата и использование",
     teamAccess: "Команда и доступ",
     systemSettings: "Системные настройки",
+    salesPlans: "Тарифные планы",
+    payments: "Платежи",
   },
   titles: {
     dashboard: "Панель управления",
@@ -25,8 +28,11 @@ const navigation = {
     filters: "Фильтры контента",
     destination: "Мои каналы назначения",
     ai: "Настройки ИИ",
+    billing: "Подписка и использование",
     team: "Команда и доступ",
     database: "Системные настройки",
+    salesPlans: "Управление тарифами",
+    payments: "Платёжные операции",
   },
   mobile: {
     home: "Главная",

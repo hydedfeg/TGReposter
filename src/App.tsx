@@ -9,9 +9,12 @@ import FilterConfig from "./components/FilterConfig";
 import DestinationConfig from "./components/DestinationConfig";
 import CurationFeed from "./components/CurationFeed";
 import DatabaseConfig from "./components/DatabaseConfig";
+import CryptoPayments from "./components/CryptoPayments";
 import AIConfigView from "./components/AIConfig";
 import Login from "./components/Login";
 import UserManagement from "./components/UserManagement";
+import BillingOverview from "./components/BillingOverview";
+import SalesPlanManagement from "./components/SalesPlanManagement";
 import { FilterConfig as IFilterConfig, DestinationConfig as IDestinationConfig, DestinationTarget, CuratedPost, CuratorSettings, AIConfig as IAIConfig } from "./types";
 import { safeResponseJson } from "./utils/api";
 import { reconcileAuthenticatedAppLocale } from "./i18n/userLocalePreference";
@@ -20,7 +23,7 @@ import { API_ERROR_CODES } from "../shared/apiErrorCodes";
 
 import { WorkspaceSession } from "./utils/workspaceSession";
 
-const superAdminViews = new Set<WorkspaceView>(["team", "database"]);
+const superAdminViews = new Set<WorkspaceView>(["team", "database", "payments", "salesPlans"]);
 
 const PUBLISHING_ERROR_KEYS: Record<string, string> = {
   [API_ERROR_CODES.publishing.postNotFound]: "runtime.publishing.errors.postNotFound",
@@ -53,8 +56,9 @@ function settingsCacheKey() {
 }
 
 function initialWorkspaceView(): WorkspaceView {
+  if (window.location.pathname.replace(/\/$/, "") === "/dashboard/billing/checkout") return "billing";
   const stored = sessionStorage.getItem("tgreposter-active-view") as WorkspaceView | null;
-  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "team", "database"];
+  const validViews: WorkspaceView[] = ["dashboard", "feed", "history", "channels", "filters", "destination", "ai", "billing", "team", "database", "payments", "salesPlans"];
   return stored && validViews.includes(stored) ? stored : "dashboard";
 }
 
@@ -746,6 +750,8 @@ export default function App() {
 
         {activeWorkspaceTab === "feed" || activeWorkspaceTab === "history" ? (
           <CurationFeed
+            authToken={authToken}
+            aiProvider={settings.aiConfig?.provider ?? "gemini"}
             initialTab={activeWorkspaceTab === "history" ? "posted" : "pending"}
             mode={activeWorkspaceTab === "history" ? "history" : "review"}
             posts={settings.posts}
@@ -772,6 +778,7 @@ export default function App() {
 
         {activeWorkspaceTab === "ai" ? (
           <AIConfigView
+            authToken={authToken}
             aiConfig={settings.aiConfig}
             onUpdateAI={handleUpdateAI}
             onCredentialStatusChange={(provider, configured) => {
@@ -786,7 +793,16 @@ export default function App() {
           />
         ) : null}
 
+        {activeWorkspaceTab === "billing" ? (
+          <BillingOverview authToken={authToken} />
+        ) : null}
+
         {activeWorkspaceTab === "database" && currentUserRole === "super-admin" ? <DatabaseConfig /> : null}
+        {activeWorkspaceTab === "salesPlans" && currentUserRole === "super-admin" ? <SalesPlanManagement authToken={authToken} /> : null}
+
+        {activeWorkspaceTab === "payments" && currentUserRole === "super-admin" && authToken ? (
+          <CryptoPayments token={authToken} />
+        ) : null}
 
         {activeWorkspaceTab === "team" && currentUserRole === "super-admin" ? (
           <UserManagement users={settings.users || []} onAddUser={handleAddUser} onDeleteUser={handleDeleteUser} currentUsername={currentUsername} />

@@ -1,0 +1,54 @@
+name: Phase 11 disposable PostgreSQL financial concurrency
+
+on:
+  pull_request:
+    branches:
+      - feat/commercial-staging-integration
+    paths:
+      - 'tests/billingConcurrentPg.pg-check.ts'
+      - '.github/workflows/phase11-financial-postgres.yml'
+      - 'server/billing/**'
+      - 'supabase/migrations/**'
+  push:
+    branches:
+      - feat/commercial-staging-integration
+    paths:
+      - 'tests/billingConcurrentPg.pg-check.ts'
+      - '.github/workflows/phase11-financial-postgres.yml'
+      - 'server/billing/**'
+      - 'supabase/migrations/**'
+
+permissions:
+  contents: read
+
+jobs:
+  independent-postgres-sessions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: phase11_local_test
+          POSTGRES_DB: tgreposter_billing_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tgreposter_billing_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The test also validates loopback hostname and EXACT database name.
+      # Never accept production/staging PostgreSQL URLs in this workflow.
+      PG_TEST_DATABASE_URL: postgresql://postgres:phase11_local_test@127.0.0.1:5432/tgreposter_billing_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify concurrent subscription, grant and topup idempotency
+        run: node --import tsx --test tests/billingConcurrentPg.pg-check.ts

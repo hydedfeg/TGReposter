@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ChannelService } from "../services/channelService";
+import { PlanCapacityError,isPlanCapacityDbError } from "../billing/backendEntitlementGuard";
 
 const router = Router();
 const channelService = new ChannelService();
@@ -28,8 +29,10 @@ router.post("/", async (req: any, res) => {
   } catch (err: any) {
     console.error(err);
 
-    res.status(400).json({
-      error: err.message,
+    const limited=err instanceof PlanCapacityError||isPlanCapacityDbError(err);
+    res.status(limited?409:400).json({
+      error:limited?"Current subscription plan capacity reached.":err.message,
+      ...(limited?{code:"PLAN_LIMIT_REACHED"}:{}),
     });
   }
 });

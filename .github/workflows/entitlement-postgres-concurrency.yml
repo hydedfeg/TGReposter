@@ -1,0 +1,44 @@
+name: Atomic entitlement Postgres concurrency
+
+on:
+  pull_request:
+    branches:
+      - feat/commercial-staging-integration
+    paths:
+      - 'supabase/migrations/**atomic_plan_capacity_guards.sql'
+      - 'tests/atomicPlanCapacityPostgres.test.ts'
+      - '.github/workflows/entitlement-postgres-concurrency.yml'
+      - 'server/billing/backendEntitlementGuard.ts'
+
+permissions:
+  contents: read
+
+jobs:
+  concurrent-owner-quotas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: entitlement_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d entitlement_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify quotas with concurrent PostgreSQL transactions
+        env:
+          TEST_ENTITLEMENTS_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/entitlement_ci
+        run: npx tsx --test tests/atomicPlanCapacityPostgres.test.ts

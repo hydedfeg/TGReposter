@@ -13,8 +13,11 @@ const navigation = {
     filters: "عوامل التصفية الخاصة بي",
     destinations: "وجهات النشر الخاصة بي",
     aiConfiguration: "إعدادات الذكاء الاصطناعي الخاصة بي",
+    billing: "الفوترة والاستخدام",
     teamAccess: "الفريق والصلاحيات",
     systemSettings: "إعدادات النظام",
+    salesPlans: "خطط المبيعات",
+    payments: "المدفوعات",
   },
   titles: {
     dashboard: "لوحة التحكم",
@@ -25,8 +28,11 @@ const navigation = {
     filters: "عوامل تصفية المحتوى",
     destination: "وجهات النشر الخاصة بي",
     ai: "إعدادات الذكاء الاصطناعي",
+    billing: "الفوترة والاستخدام",
     team: "الفريق والصلاحيات",
     database: "إعدادات النظام",
+    salesPlans: "إدارة خطط المبيعات",
+    payments: "عمليات الدفع",
   },
   mobile: {
     home: "الرئيسية",
