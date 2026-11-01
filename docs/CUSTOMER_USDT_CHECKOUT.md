@@ -76,3 +76,16 @@ Remaining launch blockers include merchant payment/tax/refund terms, FX
 confirmation, limits and abuse prevention, QR-code verification, a staging
 live-identity test, authorization for any on-chain purchase, reconciliation
 exceptions and an explicit production go/no-go.
+
+## Restricted real-payment acceptance on staging
+
+To run the explicitly authorized one-account Creator monthly acceptance, set
+`TGREPOSTER_CHECKOUT_TEST_OWNER` to the authenticated test owner's exact
+server-derived principal (`supabase:<uuid>` or `legacy:<username>`). While
+configured, all authenticated checkout endpoints reject other accounts with
+`CHECKOUT_TEST_OWNER_ONLY`. A malformed/empty configured value fails closed.
+Only the `creator` / `monthly` quote is permitted for the test owner.
+This does not bypass published-product checks, invoice ownership, blockchain
+finality, billing worker, or checkout rate limits. Set this test restriction
+BEFORE enabling customer checkout flags or publishing the Creator plan.
+Production must never be changed during this staging acceptance.
