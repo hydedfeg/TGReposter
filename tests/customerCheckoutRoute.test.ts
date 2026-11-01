@@ -11,7 +11,7 @@ const quoteId="01234567-89ab-4cde-8123-0123456789ab";
 const orderId="11234567-89ab-4cde-8123-0123456789ab";
 
 async function withCheckout(
-  opts: { authenticated?: boolean; enabled?: boolean; topupsEnabled?:boolean; database?: boolean; blockedAction?:"quote"|"invoice" } = {},
+  opts: { authenticated?: boolean; enabled?: boolean; topupsEnabled?:boolean; database?: boolean; blockedAction?:"quote"|"invoice"; testOwner?:string } = {},
   cb: (base:string, spies:{quote:string[];orders:string[];reads:string[];topupQuotes:string[];topupOrders:string[]})=>Promise<void>
 ) {
   const spies={quote:[] as string[],orders:[] as string[],reads:[] as string[],topupQuotes:[] as string[],topupOrders:[] as string[]};
@@ -21,6 +21,7 @@ async function withCheckout(
     authMiddleware:(req:any,_res,next)=>{ if(opts.authenticated!==false)req.user={username:"Alice",authProvider:"legacy"};next(); },
     enabled:()=>opts.enabled===true,
     hasDatabase:()=>opts.database!==false,
+    testOwner:()=>opts.testOwner,
     checkBudget:async(_owner,action)=>{if(opts.blockedAction===action)throw new CheckoutRateLimitError(120);},
     topupsEnabled:()=>opts.topupsEnabled===true,
     catalog:async()=>({enabled:opts.enabled===true,topupsEnabled:opts.topupsEnabled===true,
@@ -227,6 +228,48 @@ test("disabled checkout does not invoke throttles or issue invoices",async()=>{
     });
     assert.equal(result.status,503);
     assert.equal((await result.json()).code,"CHECKOUT_DISABLED");
+    assert.deepEqual(spies.quote,[]);
+  });
+});
+
+
+test("staging checkout test-owner restriction refuses other accounts before any quote, order, or read",async()=>{
+  await withCheckout({enabled:true,topupsEnabled:true,testOwner:"legacy:bob"},async(base,spies)=>{
+    for (const [route,method,body] of [
+      ["status","GET",undefined],
+      ["quotes","POST",{planId:"creator",interval:"monthly"}],
+      ["orders","POST",{quoteId,network:"bsc"}],
+      ["topups/quotes","POST",{packId:"ai_mini"}],
+      ["orders/"+orderId,"GET",undefined]
+    ] as const) {
+      const res=await fetch(base+"/api/billing/checkout/"+route,{
+        method,headers:{"Content-Type":"application/json"},
+        ...(body?{body:JSON.stringify(body)}:{})
+      });
+      assert.equal(res.status,403);
+      assert.equal((await res.json()).code,"CHECKOUT_TEST_OWNER_ONLY");
+    }
+    assert.deepEqual(spies,{quote:[],orders:[],reads:[],topupQuotes:[],topupOrders:[]});
+  });
+});
+
+test("staging test account may buy only Creator monthly and invalid test-owner config fails closed",async()=>{
+  await withCheckout({enabled:true,testOwner:"legacy:alice"},async(base,spies)=>{
+    const annual=await fetch(base+"/api/billing/checkout/quotes",{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({planId:"creator",interval:"annual"})
+    });
+    assert.equal(annual.status,403);
+    assert.equal((await annual.json()).code,"CHECKOUT_TEST_PRODUCT_ONLY");
+    const quote=await fetch(base+"/api/billing/checkout/quotes",{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({planId:"creator",interval:"monthly"})
+    });
+    assert.equal(quote.status,201);
+    assert.deepEqual(spies.quote,["legacy:alice"]);
+  });
+  await withCheckout({enabled:true,testOwner:" "},async(base,spies)=>{
+    const status=await fetch(base+"/api/billing/checkout/status");
+    assert.equal(status.status,503);
+    assert.equal((await status.json()).code,"CHECKOUT_TEST_GUARD_INVALID");
     assert.deepEqual(spies.quote,[]);
   });
 });
