@@ -13,8 +13,10 @@ const navigation = {
     filters: "My Filters",
     destinations: "My Destinations",
     aiConfiguration: "My AI Configuration",
+    billing: "Billing & Usage",
     teamAccess: "Team & Access",
     systemSettings: "System Settings",
+    salesPlans: "Sales Plans",
     payments: "Payments",
   },
   titles: {
@@ -26,8 +28,10 @@ const navigation = {
     filters: "Content Filters",
     destination: "My Destinations",
     ai: "AI Configuration",
+    billing: "Billing & Usage",
     team: "Team & Access",
     database: "System Settings",
+    salesPlans: "Sales Plan Management",
     payments: "Payment Operations",
   },
   mobile: {

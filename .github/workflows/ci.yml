@@ -5,9 +5,14 @@ on:
     branches:
       - main
       - feat/multilingual-step-1-i18n-foundation
+      - feat/commercial-staging-integration
+      - feat/sales-plan-management-foundation
+      - feat/customer-usdt-checkout
   pull_request:
     branches:
       - main
+      - feat/crypto-payment-infrastructure
+      - feat/commercial-staging-integration
 
 permissions:
   contents: read
@@ -33,6 +38,28 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Dependency vulnerability inventory
+        run: |
+          npm audit --json > /tmp/tgreposter-audit.json || true
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const audit=JSON.parse(fs.readFileSync('/tmp/tgreposter-audit.json','utf8'));
+          console.log('AUDIT_TOTALS',JSON.stringify(audit.metadata?.vulnerabilities||{}));
+          for(const [name,item] of Object.entries(audit.vulnerabilities||{})){
+            const via=(item.via||[]).filter(x=>x&&typeof x==='object')
+              .map(x=>({title:x.title,range:x.range,url:x.url,source:x.source,
+                severity:x.severity}));
+            console.log('AUDIT_PACKAGE',JSON.stringify({
+              name,severity:item.severity,isDirect:item.isDirect,
+              range:item.range,fixAvailable:item.fixAvailable,
+              via:via.slice(0,8),effects:item.effects
+            }));
+          }
+          NODE
+
+      - name: Block moderate, high and critical dependency advisories
+        run: npm audit --audit-level=moderate
 
       - name: TypeScript check
         run: npm run lint

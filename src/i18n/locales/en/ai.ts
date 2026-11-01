@@ -1,4 +1,18 @@
 const ai = {
+  billingMode: {
+    title: "AI payment mode",
+    refresh: "Refresh",
+    byok: "My API key",
+    included: "Included AI Units",
+    balance: "Available: {{included}} included · {{purchased}} purchased AI Units",
+    periodEnd: "Resets {{date}}",
+    notLaunched: "Included AI Units are not launched yet. Your personal AI key still works.",
+    loading: "Checking your AI credit availability…",
+    error: "Credit status could not be verified. Included AI is unavailable for now.",
+    openRouterOnly: "Choose OpenRouter as your AI provider for included credits.",
+    usageNotice: "This request will use your AI Unit balance. Provider charges are settled by the server.",
+    byokNotice: "Requests use your own configured provider key and do not use TGReposter AI Units.",
+  },
   header: {
     title: "AI Curation Engine",
     description: "Configure the language model used to rewrite, translate, and extract hashtags from posts.",

@@ -1,3 +1,4 @@
+import { requirePlanCapacity } from "../billing/backendEntitlementGuard";
 import promotionRepository, {
   type PromotionRepository,
   type TelegramBotAccountRecord,
@@ -232,6 +233,8 @@ export class PromotionCampaignService {
       ? undefined
       : optionalText(body.description, "description") ?? null;
 
+    if(nextStatus==="ready" && campaign.status!=="ready")
+      await requirePlanCapacity(ownerPrincipal,"activeCampaigns",1);
     const updated = await this.repository.updateCampaign(ownerPrincipal, id, { name, description, status: nextStatus });
     return updated!;
   }
@@ -540,6 +543,8 @@ export class PromotionCampaignService {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", `Campaign cannot be launched from status '${campaign.status}'. Use retry for failed deliveries.`);
     }
 
+    if(!["ready","running"].includes(campaign.status))
+      await requirePlanCapacity(ownerPrincipal,"activeCampaigns",1);
     await this.validateCampaignContent(ownerPrincipal, campaignId);
     await this.validateTargets(ownerPrincipal, targetIds);
 
@@ -623,6 +628,7 @@ export class PromotionCampaignService {
 
     const targetIds = Array.from(new Set(retryableFailedWork.map(item => item.target.id)));
     await this.validateTargets(ownerPrincipal, targetIds);
+    await requirePlanCapacity(ownerPrincipal,"activeCampaigns",1);
     const running = await this.repository.markCampaignRunningForRetry(ownerPrincipal, campaignId);
     if (!running) {
       throw new PromotionCampaignError(409, "CAMPAIGN_STATE_CONFLICT", "Campaign retry could not acquire the campaign state.");

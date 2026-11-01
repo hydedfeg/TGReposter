@@ -6,17 +6,25 @@ import { ChannelRepository } from "./server/repositories/channelRepository";
 import { createPromotionRouter } from "./server/routes/promotion";
 import { createDemoRequestRouter } from "./server/routes/demoRequests";
 import { createCryptoPaymentRouter } from "./server/routes/cryptoPayments";
+import { createBillingOverviewRouter } from "./server/routes/billingOverview";
+import { createSalesPlanAdminRouter } from "./server/routes/salesPlanAdmin";
+import { createCustomerCheckoutRouter } from "./server/routes/customerCheckout";
 import { startCryptoPaymentScheduler } from "./server/payments/paymentScheduler";
+import { startBillingOperationsScheduler } from "./server/billing/billingOperationsScheduler";
+import { startAiReconciliationScheduler } from "./server/billing/openRouterReconciliationScheduler";
 import { runCryptoPaymentStartupPreflight } from "./server/payments/paymentRuntime";
 import { buildCurationPrompt, isCurationAction } from "./server/ai/curationPrompt";
 import { getAIOutputLanguagePromptName, resolveAIOutputLanguageId } from "./shared/aiLanguages";
 import { API_ERROR_CODES } from "./shared/apiErrorCodes";
 import { dispatchCuration } from "./server/ai/curationDispatcher";
+import { openRouterModelCatalog } from "./server/ai/openRouterModelCatalog";
 import { isValidInboxCronSecret } from "./server/services/cronAuthService";
 import { getDatabaseHealth } from "./server/services/databaseHealthService";
 import { getMainTelegramBotToken, getUserTelegramBotToken, saveMainTelegramBotToken, saveUserTelegramBotToken } from "./server/services/telegramCredentialService";
 import { deleteUserAIApiKey, getUserAIApiKey, getUserAICredentialStatus, isUserAIProvider, normalizeUserAIApiKey, saveUserAIApiKey } from "./server/services/aiCredentialService";
 import { destinationOwnerPrincipalForUser, getUserDestinationConfig, saveUserDestinationTargets, updateUserDestinationStatuses } from "./server/services/userDestinationService";
+import { PlanCapacityError,isPlanCapacityDbError } from "./server/billing/backendEntitlementGuard";
+import { runCustomerCommercialCuration, CustomerCommercialCurationError } from "./server/billing/customerCommercialCuration";
 import { getOwnerInboxPosts, getUserInboxPost, getUserInboxPosts, saveUserInboxPosts } from "./server/services/userInboxService";
 import { ownerPrincipalForUser } from "./server/services/userPrincipalService";
 import { countActiveSupabaseAppUsers, countActiveSupabaseSuperAdmins, createSupabaseAppUser, findSupabaseAppUser, isAppUiLocale, listSupabaseAppUsers, revokeSupabaseAppUser, signInWithSupabasePassword, updateSupabaseAppUserUiLocale, validateSupabaseAccessToken } from "./server/services/appAuthService";
@@ -521,6 +529,11 @@ app.use("/api/promotion", createPromotionRouter({
 
 // Crypto payment operations are super-admin-only infrastructure endpoints.
 // They remain inert until CRYPTO_PAYMENTS_ENABLED and at least one network are enabled.
+// Customer Billing & Usage is strictly read-only and owner-scoped.
+app.use("/api/billing", createBillingOverviewRouter({ authMiddleware }));
+app.use("/api/admin/sales-plans", createSalesPlanAdminRouter({ authMiddleware, requireSuperAdmin }));
+app.use("/api/billing/checkout", createCustomerCheckoutRouter({ authMiddleware }));
+
 app.use("/api/crypto-payments", createCryptoPaymentRouter({
   authMiddleware,
   requireSuperAdmin,
@@ -1047,9 +1060,14 @@ app.post("/api/settings", authMiddleware, async (req: any, res: any) => {
           incoming.destination.targets ?? []
         );
       } catch (error: any) {
-        console.error("Failed saving user-scoped destinations:", error);
-        return res.status(400).json({
-          error: error?.message || "Your Telegram destinations could not be saved.",
+        const limited=error instanceof PlanCapacityError||isPlanCapacityDbError(error);
+        if(!limited)console.error("Failed saving user-scoped destinations:", {
+          code:typeof error?.code==="string"?error.code:"UNKNOWN"
+        });
+        return res.status(limited?409:400).json({
+          ...(limited?{code:"PLAN_LIMIT_REACHED"}:{}),
+          error:limited?"Current subscription plan capacity reached.":
+            "Your Telegram destinations could not be saved.",
         });
       }
     } else {
@@ -1225,6 +1243,18 @@ app.delete("/api/ai/credentials/:provider", authMiddleware, async (req: any, res
     return res.status(500).json({
       error: "Unable to remove your AI API key.",
     });
+  }
+});
+
+// Read-only, authenticated OpenRouter model discovery. This endpoint returns
+// public model metadata only; neither OpenRouter keys nor private billing data.
+app.get("/api/ai/openrouter/models", authMiddleware, async (_req, res) => {
+  try {
+    const models = await openRouterModelCatalog.listModels();
+    return res.json({ models });
+  } catch (error) {
+    console.error("OpenRouter model discovery failed:", error);
+    return res.status(503).json({ error: "AI model catalog is temporarily unavailable." });
   }
 });
 
@@ -1655,6 +1685,50 @@ app.post("/api/ai/curate", authMiddleware, async (req: any, res) => {
   }
 
   const prompt = buildCurationPrompt(action, text, promptContext);
+
+  // Commercial credits are strictly opt-in and disabled by default. The
+  // existing bring-your-own-key path below is not charged or altered.
+  if (req.body?.billingMode !== undefined) {
+    if (req.body.billingMode !== "included") {
+      return res.status(400).json({
+        code: "INVALID_AI_BILLING_MODE", error: "Unsupported AI billing mode."
+      });
+    }
+    // The client cannot supply owner identity, grant period, credited amount,
+    // provider cost, or the provider API key for server-funded requests.
+    const allowed = new Set(["billingMode", "action", "text", "context", "targetLanguage"]);
+    if (!req.body || Object.keys(req.body).some(key => !allowed.has(key)) ||
+        typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({
+        code: "INVALID_COMMERCIAL_AI_REQUEST", error: "Invalid included AI request."
+      });
+    }
+    try {
+      const response = await runCustomerCommercialCuration({
+        user: req.user,
+        provider: aiProvider,
+        modelId: aiModel,
+        action,
+        prompt,
+        idempotencyKey: req.get("Idempotency-Key")
+      });
+      return res.json(response);
+    } catch (error: any) {
+      if (error instanceof CustomerCommercialCurationError) {
+        return res.status(error.status).json({code:error.code,error:error.message});
+      }
+      const schemaUnavailable = error?.code === "42P01" || error?.code === "42703";
+      if (!schemaUnavailable) {
+        console.error("Included AI curation failed:", {
+          code: typeof error?.code === "string" ? error.code : "UNEXPECTED"
+        });
+      }
+      return res.status(503).json({
+        code: "COMMERCIAL_AI_UNAVAILABLE",
+        error: "Included AI curation is temporarily unavailable."
+      });
+    }
+  }
 
   let geminiClient = ai;
   let geminiApiKey = process.env.GEMINI_API_KEY;
@@ -2262,6 +2336,10 @@ async function startServer() {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
     void runCryptoPaymentStartupPreflight();
     startCryptoPaymentScheduler();
+    // Commercial processing remains OFF unless explicitly enabled at deployment.
+    startBillingOperationsScheduler();
+    // Disabled by default even when commercial billing is active.
+    startAiReconciliationScheduler();
   });
 }
 

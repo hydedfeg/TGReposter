@@ -56,7 +56,7 @@ test("payments overview endpoint is behind super-admin authorization", () => {
 test("payments workspace is only mounted for super-admins and has a navigation item", () => {
   const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
   const shell = readFileSync(resolve(root, "src/components/AppShell.tsx"), "utf8");
-  assert.match(app, /new Set<WorkspaceView>\(\["team", "database", "payments"\]\)/);
+  assert.match(app, /new Set<WorkspaceView>\(\["team", "database", "payments", "salesPlans"\]\)/);
   assert.match(app, /activeWorkspaceTab === "payments" && currentUserRole === "super-admin"/);
   assert.match(shell, /view: "payments", labelKey: "items\.payments"/);
   assert.match(shell, /currentUserRole === "super-admin"/);

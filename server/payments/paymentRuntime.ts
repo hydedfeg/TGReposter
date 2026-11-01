@@ -1,5 +1,7 @@
 import { createCryptoPaymentNetworkAdapter } from "./paymentAdapterFactory";
 import { safeCryptoPaymentFailure, type CryptoPaymentFailureCode } from "./paymentFailureDiagnostics";
+import { TonCenterRateLimitError } from "./tonCenterUsdtAdapter";
+import { TonScanRateLimitBackoff } from "./tonScanRateLimitBackoff";
 import { CANONICAL_USDT_ASSETS } from "./usdtAssetRegistry";
 import {
   loadCryptoPaymentNetworkConfigs,
@@ -17,6 +19,9 @@ export interface CryptoPaymentNetworkRuntimeResult {
   result?: Awaited<ReturnType<CryptoPaymentWatcher["runOnce"]>>;
   error?: string;
   errorCode?: CryptoPaymentFailureCode;
+  /** Provider cooldown is a deliberate skip, not a successful scan. */
+  skipped?: boolean;
+  retryAt?: string;
 }
 
 export interface CryptoPaymentPreflightNetworkResult {
@@ -165,8 +170,19 @@ export async function runCryptoPaymentStartupPreflight(
   }
 }
 
+const sharedTonScanBackoff = new TonScanRateLimitBackoff();
+
+export interface CryptoPaymentScanOptions {
+  /** Deterministic test injection only; never supplied by a browser. */
+  tonBackoff?: TonScanRateLimitBackoff;
+  createWatcher?: (
+    config: CryptoPaymentNetworkConfig
+  ) => Pick<CryptoPaymentWatcher, "runOnce">;
+}
+
 export async function scanConfiguredCryptoPayments(
-  env: Record<string, string | undefined> = process.env
+  env: Record<string, string | undefined> = process.env,
+  options: CryptoPaymentScanOptions = {}
 ): Promise<CryptoPaymentRuntimeResult> {
   const configs = loadCryptoPaymentNetworkConfigs(env);
   if (configs.length === 0) {
@@ -177,22 +193,49 @@ export async function scanConfiguredCryptoPayments(
   }
 
   const networks: CryptoPaymentNetworkRuntimeResult[] = [];
+  const backoff = options.tonBackoff ?? sharedTonScanBackoff;
+  const createWatcher = options.createWatcher ??
+    ((config: CryptoPaymentNetworkConfig) =>
+      new CryptoPaymentWatcher(config, createCryptoPaymentNetworkAdapter(config)));
 
   for (const config of configs) {
+    if (config.id === "ton") {
+      const retryAt = backoff.retryAt();
+      if (retryAt) {
+        networks.push({
+          network: config.id,
+          ok: false,
+          skipped: true,
+          errorCode: "RPC_RATE_LIMITED",
+          error: "Blockchain RPC provider is rate limiting requests.",
+          retryAt,
+        });
+        continue;
+      }
+    }
     try {
-      const adapter = createCryptoPaymentNetworkAdapter(config);
-      const watcher = new CryptoPaymentWatcher(config, adapter);
-      const result = await watcher.runOnce();
+      const result = await createWatcher(config).runOnce();
+      if (config.id === "ton") backoff.reset();
       networks.push({
         network: config.id,
         ok: true,
         result,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const failure = safeCryptoPaymentFailure(error);
+      if (config.id === "ton") {
+        if (failure.errorCode === "RPC_RATE_LIMITED") {
+          backoff.noteRateLimited(
+            error instanceof TonCenterRateLimitError ? error.retryAfterMs : null
+          );
+        } else {
+          backoff.reset();
+        }
+      }
       networks.push({
         network: config.id,
         ok: false,
-        ...safeCryptoPaymentFailure(error),
+        ...failure,
       });
     }
   }

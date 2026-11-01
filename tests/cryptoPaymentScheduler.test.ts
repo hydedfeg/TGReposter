@@ -214,3 +214,21 @@ test("scheduler logs only controlled network diagnostics when provider fails", a
   }]);
   assert.doesNotMatch(JSON.stringify(warnings), /secret|https?:\/\//i);
 });
+
+test("scheduler omits repeated warning for intentionally cooled-down TON scan",async()=>{
+  const warnings:unknown[]=[];
+  const stop=startCryptoPaymentScheduler({
+    env:{...enabledEnv},
+    runLockedScan:async()=>({acquired:true,result:{enabled:true,networks:[
+      {network:"bsc",ok:true},
+      {network:"ton",ok:false,skipped:true,errorCode:"RPC_RATE_LIMITED",
+        error:"Blockchain RPC provider is rate limiting requests.",
+        retryAt:"2026-10-17T14:00:00Z"}
+    ]}}),
+    setIntervalFn:()=>({}),
+    logger:{info(){},warn(_message,detail){warnings.push(detail);},error(){}}
+  });
+  await new Promise(resolve=>setImmediate(resolve));
+  stop();
+  assert.deepEqual(warnings,[]);
+});

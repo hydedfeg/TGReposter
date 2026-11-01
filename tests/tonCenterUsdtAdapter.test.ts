@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TonCenterUsdtAdapter } from "../server/payments/tonCenterUsdtAdapter";
+import {
+  TonCenterUsdtAdapter, TonCenterRateLimitError,
+  parseTonRetryAfter, TON_MAX_RETRY_AFTER_MS
+} from "../server/payments/tonCenterUsdtAdapter";
 import type { CryptoPaymentNetworkConfig } from "../server/payments/types";
 
 const merchant = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
@@ -246,4 +249,47 @@ test("TON preflight rejects malformed merchant receiving addresses", async () =>
     () => adapter.getAssetDecimals(),
     /Invalid TON configured receiving address format/
   );
+});
+
+test("TON parses bounded Retry-After without accepting provider-supplied secrets",()=>{
+  const clock=Date.parse("2026-10-17T12:00:00Z");
+  assert.equal(parseTonRetryAfter("120",clock),120_000);
+  assert.equal(parseTonRetryAfter("9999999999",clock),TON_MAX_RETRY_AFTER_MS);
+  assert.equal(parseTonRetryAfter(new Date(clock+90_000).toUTCString(),clock),90_000);
+  assert.equal(parseTonRetryAfter(new Date(clock-60_000).toUTCString(),clock),null);
+  for(const bad of ["0","-1","12; key=secret","10000000000","token-secret",null]){
+    assert.equal(parseTonRetryAfter(bad,clock),null);
+  }
+});
+
+test("TON 429 supplies only sanitized status and bounded retry information",async()=>{
+  let requests=0;
+  const adapter=new TonCenterUsdtAdapter(config(),async(_url,opts)=>{
+    requests++;
+    assert.equal((opts?.headers as Record<string,string>)["X-Api-Key"],"server-only-key");
+    return new Response('{"url":"https://secret.example.test/token"}',{
+      status:429,headers:{"Retry-After":"240"}
+    });
+  },()=>Date.parse("2026-10-17T12:00:00Z"));
+  await assert.rejects(()=>adapter.getAssetDecimals(),error=>{
+    assert.ok(error instanceof TonCenterRateLimitError);
+    assert.equal(error.status,429);
+    assert.equal(error.retryAfterMs,240_000);
+    assert.equal(error.message,"TON Center request failed with HTTP 429.");
+    assert.doesNotMatch(JSON.stringify(error),/server-only-key|secret/);
+    return true;
+  });
+  assert.equal(requests,1); // No hot-loop retry inside a locked scanner scan
+});
+
+test("TON 401 remains an authorization error and is not a cooldown response",async()=>{
+  const adapter=new TonCenterUsdtAdapter(config(),async()=>new Response(
+    "unauthorized private-token", {status:401,headers:{"Retry-After":"120"}}
+  ));
+  await assert.rejects(()=>adapter.getAssetDecimals(),error=>{
+    assert.ok(error instanceof Error);
+    assert.ok(!(error instanceof TonCenterRateLimitError));
+    assert.equal(error.message,"TON Center request failed with HTTP 401.");
+    return true;
+  });
 });

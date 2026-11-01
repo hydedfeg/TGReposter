@@ -1,3 +1,4 @@
+import { requirePlanCapacity } from "../billing/backendEntitlementGuard";
 import {
   ChannelRepository,
   SourceChannel,
@@ -29,6 +30,8 @@ export class ChannelService {
     if (existing.some(c => c.username === clean)) {
       throw new Error("Channel already exists.");
     }
+
+    await requirePlanCapacity(ownerPrincipal,"sources",1);
 
     const channel: SourceChannel = {
       username: clean,

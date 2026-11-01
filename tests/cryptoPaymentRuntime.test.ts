@@ -9,6 +9,8 @@ import {
   runCryptoPaymentStartupPreflight,
   scanConfiguredCryptoPayments,
 } from "../server/payments/paymentRuntime";
+import { TonScanRateLimitBackoff } from "../server/payments/tonScanRateLimitBackoff";
+import { TonCenterRateLimitError } from "../server/payments/tonCenterUsdtAdapter";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -286,4 +288,57 @@ test("payment preflight failures redact provider response secrets while preservi
   assert.equal(result.networks[0].errorCode, "RPC_RATE_LIMITED");
   assert.match(result.networks[0].error ?? "", /rate limiting/i);
   assert.doesNotMatch(JSON.stringify(result), /SUPER_SECRET|private-provider\.test|222222222222/);
+});
+
+test("TON cooldown skips only TON, preserves other network scans and resets on success",async()=>{
+  const clock={now:Date.parse("2026-10-17T12:00:00Z")};
+  const backoff=new TonScanRateLimitBackoff(()=>clock.now);
+  const env={
+    CRYPTO_PAYMENTS_ENABLED:"true",
+    CRYPTO_USDT_BSC_ENABLED:"true",
+    CRYPTO_USDT_BSC_RPC_URL:"https://secret-bsc.invalid/key",
+    CRYPTO_USDT_BSC_RECEIVING_ADDRESS:"0x2222222222222222222222222222222222222222",
+    CRYPTO_USDT_BSC_CONFIRMATIONS:"120",
+    CRYPTO_USDT_TON_ENABLED:"true",
+    CRYPTO_USDT_TON_RPC_URL:"https://secret-ton.invalid/key",
+    CRYPTO_USDT_TON_RECEIVING_ADDRESS:"EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c",
+    CRYPTO_USDT_TON_CONFIRMATIONS:"1",
+  };
+  let failTon=true;
+  const called:string[]=[];
+  const opts={
+    tonBackoff:backoff,
+    createWatcher:(config:any)=>({
+      runOnce:async()=>{
+        called.push(config.id);
+        if(config.id==="ton" && failTon)throw new TonCenterRateLimitError(180_000);
+        return {network:config.id,nextCursor:"unchanged-fixture",observations:0,
+          matched:0,confirming:0,confirmed:0,unmatched:0,ambiguous:0,replayed:0};
+      }
+    })
+  };
+  const first=await scanConfiguredCryptoPayments(env,opts);
+  assert.deepEqual(called,["bsc","ton"]);
+  assert.equal(first.networks[0].ok,true);
+  assert.equal(first.networks[1].errorCode,"RPC_RATE_LIMITED");
+  assert.equal(first.networks[1].skipped,undefined);
+  assert.equal(first.networks[1].error,"Blockchain RPC provider is rate limiting requests.");
+  assert.doesNotMatch(JSON.stringify(first),/secret-ton|secret-bsc|222222222222/);
+
+  clock.now+=60_000;
+  const second=await scanConfiguredCryptoPayments(env,opts);
+  assert.deepEqual(called,["bsc","ton","bsc"]);
+  assert.equal(second.networks[0].ok,true);
+  assert.equal(second.networks[1].ok,false);
+  assert.equal(second.networks[1].skipped,true);
+  assert.equal(second.networks[1].retryAt,
+    new Date(Date.parse("2026-10-17T12:03:00Z")).toISOString());
+  assert.equal(backoff.retryAt(),second.networks[1].retryAt);
+
+  failTon=false;
+  clock.now+=120_000;
+  const third=await scanConfiguredCryptoPayments(env,opts);
+  assert.equal(third.networks[1].ok,true);
+  assert.deepEqual(called,["bsc","ton","bsc","bsc","ton"]);
+  assert.equal(backoff.retryAt(),null);
 });
