@@ -11,8 +11,11 @@ import { classifyCryptoPaymentFailure } from "./paymentFailureDiagnostics";
 const ERC20_TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 const ERC20_DECIMALS_SELECTOR = "0x313ce567";
-// At most 64 leaf ranges for eth_getLogs provider range limits.
+// Expensive BSC historical log scans need short queries and bounded recovery.
+// A partial set of returned chunks must never advance the saved scan cursor.
+const MAX_BSC_LOG_RANGE = 128n;
 const MAX_EVM_LOG_SPLIT_DEPTH = 6;
+const MAX_BSC_TIMEOUT_SPLIT_DEPTH = 3;
 
 const EXPECTED_EVM_CHAIN_IDS = {
   bsc: 56n,
@@ -206,7 +209,7 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
     const decimals = await this.getAssetDecimals();
     // On provider range-size rejection, scan exact subranges. Any failure
     // aborts the entire scan before the watcher can advance the cursor.
-    const logs = await this.fetchTransferLogs(
+    const logs = await this.fetchTransferLogsInBoundedRanges(
       fromBlock, toBlock, tokenIdentifier, receivingAddress
     );
 
@@ -302,8 +305,33 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
     };
   }
 
-  /**
-   * Split only a provider's range-size error, never a rate limit or timeout.
+  /** BSC only: keep historical eth_getLogs calls in bounded windows.
+   * A failed chunk aborts the entire scan before any cursor is saved.
+   */
+  private async fetchTransferLogsInBoundedRanges(
+    fromBlock: bigint,
+    toBlock: bigint,
+    tokenIdentifier: string,
+    receivingAddress: string
+  ): Promise<EvmLog[]> {
+    if (this.network !== "bsc") {
+      return this.fetchTransferLogs(fromBlock, toBlock, tokenIdentifier, receivingAddress);
+    }
+
+    const allLogs: EvmLog[] = [];
+    for (let start = fromBlock; start <= toBlock;) {
+      const last = start + MAX_BSC_LOG_RANGE - 1n;
+      const end = last < toBlock ? last : toBlock;
+      allLogs.push(...await this.fetchTransferLogs(
+        start, end, tokenIdentifier, receivingAddress
+      ));
+      start = end + 1n;
+    }
+    return allLogs;
+  }
+
+  /** Split range-size errors and bounded BSC log-query timeouts only.
+   * Never split rate-limits, authentication errors, or unrelated failures.
    * All intervals are disjoint and the entire scan must succeed to return.
    */
   private async fetchTransferLogs(
@@ -325,8 +353,12 @@ export class EvmUsdtAdapter implements CryptoPaymentNetworkAdapter {
       }
       return logs;
     } catch (error) {
-      if (classifyCryptoPaymentFailure(error) !== "RPC_RANGE_TOO_LARGE" ||
-          fromBlock >= toBlock || depth >= MAX_EVM_LOG_SPLIT_DEPTH) {
+      const code = classifyCryptoPaymentFailure(error);
+      const splitRange = code === "RPC_RANGE_TOO_LARGE" &&
+        depth < MAX_EVM_LOG_SPLIT_DEPTH;
+      const splitTimeout = this.network === "bsc" &&
+        code === "RPC_TIMEOUT" && depth < MAX_BSC_TIMEOUT_SPLIT_DEPTH;
+      if ((!splitRange && !splitTimeout) || fromBlock >= toBlock) {
         throw error;
       }
       const midpoint = fromBlock + (toBlock - fromBlock) / 2n;
