@@ -26,6 +26,7 @@ type Dependencies = {
   topupOrder?: typeof createCustomerTopupOrder;
   readOrder?: typeof getCustomerCheckoutOrder;
   checkBudget?: (ownerPrincipal:string,action:CheckoutRateAction)=>Promise<void>;
+  testOwner?: () => string | undefined;
 };
 
 function exactBody(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -82,6 +83,30 @@ export function createCustomerCheckoutRouter(deps: Dependencies) {
       res.set("Retry-After",String(error.retryAfterSeconds));
     return res.status(fail.status).json({code:fail.code,error:fail.message});
   }
+
+  // Optional staging-only restriction. Missing means regular feature gates apply.
+  // An explicitly configured but invalid owner fails closed rather than opening sales.
+  const testOwner = deps.testOwner ?? (() => process.env.TGREPOSTER_CHECKOUT_TEST_OWNER);
+  router.use((req:any,res,next) => {
+    const configured = testOwner();
+    if (configured === undefined) return next();
+    const owner = configured.trim().toLowerCase();
+    if (!/^(?:supabase:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|legacy:[a-z0-9._@+-]{3,200})$/.test(owner)) {
+      return res.status(503).json({code:"CHECKOUT_TEST_GUARD_INVALID",error:"Test checkout configuration is invalid."});
+    }
+    let caller: string;
+    try { caller = ownerPrincipalForUser(req.user); }
+    catch { return res.status(401).json({code:"BILLING_AUTH_REQUIRED",error:"Sign in required."}); }
+    if (caller !== owner) {
+      return res.status(403).json({code:"CHECKOUT_TEST_OWNER_ONLY",error:"Checkout is restricted to a staging test account."});
+    }
+    // Test authorization is deliberately limited to the 15 EUR Creator monthly plan.
+    if (req.method === "POST" && req.path === "/quotes" &&
+        (req.body?.planId !== "creator" || req.body?.interval !== "monthly")) {
+      return res.status(403).json({code:"CHECKOUT_TEST_PRODUCT_ONLY",error:"Only Creator monthly is available for this test."});
+    }
+    return next();
+  });
 
   router.get("/status",async (_req,res) => {
     if (!hasDatabase())return res.json({enabled:false,topupsEnabled:false,plans:[],packs:[],networks:[]});
