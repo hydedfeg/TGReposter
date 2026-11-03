@@ -12,6 +12,8 @@ The current trigger resolves any active subscription's plan ID directly from the
 
 Regression coverage checks custom and unknown identities across all three resource categories. The PostgreSQL 17 CI job also checks competing transactions for Free, custom-draft fallback, built-in paid sources, and the shared personal/promotion destination budget.
 
+The frozen historical snapshot remains at 45 source files and 46 applied ledger entries. This new unapplied candidate is separately pinned by its Git blob hash in `tests/stagingForwardMigrationInventory.ts`; inventory tests still reject unknown files, duplicate names, and any changed historical bytes. The backoff rehearsal reconstructs only the frozen source baseline rather than accidentally applying later pending migrations.
+
 ## Release boundary
 
 Do not apply this migration or repair historical migration aliases before the actual encrypted staging backup and isolated restore gate is satisfied. Do not modify the enforcement flag as part of this correction. There are no live schema or data changes in this work.

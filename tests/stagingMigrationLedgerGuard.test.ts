@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import {fileURLToPath} from "node:url";
+import { FORWARD_STAGING_MIGRATIONS } from "./stagingForwardMigrationInventory";
 
 /**
  * Historical staging migration inventory — local files and committed snapshot
@@ -57,11 +58,11 @@ test("historical staging migration snapshot is intentionally pinned to the audit
 test("migration file inventory and Git blobs cannot silently change or replay historical versions",()=>{
   const actual=fs.readdirSync(migrationDir)
     .filter(file=>file.endsWith(".sql")).sort();
-  const expected=snapshot.sourceFiles.map(x=>x.file).sort();
+  const expected=[...snapshot.sourceFiles,...FORWARD_STAGING_MIGRATIONS].map(x=>x.file).sort();
   assert.deepEqual(actual,expected,
     "Historical migration set changed: review the staging ledger and update the snapshot explicitly");
   const names=new Set<string>();
-  for(const record of snapshot.sourceFiles){
+  for(const record of [...snapshot.sourceFiles,...FORWARD_STAGING_MIGRATIONS]){
     assert.match(record.file,/^\d+_[a-z0-9_]+\.sql$/);
     assert.match(record.blobSha1,/^[a-f0-9]{40}$/);
     const name=record.file.replace(/^\d+_/,"").replace(/\.sql$/,"");
