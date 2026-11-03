@@ -1,4 +1,12 @@
 const billing = {
+  paymentRecord: {
+    "title": "Payment record",
+    "download": "Download JSON record",
+    "loading": "Preparing record…",
+    "notice": "Payment records confirm recorded purchases. They are not tax invoices or refund confirmations.",
+    "error": "This payment record could not be verified. Refresh billing and try again.",
+    "notReady": "Available after confirmed fulfillment"
+},
   management: {
     "title": "Manage subscription",
     "policy": "Your paid access continues until {{date}}. USDT renewals require a separate payment; no automatic debit occurs. Cancellation does not issue a refund or delete workspace data.",

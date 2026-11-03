@@ -4,6 +4,7 @@ import { getBillingOverview } from "../billing/billingOverviewService";
 import { setEndOfTermCancellation, SubscriptionLifecycleError } from "../billing/subscriptionLifecycleService";
 import { getPlanChangePreview, PlanChangePreviewError } from "../billing/planChangePreview";
 import { isCommercialCurationRouteEnabled } from "../billing/customerCommercialCuration";
+import { getCustomerPaymentRecord, PaymentRecordError } from "../billing/customerPaymentRecord";
 
 /**
  * The authenticated session is the ONLY
@@ -19,6 +20,7 @@ export function createBillingOverviewRouter(options: {
   previewChange?: typeof getPlanChangePreview;
   canPreview?: () => boolean;
   canUseCommercialAI?: () => boolean;
+  loadPaymentRecord?: typeof getCustomerPaymentRecord;
 }) {
   const router = Router();
   const load = options.loadOverview ?? getBillingOverview;
@@ -30,6 +32,27 @@ export function createBillingOverviewRouter(options: {
   const canUseCommercialAI = options.canUseCommercialAI ?? isCommercialCurationRouteEnabled;
 
   router.use(options.authMiddleware);
+  router.get("/orders/:type/:id/payment-record", async (req: any, res) => {
+    res.set("Cache-Control", "private, no-store");
+    res.set("Vary", "Authorization");
+    res.set("X-Content-Type-Options", "nosniff");
+    if (!req.user) return res.status(401).json({ code: "BILLING_AUTH_REQUIRED" });
+    if (!hasDatabase()) return res.status(503).json({ code: "BILLING_NOT_READY" });
+    if (Object.keys(req.query).length) return res.status(400).json({ code: "INVALID_PAYMENT_RECORD_REQUEST" });
+    try {
+      const record = await (options.loadPaymentRecord ?? getCustomerPaymentRecord)(
+        ownerPrincipalForUser(req.user), req.params.type, req.params.id);
+      res.attachment(`tgreposter-payment-${record.orderId}.json`);
+      return res.json({ record });
+    } catch (error) {
+      if (error instanceof PaymentRecordError) {
+        const status = error.code === "PAYMENT_RECORD_NOT_FOUND" ? 404
+          : error.code === "INVALID_PAYMENT_RECORD_REQUEST" ? 400 : 409;
+        return res.status(status).json({ code: error.code });
+      }
+      return res.status(503).json({ code: "PAYMENT_RECORD_UNAVAILABLE" });
+    }
+  });
   router.get("/subscription/management-status", (req: any, res) => {
     res.set("Cache-Control", "private, no-store");
     res.set("Vary", "Authorization");

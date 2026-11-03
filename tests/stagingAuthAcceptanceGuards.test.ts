@@ -84,10 +84,12 @@ test("empty promotion resources alone do not establish positive owner isolation"
 
 test("staging preflight covers protected payment, billing, promotion, AI and database reads",()=>{
  const paths=new Set(STAGING_PRIVATE_GET_PATHS);
- assert.equal(paths.size,24,"Private GET list must cover all 24 distinct protected reads.");
+ assert.equal(paths.size,26,"Private GET list must cover all 26 distinct protected reads.");
  assert.equal(paths.size,STAGING_PRIVATE_GET_PATHS.length,"Private GET list must not include duplicates.");
  for(const p of [
    "/api/billing/overview",
+   "/api/billing/orders/subscription/00000000-0000-0000-0000-000000000000/payment-record",
+   "/api/billing/orders/topup/00000000-0000-0000-0000-000000000000/payment-record",
    "/api/billing/subscription/management-status",
    "/api/billing/checkout/orders/00000000-0000-0000-0000-000000000000",
    "/api/billing/subscription/change-preview?targetPlanId=free",
@@ -107,7 +109,7 @@ test("staging preflight covers protected payment, billing, promotion, AI and dat
 test("forged token paths are genuine private GET routes and unique",()=>{
  const all=new Set(STAGING_PRIVATE_GET_PATHS);
  const forged=new Set(STAGING_FORGED_TOKEN_GET_PATHS);
- assert.equal(forged.size,11,"Forged bearer list must have 11 unique reads.");
+ assert.equal(forged.size,13,"Forged bearer list must have 13 unique reads.");
  assert.equal(forged.size,STAGING_FORGED_TOKEN_GET_PATHS.length);
  for(const path of forged)assert.ok(all.has(path),"Unknown forged-token route: "+path);
 });
