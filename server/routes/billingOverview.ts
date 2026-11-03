@@ -6,7 +6,7 @@ import { getPlanChangePreview, PlanChangePreviewError } from "../billing/planCha
 import { isCommercialCurationRouteEnabled } from "../billing/customerCommercialCuration";
 
 /**
- * No checkout or mutation routes. The authenticated session is the ONLY
+ * The authenticated session is the ONLY
  * source for the billing owner. The response deliberately has no payment
  * address, API keys, invoice transaction hash or external customer ID.
  */
@@ -30,6 +30,12 @@ export function createBillingOverviewRouter(options: {
   const canUseCommercialAI = options.canUseCommercialAI ?? isCommercialCurationRouteEnabled;
 
   router.use(options.authMiddleware);
+  router.get("/subscription/management-status", (req: any, res) => {
+    res.set("Cache-Control", "private, no-store");
+    res.set("Vary", "Authorization");
+    if (!req.user) return res.status(401).json({ code: "BILLING_AUTH_REQUIRED" });
+    return res.json({ enabled: hasDatabase() && canManage() });
+  });
   // Commercial curation capabilities are per-user and off by default.
   // The public UI must not infer availability solely from a plan or credits.
   // No owner data, wallet data or payment methods are exposed while disabled.

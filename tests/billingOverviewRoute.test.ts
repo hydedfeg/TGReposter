@@ -9,14 +9,16 @@ async function withServer(
   loadOverview: (owner: string) => Promise<any>,
   check: (base: string) => Promise<void>,
   hasDatabase = true,
-  commercialEnabled = false
+  commercialEnabled = false,
+  managementEnabled = false
 ) {
   const app = express();
   app.use("/api/billing",createBillingOverviewRouter({
     authMiddleware:auth,
     loadOverview:loadOverview as any,
     hasDatabase:()=>hasDatabase,
-    canUseCommercialAI:()=>commercialEnabled
+    canUseCommercialAI:()=>commercialEnabled,
+    canManage:()=>managementEnabled
   }));
   const server=createServer(app);
   await new Promise<void>((resolve)=>server.listen(0,"127.0.0.1",resolve));
@@ -28,6 +30,24 @@ async function withServer(
     await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));
   }
 }
+
+test("management capability is authenticated, private and requires both database and server gate", async () => {
+  for (const [database, gate] of [[false, true], [true, false], [true, true]]) {
+    await withServer((req: any, _res, next) => {
+      req.user = { username: "alice", authProvider: "legacy" }; next();
+    }, async () => { throw Error("capability must not read owner data"); }, async base => {
+      const response = await fetch(base + "/api/billing/subscription/management-status?enabled=true&owner_principal=legacy:bob");
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { enabled: database && gate });
+      assert.match(response.headers.get("cache-control") ?? "", /no-store/);
+      assert.equal(response.headers.get("vary"), "Authorization");
+    }, database, false, gate);
+  }
+  await withServer((_req, _res, next) => next(), async () => null, async base => {
+    const response = await fetch(base + "/api/billing/subscription/management-status");
+    assert.equal(response.status, 401);
+  }, true, false, true);
+});
 
 test("billing API never accepts user-supplied owner and sets no-store headers",async()=>{
   let captured="";

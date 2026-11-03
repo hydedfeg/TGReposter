@@ -1,4 +1,21 @@
 const billing = {
+  management: {
+    "title": "Manage subscription",
+    "policy": "Your paid access continues until {{date}}. USDT renewals require a separate payment; no automatic debit occurs. Cancellation does not issue a refund or delete workspace data.",
+    "cancel": "Cancel at end of paid term",
+    "restore": "Keep subscription active",
+    "cancelConfirm": "End this subscription on {{date}}?",
+    "restoreConfirm": "Withdraw the scheduled cancellation? Your current paid term still ends on {{date}}.",
+    "confirm": "Confirm change",
+    "back": "Go back",
+    "saving": "Saving subscription preference…",
+    "paymentReview": "An outstanding payment or prepaid renewal needs review before this preference can change. Contact support.",
+    "subscriptionChanged": "Your subscription has changed or its paid term has ended. Refresh to see the current status.",
+    "unavailable": "Subscription management is temporarily unavailable.",
+    "signIn": "Sign in again to manage your subscription.",
+    "failed": "The change could not be confirmed. Refresh your subscription before trying again.",
+    "uncertain": "The response was interrupted. The change may have been saved. Refresh to verify your subscription before trying again."
+},
   "eyebrow": "My workspace",
   "title": "Billing & Usage",
   "description": "Your subscription, resources and AI balance — all in one place.",
@@ -40,7 +57,7 @@ const billing = {
   "payment": "Payment",
   "fulfillment": "Fulfillment",
   "amount": "Amount",
-  "readOnlyNotice": "This page is informational. Subscription changes, invoices and checkout will be introduced after billing verification.",
+  "readOnlyNotice": "Subscription controls are available only when enabled by the server. USDT purchases require a separate payment; there is no automatic debit.",
   "checkout": {
     "previewPlans": "Subscription plans — preview",
     "previewTopups": "AI top-up packs — preview",
