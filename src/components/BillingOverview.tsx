@@ -7,6 +7,7 @@ import {
 import { safeResponseJson } from "../utils/api";
 import BillingCheckout from "./BillingCheckout";
 import SubscriptionManagement from "./SubscriptionManagement";
+import PaymentRecordDownload from "./PaymentRecordDownload";
 
 type Overview = {
   availability: "active" | "prelaunch";
@@ -291,6 +292,7 @@ export default function BillingOverview({
               <div>
                 <h2 className="font-display text-lg font-bold text-slate-950">{t("orderHistory")}</h2>
                 <p className="text-sm text-slate-500">{t("ordersDescription")}</p>
+                <p className="mt-1 text-xs text-slate-500">{t("paymentRecord.notice")}</p>
               </div>
               <ArrowUpRight className="h-5 w-5 text-slate-400" aria-hidden="true" />
             </div>
@@ -306,11 +308,12 @@ export default function BillingOverview({
                       <th scope="col" className="px-3 py-3 text-start font-semibold">{t("payment")}</th>
                       <th scope="col" className="px-3 py-3 text-start font-semibold">{t("fulfillment")}</th>
                       <th scope="col" className="px-3 py-3 text-end font-semibold">{t("amount")}</th>
+                      <th scope="col" className="px-3 py-3 text-start font-semibold">{t("paymentRecord.title")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {state.overview.orders.map(order => (
-                      <tr key={order.id}>
+                      <tr key={`${order.type}:${order.id}`}>
                         <td className="px-3 py-4 font-semibold text-slate-900">
                           <button type="button" onClick={() => openCheckout(order.id)} className="text-sky-700 hover:underline">{order.description}</button>
                         </td>
@@ -318,6 +321,9 @@ export default function BillingOverview({
                         <td className="px-3 py-4 text-slate-600">{order.paymentStatus}</td>
                         <td className="px-3 py-4 text-slate-600">{order.status}</td>
                         <td className="px-3 py-4 text-end font-semibold text-slate-900">{euros.format(order.listedEurCents/100)}</td>
+                        <td className="px-3 py-4">{authToken && order.status === "fulfilled" && order.paymentStatus === "paid" ? (
+                          <div key={authToken}><PaymentRecordDownload authToken={authToken} orderId={order.id} orderType={order.type} /></div>
+                        ) : <span className="text-xs text-slate-500">{t("paymentRecord.notReady")}</span>}</td>
                       </tr>
                     ))}
                   </tbody>

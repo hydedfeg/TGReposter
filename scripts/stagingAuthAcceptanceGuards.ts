@@ -9,6 +9,8 @@ const MISSING_ID = "00000000-0000-0000-0000-000000000000";
 const INVALID_OWNER = "owner_principal=supabase%3Aforged-override";
 export const STAGING_PRIVATE_GET_PATHS = [
   "/api/billing/overview",
+  "/api/billing/orders/subscription/" + MISSING_ID + "/payment-record",
+  "/api/billing/orders/topup/" + MISSING_ID + "/payment-record",
   "/api/billing/overview?" + INVALID_OWNER,
   "/api/billing/ai-credits/status",
   "/api/billing/subscription/management-status",
@@ -36,6 +38,8 @@ export const STAGING_PRIVATE_GET_PATHS = [
 
 export const STAGING_FORGED_TOKEN_GET_PATHS = [
   "/api/billing/overview",
+  "/api/billing/orders/subscription/" + MISSING_ID + "/payment-record",
+  "/api/billing/orders/topup/" + MISSING_ID + "/payment-record",
   "/api/billing/subscription/management-status",
   "/api/billing/subscription/change-preview?targetPlanId=free",
   "/api/billing/checkout/status",
