@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { safeResponseJson } from "../utils/api";
 import BillingCheckout from "./BillingCheckout";
+import SubscriptionManagement from "./SubscriptionManagement";
 
 type Overview = {
   availability: "active" | "prelaunch";
@@ -210,6 +211,13 @@ export default function BillingOverview({
                   </p>
                 </div>
               </div>
+              {authToken && state.overview.subscription?.status === "active" &&
+                state.overview.plan.id !== "free" &&
+                Number.isFinite(Date.parse(state.overview.subscription.periodEnd ?? "")) ? (
+                <div key={authToken}><SubscriptionManagement authToken={authToken}
+                  cancelAtPeriodEnd={state.overview.subscription.cancelAtPeriodEnd}
+                  periodEnd={state.overview.subscription.periodEnd!} onChanged={reload} /></div>
+              ) : null}
             </article>
 
             <article className={cardClass}>

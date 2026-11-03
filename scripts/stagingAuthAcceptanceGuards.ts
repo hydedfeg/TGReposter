@@ -11,6 +11,7 @@ export const STAGING_PRIVATE_GET_PATHS = [
   "/api/billing/overview",
   "/api/billing/overview?" + INVALID_OWNER,
   "/api/billing/ai-credits/status",
+  "/api/billing/subscription/management-status",
   "/api/billing/subscription/change-preview?targetPlanId=free",
   "/api/billing/checkout/status",
   "/api/billing/checkout/orders/" + MISSING_ID,
@@ -35,6 +36,7 @@ export const STAGING_PRIVATE_GET_PATHS = [
 
 export const STAGING_FORGED_TOKEN_GET_PATHS = [
   "/api/billing/overview",
+  "/api/billing/subscription/management-status",
   "/api/billing/subscription/change-preview?targetPlanId=free",
   "/api/billing/checkout/status",
   "/api/billing/checkout/orders/" + MISSING_ID,
