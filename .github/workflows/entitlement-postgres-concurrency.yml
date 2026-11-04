@@ -6,6 +6,8 @@ on:
       - feat/commercial-staging-integration
     paths:
       - 'supabase/migrations/**atomic_plan_capacity_guards.sql'
+      - 'supabase/migrations/**restrict_capacity_to_approved_builtin_plans.sql'
+      - 'tests/atomicPlanCapacityDb.test.ts'
       - 'tests/atomicPlanCapacityPostgres.test.ts'
       - '.github/workflows/entitlement-postgres-concurrency.yml'
       - 'server/billing/backendEntitlementGuard.ts'
@@ -19,7 +21,7 @@ jobs:
     timeout-minutes: 10
     services:
       postgres:
-        image: postgres:16
+        image: postgres:17
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

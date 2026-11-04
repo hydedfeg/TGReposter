@@ -32,6 +32,8 @@ async function fixture(){
     "create table public.promotion_campaigns(id bigserial primary key,owner_principal text not null,status text default 'draft');"
   ].join("\n"));
   await db.exec(sql);
+  await db.exec(fs.readFileSync(path.join(root,
+    "supabase/migrations/20261103124022_restrict_capacity_to_approved_builtin_plans.sql"),"utf8"));
   sharedDb=db;
   return db;
 }
@@ -129,4 +131,18 @@ test("a missing policy row cannot silently bypass enabled capacity enforcement",
       (e:unknown)=>Boolean(e&&typeof e==="object"&&"code" in e&&
         (e as {code:unknown}).code==="PZ500"));
   
+});
+
+test("custom drafts and unknown plan identities cannot obtain larger database quotas",async()=>{
+  const db=await fixture();
+  await db.exec("insert into public.billing_plans values('custom_unapproved',100,100,100),('unknown_plan',100,100,100); update public.billing_entitlement_enforcement set enabled=true;");
+  for(const [owner,plan] of [[alice,"custom_unapproved"],[bob,"unknown_plan"]]) {
+    await paid(db,owner,plan);
+    for(let i=0;i<3;i++)await source(db,owner,"allowed"+i);
+    await assert.rejects(source(db,owner,"over-free"),blocked);
+    await personal(db,owner,"allowed");
+    await assert.rejects(promoTarget(db,owner,"over-free"),blocked);
+    await assert.rejects(db.query(
+      "insert into public.promotion_campaigns(owner_principal,status) values($1,'ready')",[owner]),blocked);
+  }
 });

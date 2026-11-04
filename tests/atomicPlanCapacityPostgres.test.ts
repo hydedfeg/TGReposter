@@ -25,6 +25,8 @@ if(uri) {
       const migration=fs.readFileSync(path.join(root,
         "supabase/migrations/20261019175500_atomic_plan_capacity_guards.sql"),"utf8");
       await pool.query(migration);
+      await pool.query(fs.readFileSync(path.join(root,
+        "supabase/migrations/20261103124022_restrict_capacity_to_approved_builtin_plans.sql"),"utf8"));
       const off=await pool.query("select enabled from public.billing_entitlement_enforcement");
       assert.equal(off.rows[0].enabled,false);
       await pool.query("update public.billing_entitlement_enforcement set enabled=true");
@@ -78,6 +80,17 @@ if(uri) {
       // Disabling remains possible when quota is full.
       await pool.query("update public.destination_targets set enabled=false where owner_principal='legacy:alice'");
       await pool.query("update public.promotion_targets set enabled=false where owner_principal='legacy:alice'");
+      // A custom draft must not grant its catalog capacity through direct writes.
+      await pool.query("insert into public.billing_plans values('custom_unapproved',100,100,100)");
+      await pool.query("insert into public.billing_subscriptions values('legacy:custom','custom_unapproved','active',now()-interval '1 day',now()+interval '1 day')");
+      const custom = await Promise.all(Array.from({length:12},(_,i)=>create("legacy:custom",i)));
+      assert.equal(custom.filter(x=>x==='accepted').length,3);
+      assert.equal(custom.filter(x=>x==='limited').length,9);
+      // Genuine built-in paid terms continue to receive their purchased quota.
+      await pool.query("insert into public.billing_subscriptions values('legacy:creator','creator','active',now()-interval '1 day',now()+interval '1 day')");
+      const paid = await Promise.all(Array.from({length:12},(_,i)=>create("legacy:creator",i)));
+      assert.equal(paid.filter(x=>x==='accepted').length,5);
+      assert.equal(paid.filter(x=>x==='limited').length,7);
     }finally{await pool.end();}
   });
 }

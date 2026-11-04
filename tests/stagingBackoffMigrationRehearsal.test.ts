@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { reconcilePendingOpenRouterUsage } from "../server/billing/openRouterReconciliation";
+import { FORWARD_STAGING_MIGRATIONS } from "./stagingForwardMigrationInventory";
 
 /**
  * Non-destructive migration rehearsal against an isolated PostgreSQL-compatible
@@ -54,8 +55,9 @@ test("staging-schema rehearsal rolls back, applies backoff and preserves owner b
   try{
     await db.exec(fs.readFileSync(path.join(root,"tests","tenantPlatform.fixture.sql"),"utf8"));
     const files=fs.readdirSync(dir).filter(x=>x.endsWith(".sql")).sort();
-    assert.equal(files.at(-1),pendingFile);
-    for(const file of files.filter(x=>x!==pendingFile)){
+    assert.deepEqual(files,[...snapshot.sourceFiles.map(x=>x.file),...FORWARD_STAGING_MIGRATIONS.map(x=>x.file)].sort());
+    // Reconstruct the audited baseline, not later unapplied candidates.
+    for(const file of snapshot.sourceFiles.map(x=>x.file).filter(x=>x!==pendingFile).sort()){
       let sql=fs.readFileSync(path.join(dir,file),"utf8");
       sql=sql.replace(/^(?:create|drop) extension if (?:not )?exists (?:pg_net|pg_cron)[^;]*;/gim,"");
       try{await db.exec(sql);}catch(err){throw Error("Baseline migration "+file+" failed: "+String(err));}

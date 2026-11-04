@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { FORWARD_STAGING_MIGRATIONS } from "./stagingForwardMigrationInventory";
 
 /**
  * Offline source-vs-applied SQL parity from the read-only staging baseline.
@@ -40,14 +41,14 @@ const aliases=entries.filter(row=>index.has(row.name)&&
 test("staging archive has no unreviewed applied/source additions or removals",()=>{
  assert.equal(baseline.sourceProjectRef,"msmfilgdwuoymjhgtrmy");
  assert.equal(entries.length,46);
- assert.equal(files.length,45);
+ assert.equal(files.length,45+FORWARD_STAGING_MIGRATIONS.length);
  assert.equal(new Set(entries.map(x=>x.name)).size,entries.length);
  assert.equal(new Set(entries.map(x=>x.version)).size,entries.length);
  assert.deepEqual(stagingOnly,[
    "repair_missing_curator_settings_baseline",
    "repair_missing_pg_cron_baseline"
  ]);
- assert.deepEqual(pending,["20261021154000_ai_reconciliation_backoff.sql"]);
+ assert.deepEqual(pending,["20261021154000_ai_reconciliation_backoff.sql",...FORWARD_STAGING_MIGRATIONS.map(x=>x.file)].sort());
  assert.equal(aliases,23);
 });
 test("historical source byte parity remains anchored to staging migration hashes",()=>{
