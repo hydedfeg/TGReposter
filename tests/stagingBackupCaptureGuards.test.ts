@@ -36,6 +36,25 @@ test("backup capture requires explicit approval and age encryption recipient",()
  for(const v of [undefined,"", "ssh-rsa", "recipient@example.com","age1bad"])
    assert.throws(()=>validateStagingAgeRecipient(v),/age recipient/);
 });
+test("IPv4 session backup accepts only the staging project on its pinned pooler",()=>{
+ const session="postgresql://postgres.msmfilgdwuoymjhgtrmy:p%40ss%3Aword@aws-0-eu-north-1.pooler.supabase.com:5432/postgres";
+ const validated=validateStagingBackupSource(session);
+ assert.equal(validated.user,"postgres.msmfilgdwuoymjhgtrmy");
+ assert.equal(validated.host,"aws-0-eu-north-1.pooler.supabase.com");
+ assert.equal(validated.password,"p@ss:word");
+ assert.equal(validated.port,"5432");
+ for(const uri of [
+   session.replace("msmfilgdwuoymjhgtrmy","biowrbnafkagaafonzws"),
+   session.replace("postgres.msmfilgdwuoymjhgtrmy:","postgres:"),
+   session.replace("aws-0-eu-north-1","aws-1-eu-north-1"),
+   session.replace("pooler.supabase.com","pooler.supabase.com.example.org"),
+   session.replace(":5432/",":6543/"),
+   session.replace("aws-0-eu-north-1.pooler.supabase.com",STAGING_BACKUP_HOST),
+   session+"?sslmode=disable",
+   session+"#fragment",
+   session.replace("/postgres","/other")
+ ])assert.throws(()=>validateStagingBackupSource(uri),/Refusing/);
+});
 test("backup output directory is private, not symlinked, not inside repository",()=>{
  const outer=fs.mkdtempSync(path.join(os.tmpdir(),"private-backup-"));
  const privateDir=path.join(outer,"private");
@@ -54,7 +73,8 @@ test("backup output directory is private, not symlinked, not inside repository",
 });
 test("exported snapshot ID syntax is validated before pg_dump",()=>{
  assert.equal(validateExportedSnapshotId("00000004-00000241-1"),"00000004-00000241-1");
- for(const v of [null,4,"", "00000004; rm -rf /","00000004-0-1","abc-123","00000004-00000241-1 --dbname=prod"])
+ assert.equal(validateExportedSnapshotId("0000000B-00000AFE-1"),"0000000B-00000AFE-1");
+ for(const v of [null,4,"", "00000004; rm -rf /","00000004-0-1","abc-123","0000000G-00000AFE-1","00000004-00000241-1 --dbname=prod"])
    assert.throws(()=>validateExportedSnapshotId(v),/identifier/);
 });
 test("private capture has a single exported snapshot and never writes a raw dump",()=>{
