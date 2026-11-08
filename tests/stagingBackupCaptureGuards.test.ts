@@ -73,7 +73,8 @@ test("backup output directory is private, not symlinked, not inside repository",
 });
 test("exported snapshot ID syntax is validated before pg_dump",()=>{
  assert.equal(validateExportedSnapshotId("00000004-00000241-1"),"00000004-00000241-1");
- for(const v of [null,4,"", "00000004; rm -rf /","00000004-0-1","abc-123","00000004-00000241-1 --dbname=prod"])
+ assert.equal(validateExportedSnapshotId("0000000B-00000AFE-1"),"0000000B-00000AFE-1");
+ for(const v of [null,4,"", "00000004; rm -rf /","00000004-0-1","abc-123","0000000G-00000AFE-1","00000004-00000241-1 --dbname=prod"])
    assert.throws(()=>validateExportedSnapshotId(v),/identifier/);
 });
 test("private capture has a single exported snapshot and never writes a raw dump",()=>{

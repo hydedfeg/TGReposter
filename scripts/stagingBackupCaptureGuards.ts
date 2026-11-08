@@ -52,7 +52,7 @@ export function requireStagingBackupApproval(value:string|undefined){
    throw Error("Private staging backup capture requires explicit operator approval.");
 }
 export function validateExportedSnapshotId(value:unknown):string{
- if(typeof value!=="string"||!/^\d{8}-\d{8}-\d+$/.test(value))
+ if(typeof value!=="string"||!/^[0-9A-F]{8}-[0-9A-F]{8}-\d+$/.test(value))
    throw Error("PostgreSQL exported snapshot identifier is invalid.");
  return value;
 }

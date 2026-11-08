@@ -45,27 +45,34 @@ async function capture(){
  const manifest=path.join(dir,"staging-"+stamp+".reference.json");
  // File flags 'wx' and owner-only destination ensure no overwrites.
  let createdArchive=false,createdManifest=false,client:pg.Client|undefined;
+ let stage="database connection";
  try{
    client=new pg.Client({connectionString:source.url,ssl:{rejectUnauthorized:true},
      connectionTimeoutMillis:10000,query_timeout:60000,
      application_name:"tgreposter-private-snapshot-backup"});
    await client.connect();
+   stage="read-only transaction setup";
    await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
    await client.query("SET LOCAL TIME ZONE 'UTC'");
    await client.query("SET LOCAL DateStyle TO 'ISO, MDY'");
    await client.query("SET LOCAL IntervalStyle TO 'postgres'");
+   stage="database version verification";
    const version=await client.query<{version:number;database:string}>(
      "SELECT current_setting('server_version_num')::integer AS version,current_database() AS database");
    if(version.rows[0]?.version<170000||version.rows[0]?.version>=180000||
       version.rows[0]?.database!=="postgres")
      throw Error("Expected staging PostgreSQL 17 database.");
+   stage="snapshot export";
    const snapshotRes=await client.query<{snapshot_id:string}>(
      "SELECT pg_export_snapshot() AS snapshot_id");
+   stage="snapshot identifier validation";
    const snapshot=validateExportedSnapshotId(snapshotRes.rows[0]?.snapshot_id);
+   stage="reference fingerprint query";
    const sql=fs.readFileSync(path.join(ROOT,"scripts/sql/stagingRestoreFingerprint.sql"),"utf8");
    const refResult=await client.query<{audit_payload:unknown}>(sql);
    if(refResult.rows.length!==1||!refResult.rows[0]?.audit_payload)
      throw Error("Private backup reference query failed.");
+   stage="reference provenance validation";
    const payload=refResult.rows[0].audit_payload as Record<string,unknown>;
    if(payload.postgresMajor!==17||!Array.isArray(payload.migrationLedger)||
       payload.migrationLedger.length!==46||
@@ -73,12 +80,14 @@ async function capture(){
       Object.keys(payload.tenantFootprints).length!==12)
      throw Error("Private staging reference provenance is incomplete.");
 
+   stage="encrypted archive creation";
    const out=fs.openSync(archive,"wx",0o600);
    createdArchive=true;
    try{
      // Limit inherited environment: never pass the full URL on a command line,
      // and never inherit PGHOST/PGSERVICE/PGOPTIONS overrides.
      const basicEnv={PATH:process.env.PATH||"/usr/bin:/bin"};
+     stage="dump and encryption";
      const dump=spawn("pg_dump",["--no-password","--format=custom",
        "--snapshot="+snapshot],{
        env:{...basicEnv,PGHOST:source.host,PGPORT:source.port,
@@ -96,9 +105,12 @@ async function capture(){
      const [dumpOk,encryptOk]=await Promise.allSettled([
        commandExit(dump),commandExit(encrypt)
      ]);
-     if(dumpOk.status!=="fulfilled"||encryptOk.status!=="fulfilled")
+     if(dumpOk.status!=="fulfilled"||encryptOk.status!=="fulfilled"){
+       stage=dumpOk.status!=="fulfilled"?"pg_dump execution":"age encryption";
        throw Error("Encrypted snapshot capture failed; discard the incomplete archive.");
+     }
    }finally{fs.closeSync(out);}
+   stage="encrypted archive verification";
    if(fs.statSync(archive).size===0)throw Error("Empty encrypted archive.");
    const checksum=await sha256File(archive);
    const reference={
@@ -113,6 +125,7 @@ async function capture(){
        archiveFile:path.basename(archive)
      }
    };
+   stage="private reference creation";
    fs.writeFileSync(manifest,JSON.stringify(reference,null,2)+"\n",
      {flag:"wx",mode:0o600});
    createdManifest=true;
@@ -122,7 +135,8 @@ async function capture(){
  }catch{
    if(createdManifest)try{fs.unlinkSync(manifest);}catch{}
    if(createdArchive)try{fs.unlinkSync(archive);}catch{}
-   throw Error("Private staging encrypted backup was not completed; no partial artifacts retained.");
+   // Only fixed stage labels are exposed. Never interpolate provider errors or credentials.
+   throw Error(`Private staging encrypted backup failed during ${stage}; no partial artifacts retained.`);
  }finally{
    if(client){await client.query("ROLLBACK").catch(()=>{});await client.end().catch(()=>{});}
  }
