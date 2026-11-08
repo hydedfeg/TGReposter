@@ -58,7 +58,7 @@ async function capture(){
      "SELECT current_setting('server_version_num')::integer AS version,current_database() AS database");
    if(version.rows[0]?.version<170000||version.rows[0]?.version>=180000||
       version.rows[0]?.database!=="postgres")
-     throw Error("Expected direct staging PostgreSQL 17 database.");
+     throw Error("Expected staging PostgreSQL 17 database.");
    const snapshotRes=await client.query<{snapshot_id:string}>(
      "SELECT pg_export_snapshot() AS snapshot_id");
    const snapshot=validateExportedSnapshotId(snapshotRes.rows[0]?.snapshot_id);
