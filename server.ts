@@ -1,4 +1,3 @@
-import mediaService from "./server/services/mediaService";
 import postService from "./server/services/postService";
 import telegramPublisherService from "./server/services/telegramPublisherService";
 import channelRoutes from "./server/routes/channels";
@@ -2306,31 +2305,6 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
-
-  app.post("/api/test-download", async (req, res) => {
-  try {
-    console.log("TEST DOWNLOAD START");
-
-    const { url } = req.body;
-    console.log("URL:", url);
-
-    const file = await mediaService.downloadImage(url);
-
-    console.log("DOWNLOADED:", file);
-
-    res.json({
-      success: true,
-      file,
-    });
-  } catch (err: any) {
-    console.error("TEST DOWNLOAD ERROR:", err);
-
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Telegram Content Curator running on http://localhost:${PORT}`);
