@@ -37,5 +37,8 @@ jobs:
       - name: TypeScript check
         run: npm run lint
 
+      - name: Dependency security audit
+        run: npm audit --audit-level=moderate
+
       - name: Test and production build
         run: npm run build
