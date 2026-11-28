@@ -5,6 +5,8 @@
 import fs from "node:fs";
 import path from "node:path";
 export const STAGING_BACKUP_HOST="db.msmfilgdwuoymjhgtrmy.supabase.co";
+export const STAGING_BACKUP_SESSION_HOST="aws-0-eu-north-1.pooler.supabase.com";
+export const STAGING_BACKUP_SESSION_USER="postgres.msmfilgdwuoymjhgtrmy";
 export const STAGING_BACKUP_DB="postgres";
 export const STAGING_BACKUP_APPROVAL="I_APPROVE_PRIVATE_STAGING_SNAPSHOT_CAPTURE";
 export const STAGING_ROW_HASH_ALGORITHM="pg17-jsonb-row-md5-sorted-aggregate-v1";
@@ -14,14 +16,17 @@ export function validateStagingBackupSource(raw:string|undefined):{
  if(!raw)throw Error("Private staging backup source URL is required.");
  let u:URL;
  try{u=new URL(raw);}catch{throw Error("Invalid staging backup source URL.");}
+ const direct=u.hostname===STAGING_BACKUP_HOST&&u.username==="postgres";
+ const session=u.hostname===STAGING_BACKUP_SESSION_HOST&&
+   u.username===STAGING_BACKUP_SESSION_USER;
  if(!["postgresql:","postgres:"].includes(u.protocol)||
-    u.hostname!==STAGING_BACKUP_HOST||u.port!==""&&u.port!=="5432"||
-    u.pathname!=="/"+STAGING_BACKUP_DB||u.username!=="postgres"||!u.password||
+    !(direct||session)||u.port!==""&&u.port!=="5432"||
+    u.pathname!=="/"+STAGING_BACKUP_DB||!u.password||
     u.search||u.hash){
-    throw Error("Refusing backup of any database except the exact staging DIRECT Postgres endpoint.");
+    throw Error("Refusing backup of any database except the exact staging direct or session Postgres endpoint.");
  }
  return {host:u.hostname,port:"5432",database:STAGING_BACKUP_DB,
-   user:"postgres",password:decodeURIComponent(u.password),url:u.toString()};
+   user:u.username,password:decodeURIComponent(u.password),url:u.toString()};
 }
 export function validateStagingBackupDestination(value:string|undefined,repoRoot:string):string{
  if(!value||!path.isAbsolute(value))
@@ -47,7 +52,7 @@ export function requireStagingBackupApproval(value:string|undefined){
    throw Error("Private staging backup capture requires explicit operator approval.");
 }
 export function validateExportedSnapshotId(value:unknown):string{
- if(typeof value!=="string"||!/^\d{8}-\d{8}-\d+$/.test(value))
+ if(typeof value!=="string"||!/^[0-9A-F]{8}-[0-9A-F]{8}-\d+$/.test(value))
    throw Error("PostgreSQL exported snapshot identifier is invalid.");
  return value;
 }
