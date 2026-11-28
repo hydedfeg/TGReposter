@@ -94,6 +94,16 @@ test("PostgreSQL backend isolates two authenticated workspaces", { timeout: 120_
     }
     await delay(100);
   }
+  await t.test("the debug media download endpoint is unavailable in production", async () => {
+    const response = await fetch("http://127.0.0.1:3000/api/test-download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(8000),
+    });
+    assert.equal(response.status, 404);
+    await response.text();
+  });
   const ok = async (promise: ReturnType<typeof api>, expected = 200) => {
     const result = await promise;
     assert.equal(result.status, expected, JSON.stringify(result.data));
